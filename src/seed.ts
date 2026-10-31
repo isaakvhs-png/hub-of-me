@@ -1,20 +1,40 @@
 import type { Db } from "./db.js";
 import { DEFAULT_USD_TO_EUR } from "./prices.js";
 import { hashPassword } from "./password.js";
-import { ensureFolderPath, getUserByEmail, insertBudget, insertSettings, insertUser } from "./repo.js";
+import { ensureFolderPath, getUserByEmail, insertBudget, insertSettings, insertUser, listUsers, updateUserAccount } from "./repo.js";
 import { changeSoul } from "./soul.js";
 import { SEED_SOUL } from "./soul-seed.js";
 import type { ProviderName, User } from "./types.js";
+
+function envValue(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  return value ? value : undefined;
+}
 
 export async function ensureUser(
   db: Db,
   opts?: { email?: string; password?: string; name?: string; provider?: ProviderName },
 ): Promise<User> {
-  const email = (opts?.email ?? process.env.USER_EMAIL ?? "peter@local").toLowerCase();
+  const envEmail = envValue("USER_EMAIL")?.toLowerCase();
+  const envPassword = envValue("USER_PASSWORD");
+  const envName = envValue("USER_NAME");
+  // Server start calls this with no opts. When both credentials are set, rewrite the one account in place.
+  if (!opts && envEmail && envPassword) {
+    const users = await listUsers(db);
+    if (users.length === 1) {
+      const current = users[0];
+      return updateUserAccount(db, current.id, {
+        email: envEmail,
+        name: envName ?? current.name,
+        passwordHash: await hashPassword(envPassword),
+      });
+    }
+  }
+  const email = (opts?.email ?? envEmail ?? "peter@local").toLowerCase();
   const existing = await getUserByEmail(db, email);
   if (existing) return existing;
-  const password = opts?.password ?? process.env.USER_PASSWORD ?? "hub-of-me";
-  const name = opts?.name ?? process.env.USER_NAME ?? "Peter";
+  const password = opts?.password ?? envPassword ?? "hub-of-me";
+  const name = opts?.name ?? envName ?? "Peter";
   const provider = (opts?.provider ?? (process.env.AI_PROVIDER as ProviderName) ?? "mock") as ProviderName;
   const user = await insertUser(db, { email, name, passwordHash: await hashPassword(password) });
   const usdToEur = Number(process.env.USD_TO_EUR ?? DEFAULT_USD_TO_EUR);

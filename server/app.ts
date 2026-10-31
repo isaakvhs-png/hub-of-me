@@ -11,7 +11,7 @@ import { healthReport } from "../src/health.js";
 import { id, token } from "../src/ids.js";
 import { textFromUpload } from "../src/ingest.js";
 import { assertGmailReadOnly, assertGrantedScopes, gmailAuthUrl, gmailModule } from "../src/modules/gmail.js";
-import { verifyPassword } from "../src/password.js";
+import { hashPassword, verifyPassword } from "../src/password.js";
 import { archiveNote, runDump, undoNote } from "../src/pipeline/dump.js";
 import { runReflection } from "../src/pipeline/debate.js";
 import { runNightly, runResearch, writeBrief } from "../src/pipeline/jobs.js";
@@ -30,6 +30,8 @@ import {
   getSoul,
   getUserByEmail,
   getUserById,
+  getUserWithPassword,
+  setUserPasswordHash,
   insertEvent,
   insertFeedback,
   insertNote,
@@ -134,6 +136,27 @@ export function createApp(db: Db) {
   app.get("/api/auth/me", async (c) => {
     const user = await getUserById(db, c.get("userId"));
     return c.json(user);
+  });
+
+  app.post("/api/auth/password", async (c) => {
+    const userId = c.get("userId");
+    const body = z.object({
+      currentPassword: z.string().min(1),
+      newPassword: z.string().min(1),
+    }).parse(await c.req.json());
+    if (body.newPassword.length < 8) throw new ValidationError("Use at least 8 characters.");
+    const user = await getUserWithPassword(db, userId);
+    if (!user || !(await verifyPassword(body.currentPassword, user.passwordHash))) {
+      return c.json({ error: "Current password is wrong." }, 401);
+    }
+    await setUserPasswordHash(db, userId, await hashPassword(body.newPassword));
+    await logAction(db, userId, {
+      what: "password changed",
+      why: "You changed the password in Settings. USER_PASSWORD replaces it the next time the server starts, when that variable is set.",
+      source: "user",
+      payload: {},
+    });
+    return c.json({ ok: true });
   });
 
   app.get("/api/summary", async (c) => {

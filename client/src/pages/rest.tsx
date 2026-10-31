@@ -292,6 +292,10 @@ export function SettingsPage() {
   const [state, setState] = useState<{ settings: { provider: string; cheapModel: string; strongModel: string; judgeModel: string; alternateModel: string; localCategories: string[]; forNowTtlHours: number; dictationLang: string; usdToEur: number }; budget: { monthlyCapEurCents: number }; gmail: { scopes: string[]; enabled: boolean }; keys: { anthropic: boolean; gemini: boolean } } | null>(null);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordSaved, setPasswordSaved] = useState("");
   useEffect(() => { api<NonNullable<typeof state>>("/api/settings").then(setState).catch((err) => setError(err.message)); }, []);
   if (!state) return <p className="text-sm text-muted-foreground">{error || "Opening settings…"}</p>;
   const settings = state.settings;
@@ -338,6 +342,23 @@ export function SettingsPage() {
         <Button onClick={() => api("/api/settings", { method: "POST", body: JSON.stringify({ ...settings, monthlyCapEur: state.budget.monthlyCapEurCents / 100 }) }).then(() => setSaved("Saved.")).catch((err) => setError(err.message))}>Save</Button>
         {saved ? <p className="text-sm text-primary">{saved}</p> : null}
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        <Card className="p-4">
+          <h2 className="font-serif text-2xl">Password</h2>
+          <p className="mt-2 text-sm text-muted-foreground">This takes effect now. If USER_PASSWORD is set in the environment, the server writes that password again the next time it starts. The account and its notes stay.</p>
+          <div className="mt-3 space-y-3">
+            <div>
+              <Label htmlFor="current-password">Current password</Label>
+              <Input id="current-password" className="mt-1" type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="new-password">New password</Label>
+              <Input id="new-password" className="mt-1" type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+            </div>
+            <Button onClick={() => api("/api/auth/password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) }).then(() => { setPasswordSaved("Password changed."); setPasswordError(""); setCurrentPassword(""); setNewPassword(""); }).catch((err) => { setPasswordError(err.message); setPasswordSaved(""); })}>Change password</Button>
+            {passwordSaved ? <p className="text-sm text-primary">{passwordSaved}</p> : null}
+            {passwordError ? <p className="text-sm text-destructive">{passwordError}</p> : null}
+          </div>
+        </Card>
         <Card className="p-4">
           <h2 className="font-serif text-2xl">Gmail</h2>
           <p className="mt-2 text-sm text-muted-foreground">Read-only. Scope: {state.gmail.scopes.join(", ")}. No Drive, no Photos, and no send. Drafts stay in the app.</p>

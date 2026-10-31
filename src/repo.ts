@@ -140,6 +140,38 @@ export async function getUserById(db: Db, userId: string): Promise<User | null> 
   return result.rows[0] ? mapUser(result.rows[0]) : null;
 }
 
+export async function listUsers(db: Db): Promise<User[]> {
+  const result = await db.query(`SELECT id, email, name, created_at FROM users ORDER BY created_at`);
+  return result.rows.map(mapUser);
+}
+
+export async function getUserWithPassword(db: Db, userId: string): Promise<(User & { passwordHash: string }) | null> {
+  const result = await db.query(`SELECT * FROM users WHERE id = $1`, [userId]);
+  const row = result.rows[0];
+  if (!row) return null;
+  return { ...mapUser(row), passwordHash: String(row.password_hash) };
+}
+
+export async function updateUserAccount(
+  db: Db,
+  userId: string,
+  input: { email: string; name: string; passwordHash: string },
+): Promise<User> {
+  await db.query(`UPDATE users SET email = $2, name = $3, password_hash = $4 WHERE id = $1`, [
+    userId,
+    input.email.toLowerCase(),
+    input.name,
+    input.passwordHash,
+  ]);
+  const user = await getUserById(db, userId);
+  if (!user) throw new Error("Account is missing.");
+  return user;
+}
+
+export async function setUserPasswordHash(db: Db, userId: string, passwordHash: string): Promise<void> {
+  await db.query(`UPDATE users SET password_hash = $2 WHERE id = $1`, [userId, passwordHash]);
+}
+
 export async function createSession(db: Db, userId: string, tokenHash: string, expiresAt: string): Promise<void> {
   await db.query(`INSERT INTO sessions (id, user_id, token_hash, expires_at) VALUES ($1,$2,$3,$4)`, [id(), userId, tokenHash, expiresAt]);
 }

@@ -43,7 +43,7 @@ Default local account, from `.env.example`:
 - email `peter@local`
 - password `hub-of-me`
 
-Change `USER_PASSWORD` before anyone else can reach the machine. The account is created on first boot.
+Change `USER_PASSWORD` before anyone else can reach the machine. The first start creates the account. After that, every start updates that same account when both `USER_EMAIL` and `USER_PASSWORD` are set: email, password, and `USER_NAME` when that is set. The account id does not change, so notes stay linked. A password changed in Settings works immediately. If `USER_PASSWORD` is set, the next start writes that value again. Leave `USER_PASSWORD` unset when the Settings password should survive a restart.
 
 The dev API listens on port 43124. Vite on 43123 proxies `/api` to it.
 
@@ -100,7 +100,7 @@ List prices were taken on 31 Oct 2026 from [Anthropic](https://platform.claude.c
 npm test
 ```
 
-They cover the mock path (dump, filing, versions, debate, judge, soul update, usage taken from the provider response), hedge send-back, the uncomfortable side, anonymised judge order, boundary enforcement (no delete, no send, read-only Gmail, no private text in search, no signing in), the budget cap, for-now expiry, undo, and Word import.
+They cover the mock path (dump, filing, versions, debate, judge, soul update, usage taken from the provider response), hedge send-back, the uncomfortable side, anonymised judge order, boundary enforcement (no delete, no send, read-only Gmail, no private text in search, no signing in), the budget cap, for-now expiry, undo, Word import, startup sync of the single account from `USER_EMAIL` and `USER_PASSWORD`, and changing the password in Settings.
 
 ## Deploy
 
@@ -123,8 +123,8 @@ The app deploys from the GitHub repo [isaakvhs-png/hub-of-me](https://github.com
 | `DATABASE_URL` | the Neon string |
 | `SESSION_SECRET` | a long random string |
 | `USER_EMAIL` | your email |
-| `USER_PASSWORD` | a real password |
-| `USER_NAME` | Peter |
+| `USER_PASSWORD` | a real password. On every start, when this and `USER_EMAIL` are both set, they replace the single account's email and password. Notes stay on that account. A password changed in Settings lasts only until the next start. |
+| `USER_NAME` | Peter. Applied on that same start when set; otherwise the stored name stays. |
 | `AI_PROVIDER` | `mock` until a key is set, then `anthropic` |
 | `ANTHROPIC_API_KEY` | the key, or leave empty |
 | `GEMINI_API_KEY` | optional |
