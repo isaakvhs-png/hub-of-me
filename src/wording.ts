@@ -38,14 +38,46 @@ export function looksLikeAction(text: string): boolean {
 }
 
 /** Pull `Used: <id>` lines out of a reply so the chat stays clean and Why can record them. */
-export function takeCarriedCitations(reply: string): { text: string; ids: string[] } {
+const TASK_STOP = new Set(["ask", "peter", "for", "the", "and", "with", "from", "this", "that", "about", "your", "summary", "talk", "into", "over"]);
+
+export function taskMatchesDelivery(taskTitle: string, delivery: { title: string; text: string }): boolean {
+  const tokens = taskTitle
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .split(/[\s-]+/)
+    .filter((token) => token.length >= 4 && !TASK_STOP.has(token));
+  if (tokens.length === 0) return false;
+  const hay = `${delivery.title} ${delivery.text}`.toLowerCase();
+  const hits = tokens.filter((token) => hay.includes(token));
+  const distinctive = hits.filter((token) => token.length >= 6);
+  return distinctive.length >= 1 && hits.length >= Math.min(2, tokens.length);
+}
+
+export function tasksToRaise<T extends { lastRaisedAt: string | null; title: string }>(tasks: T[], dumpText: string, now = new Date()): T[] {
+  const day = 24 * 60 * 60 * 1000;
+  return tasks.filter((task) => {
+    const raisedRecently = task.lastRaisedAt != null && now.getTime() - new Date(task.lastRaisedAt).getTime() < day;
+    if (!raisedRecently) return true;
+    return taskMatchesDelivery(task.title, { title: "", text: dumpText });
+  });
+}
+
+export function takeMarkedIds(reply: string, label: "Used" | "Raised"): { text: string; ids: string[] } {
   const ids: string[] = [];
   const text = reply
-    .replace(/(?:^|\n)\s*Used:\s*([0-9a-f-]{36})\s*/gi, (_line, id: string) => {
+    .replace(new RegExp(`(?:^|\\n)\\s*${label}:\\s*([0-9a-f-]{36})\\s*`, "gi"), (_line, id: string) => {
       ids.push(id);
       return "\n";
     })
     .replace(/\n{3,}/g, "\n\n")
     .trim();
   return { text, ids };
+}
+
+export function takeCarriedCitations(reply: string): { text: string; ids: string[] } {
+  return takeMarkedIds(reply, "Used");
+}
+
+export function takeTaskRaises(reply: string): { text: string; ids: string[] } {
+  return takeMarkedIds(reply, "Raised");
 }

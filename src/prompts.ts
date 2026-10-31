@@ -4,7 +4,7 @@ Do not attach confidence scores, percentages, or certainty gauges.
 Code already enforces the hard boundaries: no sending, no deleting, no private details in web search, no signing in for him. Drafting is allowed. The in-app calendar may be written.
 Return only what this task asks for. No preamble.`;
 
-export function conversationPrompt(input: { soul: string; notes: string; name: string; carried?: string }): string {
+export function conversationPrompt(input: { soul: string; notes: string; name: string; carried?: string; tasks?: string }): string {
   return `${PREAMBLE}
 ROLE: conversation
 You are his thinking partner. Work from the soul and the few notes below, not from everything he ever said.
@@ -23,7 +23,11 @@ His name is ${input.name}.
 
 CARRIED FORWARD (open actions and memory from debates). If you rely on one, add a final line Used: <id> and no other markup.
 ${input.carried || "(none)"}
-END CARRIED`;
+END CARRIED
+
+OPEN TASKS. Raise at most one, and only when this moment fits. Do not list them. Do not nag. If you raise one, add a final line Raised: <id>.
+${input.tasks || "(none)"}
+END TASKS`;
 }
 
 export function criticPrompt(soul: string): string {
@@ -38,7 +42,7 @@ ${soul}
 END SOUL`;
 }
 
-export function filingPrompt(input: { soul: string; notes: string }): string {
+export function filingPrompt(input: { soul: string; notes: string; tasks?: string }): string {
   return `${PREAMBLE}
 ROLE: filing
 TASK: filing
@@ -47,8 +51,10 @@ Types: todo, owed, question, conclusion, idea, person, file, source.
 status is "unexplored", or "for_now" when the dump itself is a short-lived plan.
 flagForReflection and flagForSoul are true only when this bears on who he is or on the strategy.
 contradicts is true when this genuinely conflicts with a note you were shown.
+If he asks for a to-do, or asks the system to ask him for something later, also return tasks. owner is "peter" when it is his to do, and "system" when the system should ask him for it (for example summaries he still owes). due is an ISO time or omitted.
+If this dump clearly delivers an open task you were shown, put that id in closeTaskIds.
 Return JSON:
-{"notes":[{"type":"idea","title":"","body":"","folder":"Inbox","status":"unexplored","flagForReflection":false,"flagForSoul":false,"contradicts":false}],"sources":[]}
+{"notes":[{"type":"idea","title":"","body":"","folder":"Inbox","status":"unexplored","flagForReflection":false,"flagForSoul":false,"contradicts":false}],"sources":[],"tasks":[{"title":"","why":"","owner":"peter"}],"closeTaskIds":[]}
 
 CURRENT SOUL:
 ${input.soul}
@@ -56,7 +62,11 @@ END SOUL
 
 NOTES:
 ${input.notes || "(none)"}
-END NOTES`;
+END NOTES
+
+OPEN TASKS:
+${input.tasks || "(none)"}
+END TASKS`;
 }
 
 export function hisWordsBlock(feedback: string, dumps: string[]): string {
@@ -126,7 +136,7 @@ Pick one winner. Do not seek consensus, a middle, or an average.
 Say why it won, and what the losing side got right.
 If HIS WORDS name a fact, do not call that fact unsupported just because the soul omits it. His words are evidence. They are not one of the anonymous sides.
 Return JSON: {"winner":"A","why":"","loserGotRight":"","closeCall":false,"lessons":[{"text":"","destination":"soul"}]}
-lessons are concrete takeaways. destination is soul only for a general principle, action for a next step, memory for a fact later conversations should remember. Include one lesson from the winner and one from what the losing side got right.
+lessons are concrete takeaways. destination is soul only for a general principle, action for a next step, memory for a fact later conversations should remember, behavior when it is about pace, tone, or what to push with him. A behavior lesson is a general principle, not his scene. Include one lesson from the winner and one from what the losing side got right.
 
 CURRENT SOUL:
 ${input.soul}
@@ -243,7 +253,7 @@ ${input.notes || "(none)"}
 END NOTES`;
 }
 
-export function briefPrompt(input: { soul: string; recent: string; waiting: string; carried?: string }): string {
+export function briefPrompt(input: { soul: string; recent: string; waiting: string; carried?: string; tasks?: string }): string {
   return `${PREAMBLE}
 ROLE: conversation
 TASK: brief
@@ -263,7 +273,11 @@ END WAITING
 
 CARRIED FORWARD:
 ${input.carried || "(none)"}
-END CARRIED`;
+END CARRIED
+
+OPEN TASKS:
+${input.tasks || "(none)"}
+END TASKS`;
 }
 
 export function section(text: string, name: string): string {

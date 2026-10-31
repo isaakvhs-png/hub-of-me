@@ -25,6 +25,18 @@ export const filingSchema = z.object({
       }),
     )
     .optional(),
+  tasks: z
+    .array(
+      z.object({
+        title: z.string().min(1).max(200),
+        why: z.string().min(1),
+        owner: z.enum(["peter", "system"]),
+        due: z.string().optional(),
+      }),
+    )
+    .max(8)
+    .optional(),
+  closeTaskIds: z.array(z.string()).max(8).optional(),
 });
 
 export const criticSchema = z.object({
@@ -59,7 +71,7 @@ export const argumentSchema = z.object({
 
 export const lessonSchema = z.object({
   text: z.string().min(1),
-  destination: z.enum(["soul", "action", "memory"]),
+  destination: z.enum(["soul", "action", "memory", "behavior"]),
 });
 
 export const judgmentSchema = z.object({

@@ -17,6 +17,7 @@ import {
   listActions,
   listInfoRequests,
   listOpenCarried,
+  listTasks,
   listNotes,
   logAction,
   openQueue,
@@ -170,6 +171,7 @@ export async function writeBrief(db: Db, ai: Router, userId: string): Promise<{ 
   const waiting = await openQueue(db, userId);
   const asks = (await listInfoRequests(db, userId)).filter((item) => item.status === "open");
   const carried = await listOpenCarried(db, userId);
+  const tasks = await listTasks(db, userId, "open");
   const content = await completeText(db, userId, ai, {
     role: "conversation",
     system: briefPrompt({
@@ -177,6 +179,7 @@ export async function writeBrief(db: Db, ai: Router, userId: string): Promise<{ 
       recent: actions.map((item) => `${item.what} — ${item.why}`).join("\n"),
       waiting: [...waiting.map((item) => String(item.reason)), ...asks.map((item) => `${item.subject ? `${item.subject}: ` : ""}${item.question}`)].join("\n"),
       carried: carried.map((item) => `${item.kind}: ${item.text}`).join("\n"),
+      tasks: tasks.map((task) => `${task.owner}: ${task.title} — ${task.why}`).join("\n"),
     }),
     messages: [{ role: "user", content: "Write the brief." }],
   }, { jobKind: "brief" });

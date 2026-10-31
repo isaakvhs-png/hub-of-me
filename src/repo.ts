@@ -647,6 +647,70 @@ export async function listOpenCarried(db: Db, userId: string): Promise<Row[]> {
   }));
 }
 
+export interface Task {
+  id: string;
+  title: string;
+  why: string;
+  owner: string;
+  status: string;
+  dueAt: string | null;
+  sourceKind: string;
+  sourceId: string | null;
+  conversationId: string | null;
+  lastRaisedAt: string | null;
+  createdAt: string;
+}
+
+function mapTask(row: Row): Task {
+  return {
+    id: String(row.id),
+    title: String(row.title),
+    why: String(row.why),
+    owner: String(row.owner),
+    status: String(row.status),
+    dueAt: text(row.due_at),
+    sourceKind: String(row.source_kind),
+    sourceId: row.source_id == null ? null : String(row.source_id),
+    conversationId: row.conversation_id == null ? null : String(row.conversation_id),
+    lastRaisedAt: text(row.last_raised_at),
+    createdAt: iso(row.created_at),
+  };
+}
+
+export async function insertTask(
+  db: Db,
+  userId: string,
+  input: { title: string; why: string; owner: string; dueAt?: string | null; sourceKind: string; sourceId?: string | null; conversationId?: string | null },
+): Promise<Task> {
+  const taskId = id();
+  await db.query(
+    `INSERT INTO tasks (id, user_id, title, why, owner, status, due_at, source_kind, source_id, conversation_id) VALUES ($1,$2,$3,$4,$5,'open',$6,$7,$8,$9)`,
+    [taskId, userId, input.title, input.why, input.owner, input.dueAt ?? null, input.sourceKind, input.sourceId ?? null, input.conversationId ?? null],
+  );
+  await logAction(db, userId, { what: "task opened", why: input.why, source: input.sourceKind, payload: { taskId, title: input.title, owner: input.owner } });
+  const result = await db.query(`SELECT * FROM tasks WHERE id = $1`, [taskId]);
+  return mapTask(result.rows[0]);
+}
+
+export async function listTasks(db: Db, userId: string, status?: string): Promise<Task[]> {
+  const result = status
+    ? await db.query(`SELECT * FROM tasks WHERE user_id = $1 AND status = $2 ORDER BY created_at DESC`, [userId, status])
+    : await db.query(`SELECT * FROM tasks WHERE user_id = $1 ORDER BY created_at DESC`, [userId]);
+  return result.rows.map(mapTask);
+}
+
+export async function setTaskStatus(db: Db, userId: string, taskId: string, status: "open" | "done" | "archived", why: string): Promise<Task | null> {
+  const result = await db.query(`UPDATE tasks SET status = $3, updated_at = now() WHERE id = $1 AND user_id = $2 RETURNING *`, [taskId, userId, status]);
+  const row = result.rows[0];
+  if (!row) return null;
+  await logAction(db, userId, { what: `task ${status}`, why, source: "user", payload: { taskId, title: String(row.title) } });
+  return mapTask(row);
+}
+
+export async function markTaskRaised(db: Db, userId: string, taskId: string): Promise<void> {
+  await db.query(`UPDATE tasks SET last_raised_at = now(), updated_at = now() WHERE id = $1 AND user_id = $2 AND status = 'open'`, [taskId, userId]);
+}
+
 export async function enqueueReflection(db: Db, userId: string, noteId: string, reason: string): Promise<void> {
   await db.query(`INSERT INTO reflection_queue (id, user_id, note_id, reason) VALUES ($1,$2,$3,$4)`, [id(), userId, noteId, reason]);
 }

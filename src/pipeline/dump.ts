@@ -16,10 +16,13 @@ import {
   insertSource,
   listNoteVersions,
   listOpenCarried,
+  listTasks,
   logAction,
+  markTaskRaised,
   reviseNote,
 } from "../repo.js";
-import { takeCarriedCitations } from "../wording.js";
+import { takeCarriedCitations, takeTaskRaises, tasksToRaise } from "../wording.js";
+import { closeDeliveredTasks, closeNamedTasks, rememberTasks } from "../tasks.js";
 import { criticSchema, filingSchema } from "../schemas.js";
 import type { Note } from "../types.js";
 import { loadVisibleNotes, renderNotes } from "./context.js";
@@ -51,14 +54,17 @@ export async function runDump(db: Db, ai: Router, userId: string, input: { text:
   const meta = { conversationId, jobKind: "conversation" as const };
   const noteBlock = renderNotes(visible.notes);
   const carried = await listOpenCarried(db, userId);
+  const openTasks = await listTasks(db, userId, "open");
+  const raisedTasks = tasksToRaise(openTasks, text);
   const carriedBlock = carried.map((item) => `${item.id} (${item.kind}) ${item.text}`).join("\n");
+  const taskBlock = raisedTasks.map((task) => `${task.id} (${task.owner}) ${task.title} — ${task.why}`).join("\n");
   let reply = await completeText(
     db,
     userId,
     ai,
     {
       role: "conversation",
-      system: conversationPrompt({ soul: soul.content, notes: noteBlock, name, carried: carriedBlock }),
+      system: conversationPrompt({ soul: soul.content, notes: noteBlock, name, carried: carriedBlock, tasks: taskBlock }),
       messages: [{ role: "user", content: `DUMP:\n${text}\nEND DUMP` }],
     },
     meta,
@@ -82,7 +88,7 @@ export async function runDump(db: Db, ai: Router, userId: string, input: { text:
       ai,
       {
         role: "conversation",
-        system: conversationPrompt({ soul: soul.content, notes: noteBlock, name, carried: carriedBlock }),
+        system: conversationPrompt({ soul: soul.content, notes: noteBlock, name, carried: carriedBlock, tasks: taskBlock }),
         messages: [
           { role: "user", content: `DUMP:\n${text}\nEND DUMP` },
           { role: "assistant", content: reply },
@@ -93,7 +99,8 @@ export async function runDump(db: Db, ai: Router, userId: string, input: { text:
     );
   }
   const cited = takeCarriedCitations(reply);
-  reply = cited.text;
+  const raised = takeTaskRaises(cited.text);
+  reply = raised.text;
   for (const carriedId of cited.ids) {
     const item = carried.find((entry) => entry.id === carriedId);
     if (!item) continue;
@@ -103,6 +110,12 @@ export async function runDump(db: Db, ai: Router, userId: string, input: { text:
       source: "conversation",
       payload: { carriedId, debateId: item.debateId ?? null },
     });
+  }
+  for (const taskId of raised.ids) {
+    const task = openTasks.find((item) => item.id === taskId);
+    if (!task) continue;
+    await markTaskRaised(db, userId, taskId);
+    await logAction(db, userId, { what: "raised a task", why: task.title, source: "conversation", payload: { taskId, owner: task.owner } });
   }
   await addMessage(db, conversationId, "assistant", reply);
 
@@ -116,7 +129,7 @@ export async function runDump(db: Db, ai: Router, userId: string, input: { text:
       ai,
       {
         role: "filing",
-        system: filingPrompt({ soul: soul.content, notes: noteBlock }),
+        system: filingPrompt({ soul: soul.content, notes: noteBlock, tasks: openTasks.map((task) => `${task.id} ${task.title}`).join("\n") }),
         messages: [{ role: "user", content: `DUMP:\n${text}\nEND DUMP` }],
       },
       filingSchema,
@@ -138,6 +151,9 @@ export async function runDump(db: Db, ai: Router, userId: string, input: { text:
         mockEra: settings.provider === "mock",
       });
       notes.push(saved);
+      if (item.type === "todo") {
+        await rememberTasks(db, userId, [{ title: item.title, why: item.body, owner: "peter" }], { sourceKind: "dump", sourceId: userMessageId, conversationId });
+      }
       if (item.contradicts) {
         await insertConflict(db, userId, item.contradictionWith || `The new note "${item.title}" conflicts with an earlier one.`, [saved.id]);
       }
@@ -145,6 +161,14 @@ export async function runDump(db: Db, ai: Router, userId: string, input: { text:
         flagged = true;
         await enqueueReflection(db, userId, saved.id, item.flagForSoul ? "Flagged for the soul." : "Flagged for reflection.");
       }
+    }
+    await rememberTasks(db, userId, form.tasks ?? [], { sourceKind: "dump", sourceId: userMessageId, conversationId });
+    const closed = [
+      ...(await closeNamedTasks(db, userId, form.closeTaskIds ?? [], "The dump delivered it.")),
+      ...(await closeDeliveredTasks(db, userId, { title: "", text }, "The dump delivered it.")),
+    ];
+    if (closed.length) {
+      await addMessage(db, conversationId, "assistant", `That closes: ${closed.map((task) => task.title).join("; ")}.`);
     }
     for (const source of form.sources ?? []) {
       const blob = `${source.title} ${source.url ?? ""} ${source.excerpt ?? ""}`;

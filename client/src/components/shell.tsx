@@ -12,6 +12,7 @@ const primary = [
 ];
 
 const more = [
+  { to: "/todos", label: "To-do" },
   { to: "/brief", label: "Brief" },
   { to: "/asks", label: "Asks" },
   { to: "/debates", label: "Debates" },

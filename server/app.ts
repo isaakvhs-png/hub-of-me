@@ -66,6 +66,8 @@ import {
   listEvidenceQuotes,
   listLessons,
   listOpenCarried,
+  listTasks,
+  setTaskStatus,
   setPredictionOutcome,
   updateInfoRequest,
   updateSettings,
@@ -81,6 +83,7 @@ import type { Settings } from "../src/types.js";
 import { mountDiagnostics } from "./diag.js";
 import { recordServerError } from "./error-log.js";
 import { scheduleFeedbackDrain } from "../src/feedback.js";
+import { closeDeliveredTasks } from "../src/tasks.js";
 import { clearSession, hashToken, readSession, writeSession } from "./session.js";
 
 const sharedMock = new MockProvider();
@@ -581,21 +584,22 @@ export function createApp(db: Db) {
     const file = body.file;
     if (!file || typeof file !== "object" || !("arrayBuffer" in file)) return c.json({ error: "Attach a PDF, Word, or text file." }, 400);
     const bytes = Buffer.from(await file.arrayBuffer());
-    const extracted = await textFromUpload(file.name || "upload", bytes);
-    if (!extracted.text) return c.json({ error: "No text came out of that file." }, 422);
+    const name = file.name || "upload";
+    const extracted = await textFromUpload(name, bytes);
+    const bodyText = extracted.text || `No text could be read from ${name}. The file name is kept so a matching to-do can close.`;
     const sourceId = await insertSource(db, userId, {
-      title: file.name || "Upload",
+      title: name,
       kind: extracted.kind,
-      rawText: extracted.text,
-      excerpt: extracted.text.slice(0, 400),
+      rawText: bodyText,
+      excerpt: bodyText.slice(0, 400),
       origin: "ingest",
     });
     const ingestSettings = await getSettings(db, userId);
     const note = await insertNote(db, userId, {
       folderId: await ensureFolderPath(db, userId, "Inbox"),
       type: "file",
-      title: file.name || "Upload",
-      body: extracted.text.slice(0, 8000),
+      title: name,
+      body: bodyText.slice(0, 8000),
       status: "unexplored",
       forNowExpiresAt: null,
       mockEra: ingestSettings.provider === "mock",
@@ -603,7 +607,52 @@ export function createApp(db: Db) {
       causingMessageId: null,
       source: "ingest",
     });
-    return c.json({ sourceId, note });
+    const closed = await closeDeliveredTasks(db, userId, { title: name, text: bodyText }, `Uploaded ${name}.`);
+    return c.json({ sourceId, note, closed });
+  });
+
+  app.get("/api/tasks", async (c) => {
+    const userId = c.get("userId");
+    const [tasks, carried] = await Promise.all([listTasks(db, userId, "open"), listOpenCarried(db, userId)]);
+    return c.json({ tasks, actions: carried.filter((item) => item.kind === "action") });
+  });
+
+  app.post("/api/tasks/:id", async (c) => {
+    const body = z.object({ status: z.enum(["open", "done", "archived"]) }).parse(await c.req.json());
+    const task = await setTaskStatus(db, c.get("userId"), c.req.param("id"), body.status, "You changed the to-do.");
+    if (!task) return c.json({ error: "To-do not found." }, 404);
+    return c.json(task);
+  });
+
+  app.post("/api/dump/file", async (c) => {
+    const userId = c.get("userId");
+    const body = await c.req.parseBody();
+    const file = body.file;
+    if (!file || typeof file !== "object" || !("arrayBuffer" in file)) return c.json({ error: "Attach a file." }, 400);
+    const name = file.name || "upload";
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const extracted = await textFromUpload(name, bytes);
+    const bodyText = extracted.text || `No text could be read from ${name}. The file name is kept so a matching to-do can close.`;
+    const conversationId = typeof body.conversationId === "string" ? body.conversationId : null;
+    const note = await insertNote(db, userId, {
+      folderId: await ensureFolderPath(db, userId, "Inbox"),
+      type: "file",
+      title: name,
+      body: bodyText.slice(0, 8000),
+      status: "unexplored",
+      forNowExpiresAt: null,
+      mockEra: (await getSettings(db, userId)).provider === "mock",
+      reason: "Handed over from the dump.",
+      causingMessageId: null,
+      source: "dump",
+    });
+    const closed = await closeDeliveredTasks(db, userId, { title: name, text: `${typeof body.text === "string" ? body.text : ""}\n${bodyText}` }, `Uploaded ${name}.`);
+    let thread = conversationId;
+    if (!thread || !(await getConversation(db, userId, thread))) thread = await createConversation(db, userId, name);
+    await addMessage(db, thread, "user", `Uploaded ${name}${typeof body.text === "string" && body.text.trim() ? `\n${body.text.trim()}` : ""}`);
+    const closedLine = closed.length ? ` That closes: ${closed.map((task) => task.title).join("; ")}.` : "";
+    await addMessage(db, thread, "assistant", `Filed ${name}.${closedLine}`);
+    return c.json({ note, closed, conversationId: thread });
   });
 
   app.post("/api/sources", async (c) => {

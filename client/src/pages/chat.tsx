@@ -29,6 +29,8 @@ export function ChatPage() {
   const media = useRef<MediaRecorder | null>(null);
   const speech = useRef<{ stop: () => void } | null>(null);
   const chunks = useRef<Blob[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
   const conversationId = params.get("c");
 
   async function loadLists() {
@@ -55,11 +57,27 @@ export function ChatPage() {
 
   async function send(body: string, audio?: Blob) {
     const trimmed = body.trim();
-    if (!trimmed && !audio) return;
+    if (!trimmed && !audio && !file) return;
     setBusy(true);
     setError("");
     try {
       let result: DumpResult;
+      if (file && !audio) {
+        const form = new FormData();
+        form.set("file", file);
+        if (trimmed) form.set("text", trimmed);
+        if (conversationId) form.set("conversationId", conversationId);
+        const uploaded = await api<{ note: DumpResult["notes"][number]; closed: { title: string }[]; conversationId: string }>("/api/dump/file", { method: "POST", body: form });
+        setParams({ c: uploaded.conversationId });
+        setMessages(await api<Message[]>(`/api/conversations/${uploaded.conversationId}/messages`));
+        setFiled([uploaded.note]);
+        setText("");
+        setFile(null);
+        if (fileRef.current) fileRef.current.value = "";
+        await loadLists();
+        if (uploaded.closed.length) setError("");
+        return;
+      }
       if (audio) {
         const form = new FormData();
         form.set("audio", audio, "dump.webm");
@@ -171,12 +189,18 @@ export function ChatPage() {
         </div>
         {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
         <form className="mt-4 flex items-end gap-2" onSubmit={(event) => { event.preventDefault(); void send(text); }}>
-          <Textarea value={text} onChange={(event) => setText(event.target.value)} placeholder="Dump it here" className="min-h-[88px]" />
+          <div className="flex-1">
+            <Textarea value={text} onChange={(event) => setText(event.target.value)} placeholder="Dump it here, or attach a summary" className="min-h-[88px]" />
+            <div className="mt-2 flex items-center gap-2">
+              <input ref={fileRef} type="file" accept=".pdf,.docx,.txt,.md,.png,.jpg,.jpeg,.webp,.gif,application/pdf,image/*" className="text-xs text-muted-foreground" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+              {file ? <span className="text-xs text-primary">{file.name}</span> : null}
+            </div>
+          </div>
           <div className="flex flex-col gap-2">
             <Button type="button" variant={recording ? "default" : "outline"} size="icon" onClick={() => void toggleRecord()} aria-label={recording ? "Stop recording" : "Record"}>
               {recording ? <Square size={16} /> : <Mic size={16} />}
             </Button>
-            <Button type="submit" disabled={busy || !text.trim()}>Send</Button>
+            <Button type="submit" disabled={busy || (!text.trim() && !file)}>Send</Button>
           </div>
         </form>
         {recording ? <p className="mt-2 font-mono text-xs text-primary">Listening{live ? `: ${live}` : "…"}</p> : null}

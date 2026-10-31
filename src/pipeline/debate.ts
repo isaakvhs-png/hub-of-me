@@ -104,6 +104,20 @@ export async function applyOutcome(db: Db, userId: string, debateId: string, out
   return soulVersion;
 }
 
+export async function writeBehaviorPrinciples(db: Db, userId: string, debateId: string, lines: string[], verbatim: string[]): Promise<number | null> {
+  const principles = lines.filter((text) => !copiedPhrase(text, verbatim));
+  if (!principles.length) return null;
+  const currentSoul = await getSoul(db, userId);
+  if (!currentSoul) return null;
+  const saved = await changeSoul(db, userId, {
+    content: mergeSoulSections(currentSoul.content, [{ heading: "How to be with him", body: principles.join("\n") }]),
+    reason: "How to be with him, as a general principle from the debate.",
+    via: "reflection",
+  });
+  await db.query(`UPDATE debate_lessons SET soul_version = $2 WHERE debate_id = $1 AND destination = 'behavior'`, [debateId, saved.version]);
+  return saved.version;
+}
+
 export async function runReflection(
   db: Db,
   ai: Router,
@@ -301,6 +315,7 @@ export async function runReflection(
         await insertCarried(db, userId, { debateId, lessonId, kind: lesson.destination, text: lesson.text });
       }
     }
+    await writeBehaviorPrinciples(db, userId, debateId, lessons.filter((lesson) => lesson.destination === "behavior").map((lesson) => lesson.text), verbatim);
     await concludeDebate(db, debateId, {
       status: "concluded",
       winnerSideId: winner.sideId,

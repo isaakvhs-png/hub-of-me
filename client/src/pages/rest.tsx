@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
+import { ToDoList } from "@/pages/todos";
 import { eur, when } from "@/lib/utils";
 
 export function BriefPage() {
@@ -33,6 +34,9 @@ export function BriefPage() {
         <Button onClick={() => void write()} disabled={busy}>{busy ? "Writing…" : "Write one"}</Button>
       </div>
       {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
+      <h2 className="mt-8 font-serif text-2xl">To do</h2>
+      <p className="mt-1 text-sm text-muted-foreground">Open to-dos, including actions carried forward from debates. The full list is on To-do.</p>
+      <div className="mt-4"><ToDoList compact /></div>
       <h2 className="mt-8 font-serif text-2xl">Carried forward</h2>
       <p className="mt-1 text-sm text-muted-foreground">Open actions and memory from debates. Conversation and the brief can use them. When a reply uses one, Why records it.</p>
       <div className="mt-4 space-y-3">
@@ -208,7 +212,7 @@ export function DebatePage() {
           <ul className="mt-3 space-y-3">
             {data.lessons.map((lesson) => (
               <li key={lesson.id} className="text-sm">
-                <span className="text-xs uppercase tracking-wide text-muted-foreground">{lesson.destination === "soul" ? (lesson.soulVersion ? <Link className="text-primary" to="/soul">soul v{lesson.soulVersion}</Link> : "soul") : lesson.destination}</span>
+                <span className="text-xs uppercase tracking-wide text-muted-foreground">{lesson.destination === "soul" || lesson.destination === "behavior" ? <>{lesson.destination}{lesson.soulVersion ? <> <Link className="text-primary" to="/soul">v{lesson.soulVersion}</Link></> : null}</> : lesson.destination}</span>
                 <div className="mt-1">{lesson.text}</div>
               </li>
             ))}

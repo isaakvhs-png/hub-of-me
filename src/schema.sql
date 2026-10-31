@@ -368,6 +368,22 @@ CREATE TABLE IF NOT EXISTS briefs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS tasks (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  title TEXT NOT NULL,
+  why TEXT NOT NULL,
+  owner TEXT NOT NULL,
+  status TEXT NOT NULL,
+  due_at TIMESTAMPTZ,
+  source_kind TEXT NOT NULL,
+  source_id TEXT,
+  conversation_id TEXT,
+  last_raised_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE INDEX IF NOT EXISTS notes_user_idx ON notes (user_id, updated_at);
 CREATE INDEX IF NOT EXISTS usage_user_idx ON usage_records (user_id, created_at);
 CREATE INDEX IF NOT EXISTS action_user_idx ON action_log (user_id, created_at);

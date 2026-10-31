@@ -8,6 +8,7 @@ import { DiscoveryPage } from "@/pages/discovery";
 import { LibraryPage } from "@/pages/library";
 import { LoginPage } from "@/pages/login";
 import { AsksPage, BriefPage, DebatePage, DebatesPage, HealthPage, SettingsPage, SoulPage, WhyPage } from "@/pages/rest";
+import { ToDoPage } from "@/pages/todos";
 
 export function App() {
   const [user, setUser] = useState<{ name: string } | null | undefined>(undefined);
@@ -27,6 +28,7 @@ export function App() {
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/discovery" element={<DiscoveryPage />} />
         <Route path="/brief" element={<BriefPage />} />
+        <Route path="/todos" element={<ToDoPage />} />
         <Route path="/asks" element={<AsksPage />} />
         <Route path="/debates" element={<DebatesPage />} />
         <Route path="/debates/:id" element={<DebatePage />} />
