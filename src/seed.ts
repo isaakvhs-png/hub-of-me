@@ -1,7 +1,8 @@
 import type { Db } from "./db.js";
 import { DEFAULT_USD_TO_EUR } from "./prices.js";
 import { hashPassword } from "./password.js";
-import { ensureFolderPath, getUserByEmail, insertBudget, insertSettings, insertUser, listUsers, updateUserAccount } from "./repo.js";
+import { readEnvProvider } from "./ai/router.js";
+import { ensureFolderPath, getSettings, getUserByEmail, insertBudget, insertSettings, insertUser, listUsers, updateSettings, updateUserAccount } from "./repo.js";
 import { changeSoul } from "./soul.js";
 import { SEED_SOUL } from "./soul-seed.js";
 import type { ProviderName, User } from "./types.js";
@@ -35,7 +36,7 @@ export async function ensureUser(
   if (existing) return existing;
   const password = opts?.password ?? envPassword ?? "hub-of-me";
   const name = opts?.name ?? envName ?? "Peter";
-  const provider = (opts?.provider ?? (process.env.AI_PROVIDER as ProviderName) ?? "mock") as ProviderName;
+  const provider = opts?.provider ?? readEnvProvider().normalized ?? "mock";
   const user = await insertUser(db, { email, name, passwordHash: await hashPassword(password) });
   const usdToEur = Number(process.env.USD_TO_EUR ?? DEFAULT_USD_TO_EUR);
   await insertSettings(db, {
@@ -60,4 +61,19 @@ export async function ensureUser(
     via: "seed",
   });
   return user;
+}
+
+/** On every start, a recognized AI_PROVIDER replaces the stored Settings provider. */
+export async function applyEnvProvider(db: Db): Promise<void> {
+  const env = readEnvProvider();
+  if (!env.normalized) {
+    if (env.raw) console.warn(`AI_PROVIDER "${env.raw}" is not mock, anthropic, or gemini. Stored provider left as-is.`);
+    return;
+  }
+  const users = await listUsers(db);
+  if (users.length !== 1) return;
+  const settings = await getSettings(db, users[0].id);
+  if (settings.provider === env.normalized) return;
+  await updateSettings(db, { ...settings, provider: env.normalized });
+  console.log(`Settings provider updated from ${settings.provider} to ${env.normalized} because AI_PROVIDER is set.`);
 }

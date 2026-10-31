@@ -26,9 +26,56 @@ export function parseModel(spec: string, fallback: ProviderName): ResolvedModel 
 
 export function keysPresent(): { anthropic: boolean; gemini: boolean } {
   return {
-    anthropic: Boolean(process.env.ANTHROPIC_API_KEY),
-    gemini: Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY),
+    anthropic: Boolean(process.env.ANTHROPIC_API_KEY?.trim()),
+    gemini: Boolean(process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim()),
   };
+}
+
+export function readEnvProvider(): { raw: string | null; normalized: ProviderName | null } {
+  const raw = process.env.AI_PROVIDER;
+  if (raw == null || raw.trim() === "") return { raw: null, normalized: null };
+  const trimmed = raw.trim();
+  const normalized = trimmed.toLowerCase();
+  if (normalized === "mock" || normalized === "anthropic" || normalized === "gemini") {
+    return { raw: trimmed, normalized };
+  }
+  return { raw: trimmed, normalized: null };
+}
+
+export interface ProviderReport {
+  active: ProviderName;
+  why: string;
+  envAiProvider: string | null;
+  envNormalized: ProviderName | null;
+  settingsProvider: ProviderName;
+  keys: { anthropic: boolean; gemini: boolean };
+}
+
+/** Explains which provider calls use. Key values are never included. */
+export function providerReport(settingsProvider: ProviderName): ProviderReport {
+  const env = readEnvProvider();
+  const keys = keysPresent();
+  const active = settingsProvider;
+  let why: string;
+  if (env.raw == null) {
+    why = `AI_PROVIDER is unset. Calls use the Settings provider (${active}).`;
+  } else if (!env.normalized) {
+    why = `AI_PROVIDER is "${env.raw}", which is not mock, anthropic, or gemini. Calls use the Settings provider (${active}).`;
+  } else if (env.normalized === active) {
+    why = `AI_PROVIDER is ${env.normalized}, and Settings matches it. Calls use ${active}.`;
+  } else {
+    why = `Settings is ${active}. AI_PROVIDER is ${env.normalized}. Saving Settings applies until the next start, which writes AI_PROVIDER again.`;
+  }
+  if (active === "anthropic" && !keys.anthropic) {
+    why += " ANTHROPIC_API_KEY is missing, so a call fails instead of falling back to mock.";
+  }
+  if (active === "gemini" && !keys.gemini) {
+    why += " GEMINI_API_KEY is missing, so a call fails instead of falling back to mock.";
+  }
+  if (active === "mock" && (keys.anthropic || keys.gemini)) {
+    why += " A real key is present, but calls stay on mock until Settings or AI_PROVIDER selects that provider.";
+  }
+  return { active, why, envAiProvider: env.raw, envNormalized: env.normalized, settingsProvider, keys };
 }
 
 export function resolveRoleModel(settings: Settings, req: Pick<AiRequest, "role" | "debaterIndex">): ResolvedModel {
@@ -82,18 +129,21 @@ export class Router {
     let text: string;
     let usage: AiResult["usage"];
     if (resolved.provider === "mock") {
+      if (this.settings.provider !== "mock") {
+        throw new Error(`Refusing to use the mock provider while Settings selects ${this.settings.provider}.`);
+      }
       const mock = this.deps.mock ?? new MockProvider();
       const result = await mock.complete(withModel);
       text = result.text;
       usage = result.usage;
     } else if (resolved.provider === "anthropic") {
-      const apiKey = process.env.ANTHROPIC_API_KEY;
+      const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
       if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set.");
       const result = await anthropicComplete(withModel, apiKey, this.deps.fetchImpl);
       text = result.text;
       usage = result.usage;
     } else if (resolved.provider === "gemini") {
-      const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+      const apiKey = process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim();
       if (!apiKey) throw new Error("GEMINI_API_KEY is not set.");
       const result = await geminiComplete(withModel, apiKey, this.deps.fetchImpl);
       text = result.text;

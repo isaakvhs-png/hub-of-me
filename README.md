@@ -79,7 +79,9 @@ AI_PROVIDER=anthropic
 ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-Restart, sign in, and on Settings choose Anthropic. Defaults:
+Restart, sign in, and open Settings. The page names the provider calls actually use. `AI_PROVIDER` is read on every start (trimmed and lowercased). When it is `mock`, `anthropic`, or `gemini`, that value is written onto the stored Settings provider. A first boot that happened before the variable was set left `mock` in the database, and later calls kept using it even after the key was present. Settings only reported that the key existed. Saving a different provider in Settings applies immediately and lasts until the next start, which writes `AI_PROVIDER` again when it is set. A real call that fails is shown on the dump and recorded in the log. It is not replaced with the mock provider.
+
+Defaults:
 
 | Role | Model |
 | --- | --- |
@@ -94,13 +96,28 @@ Gemini on its own: `AI_PROVIDER=gemini` and `GEMINI_API_KEY`. Set the cheap and 
 
 List prices were taken on 31 Oct 2026 from [Anthropic](https://platform.claude.com/docs/en/about-claude/pricing) and [Gemini](https://ai.google.dev/gemini-api/docs/pricing). The euro figure is those dollar prices times `USD_TO_EUR` (default `0.8959`, the rate that day). Change the rate when it moves. The cap defaults to €20 (`MONTHLY_CAP_EUR_CENTS=2000`). When the month's recorded spend reaches the cap, further calls stop.
 
+## Diagnostics
+
+Read-only, for an assistant looking at this deployment. The routes exist only when `DIAGNOSTICS_TOKEN` is set. Otherwise each path is 404. Send `Authorization: Bearer <token>`. The compare is constant-time. Only GET is served. Any other method is 405, with or without a token. A missing or wrong token is 401. Bodies say whether a key is present. They do not include key values, `DATABASE_URL`, or the token.
+
+| Method and path | What it returns |
+| --- | --- |
+| `GET /api/diag/config` | Active provider and why: the `AI_PROVIDER` value, the stored Settings provider, and a boolean for each key. Also the model each role would call. |
+| `GET /api/diag/health` | This month's usage per call, with provider and model, grouped by day, conversation, and job. |
+| `GET /api/diag/recent` | Recent dumps, filed notes, AI calls (provider and model), and failures. `limit` is 1–100, default 20. |
+| `GET /api/diag/debates` | Recent debates with sides, models, and verdicts. Same `limit`. |
+| `GET /api/diag/soul` | Current soul and the version list. |
+| `GET /api/diag/errors` | Recent server errors, failed jobs, and failure lines from the action log. Same `limit`. |
+
+There is no write route under `/api/diag`.
+
 ## Tests
 
 ```bash
 npm test
 ```
 
-They cover the mock path (dump, filing, versions, debate, judge, soul update, usage taken from the provider response), hedge send-back, the uncomfortable side, anonymised judge order, boundary enforcement (no delete, no send, read-only Gmail, no private text in search, no signing in), the budget cap, for-now expiry, undo, Word import, startup sync of the single account from `USER_EMAIL` and `USER_PASSWORD`, and changing the password in Settings.
+They cover the mock path (dump, filing, versions, debate, judge, soul update, usage taken from the provider response), hedge send-back, the uncomfortable side, anonymised judge order, boundary enforcement (no delete, no send, read-only Gmail, no private text in search, no signing in), the budget cap, for-now expiry, undo, Word import, startup sync of the single account from `USER_EMAIL` and `USER_PASSWORD`, changing the password in Settings, startup adoption of `AI_PROVIDER` (including a failed real call that is not replaced with mock), and the read-only diagnostics routes.
 
 ## Deploy
 
@@ -125,7 +142,7 @@ The app deploys from the GitHub repo [isaakvhs-png/hub-of-me](https://github.com
 | `USER_EMAIL` | your email |
 | `USER_PASSWORD` | a real password. On every start, when this and `USER_EMAIL` are both set, they replace the single account's email and password. Notes stay on that account. A password changed in Settings lasts only until the next start. |
 | `USER_NAME` | Peter. Applied on that same start when set; otherwise the stored name stays. |
-| `AI_PROVIDER` | `mock` until a key is set, then `anthropic` |
+| `AI_PROVIDER` | `mock`, `anthropic`, or `gemini`. Trimmed and lowercased on every start, then written onto the Settings provider. A saved Settings choice applies until that next start. |
 | `ANTHROPIC_API_KEY` | the key, or leave empty |
 | `GEMINI_API_KEY` | optional |
 | `USD_TO_EUR` | `0.8959` or today's rate |
@@ -134,6 +151,7 @@ The app deploys from the GitHub repo [isaakvhs-png/hub-of-me](https://github.com
 | `GOOGLE_CLIENT_ID` | only if you link Gmail |
 | `GOOGLE_CLIENT_SECRET` | only if you link Gmail |
 | `SEARCH_ENABLED` | `true` to allow web search after the privacy guard |
+| `DIAGNOSTICS_TOKEN` | optional. When set, the read-only diagnostics routes below accept `Authorization: Bearer <token>`. When unset, those routes are 404. |
 
 `npm start` sets `NODE_ENV=production` and listens on Render's `PORT`.
 

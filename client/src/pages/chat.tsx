@@ -75,8 +75,8 @@ export function ChatPage() {
       setText("");
       setLive("");
       await loadLists();
-      if (result.filingError) setError(result.filingError);
-      if (result.reflection && "error" in result.reflection && result.reflection.error) setError(result.reflection.error);
+      const problems = [result.filingError, result.reflection && "error" in result.reflection ? result.reflection.error : null].filter(Boolean);
+      if (problems.length) setError(problems.join(" "));
       window.hubDesktop?.notify("Filed", result.notes[0]?.title || "The dump is in.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "The dump did not land.");

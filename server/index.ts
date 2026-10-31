@@ -9,7 +9,7 @@ import { MockProvider } from "../src/ai/mock.js";
 import { Router } from "../src/ai/router.js";
 import { runNightly } from "../src/pipeline/jobs.js";
 import { getSettings } from "../src/repo.js";
-import { ensureUser } from "../src/seed.js";
+import { applyEnvProvider, ensureUser } from "../src/seed.js";
 import { zonedParts } from "../src/time.js";
 import { createApp } from "./app.js";
 
@@ -17,6 +17,7 @@ const port = Number(process.env.PORT ?? process.env.HUB_PORT ?? (process.env.NOD
 const db = await createDb();
 await migrate(db);
 await ensureUser(db);
+await applyEnvProvider(db);
 
 const app = createApp(db);
 const dist = join(process.cwd(), "client", "dist");

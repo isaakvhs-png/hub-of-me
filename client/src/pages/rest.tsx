@@ -289,7 +289,7 @@ function Ledger({ title, rows }: { title: string; rows: Health["byDay"] }) {
 }
 
 export function SettingsPage() {
-  const [state, setState] = useState<{ settings: { provider: string; cheapModel: string; strongModel: string; judgeModel: string; alternateModel: string; localCategories: string[]; forNowTtlHours: number; dictationLang: string; usdToEur: number }; budget: { monthlyCapEurCents: number }; gmail: { scopes: string[]; enabled: boolean }; keys: { anthropic: boolean; gemini: boolean } } | null>(null);
+  const [state, setState] = useState<{ settings: { provider: string; cheapModel: string; strongModel: string; judgeModel: string; alternateModel: string; localCategories: string[]; forNowTtlHours: number; dictationLang: string; usdToEur: number }; budget: { monthlyCapEurCents: number }; gmail: { scopes: string[]; enabled: boolean }; keys: { anthropic: boolean; gemini: boolean }; providerChoice: { active: string; why: string; envAiProvider: string | null } } | null>(null);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
@@ -306,12 +306,13 @@ export function SettingsPage() {
       <div className="mt-6 space-y-4">
         <div>
           <Label>Provider</Label>
+          <p className="mt-1 text-sm">Calls use {state.providerChoice.active}.</p>
           <select className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3" value={settings.provider} onChange={(event) => patch({ provider: event.target.value })}>
             <option value="mock">Mock (no key)</option>
             <option value="anthropic">Anthropic</option>
             <option value="gemini">Gemini</option>
           </select>
-          <p className="mt-1 text-xs text-muted-foreground">Anthropic key {state.keys.anthropic ? "is set" : "is missing"}. Gemini key {state.keys.gemini ? "is set" : "is missing"}.</p>
+          <p className="mt-1 text-xs text-muted-foreground">{state.providerChoice.why} Anthropic key {state.keys.anthropic ? "is set" : "is missing"}. Gemini key {state.keys.gemini ? "is set" : "is missing"}. A saved choice applies now. If AI_PROVIDER is set, the next start writes that value again. A failed real call is shown here and in the log. It is not replaced with mock.</p>
         </div>
         {(["cheapModel", "strongModel", "judgeModel", "alternateModel"] as const).map((key) => (
           <div key={key}>

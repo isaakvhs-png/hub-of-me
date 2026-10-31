@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Hono } from "hono";
 import { z } from "zod";
+import { keysPresent, providerReport } from "../src/ai/router.js";
 import { MockProvider } from "../src/ai/mock.js";
 import { Router } from "../src/ai/router.js";
 import { toDocx } from "../src/docx-export.js";
@@ -73,6 +74,8 @@ import {
 } from "../src/repo.js";
 import { changeSoul, undoSoul } from "../src/soul.js";
 import type { Settings } from "../src/types.js";
+import { mountDiagnostics } from "./diag.js";
+import { recordServerError } from "./error-log.js";
 import { clearSession, hashToken, readSession, writeSession } from "./session.js";
 
 const sharedMock = new MockProvider();
@@ -91,20 +94,23 @@ export function createApp(db: Db) {
 
   app.onError((error, c) => {
     const message = error instanceof Error ? error.message : "Something went wrong.";
-    if (error instanceof BoundaryError) return c.json({ error: message }, 403);
-    if (error instanceof BudgetError) return c.json({ error: message }, 402);
-    if (error instanceof UnpricedModelError || error instanceof UsageMissingError || error instanceof ValidationError) {
-      return c.json({ error: message }, 422);
-    }
+    const status =
+      error instanceof BoundaryError ? 403 : error instanceof BudgetError ? 402 : error instanceof UnpricedModelError || error instanceof UsageMissingError || error instanceof ValidationError ? 422 : 500;
+    recordServerError({ at: new Date().toISOString(), method: c.req.method, path: c.req.path, status, message });
+    if (status === 403) return c.json({ error: message }, 403);
+    if (status === 402) return c.json({ error: message }, 402);
+    if (status === 422) return c.json({ error: message }, 422);
     console.error(error);
     return c.json({ error: message }, 500);
   });
 
   app.get("/api/healthz", (c) => c.json({ ok: true }));
 
+  mountDiagnostics(app, db);
+
   app.use("/api/*", async (c, next) => {
     const path = c.req.path;
-    if (path === "/api/auth/login" || path === "/api/healthz") return next();
+    if (path === "/api/auth/login" || path === "/api/healthz" || path.startsWith("/api/diag")) return next();
     const raw = readSession(c);
     if (!raw) return c.json({ error: "Sign in." }, 401);
     const userId = await userIdForToken(db, hashToken(raw));
@@ -447,7 +453,8 @@ export function createApp(db: Db) {
       settings,
       budget,
       gmail: { enabled: Boolean(moduleRow?.enabled), linked: Boolean((moduleRow?.config as { refreshToken?: string } | undefined)?.refreshToken), scopes: gmailModule.scopes },
-      keys: { anthropic: Boolean(process.env.ANTHROPIC_API_KEY), gemini: Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) },
+      keys: keysPresent(),
+      providerChoice: providerReport(settings.provider),
     });
   });
 

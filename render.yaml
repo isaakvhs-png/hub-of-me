@@ -41,3 +41,5 @@ services:
         sync: false
       - key: SEARCH_ENABLED
         sync: false
+      - key: DIAGNOSTICS_TOKEN
+        sync: false
