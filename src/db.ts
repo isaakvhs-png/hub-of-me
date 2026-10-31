@@ -129,6 +129,37 @@ export async function migrate(db: Db): Promise<void> {
       error TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )`,
+    `ALTER TABLE info_requests ADD COLUMN IF NOT EXISTS subject TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE info_requests ADD COLUMN IF NOT EXISTS context TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE info_requests ADD COLUMN IF NOT EXISTS debate_id TEXT`,
+    `CREATE TABLE IF NOT EXISTS evidence_quotes (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      debate_id TEXT,
+      quote TEXT NOT NULL,
+      source TEXT NOT NULL,
+      source_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`,
+    `CREATE TABLE IF NOT EXISTS debate_lessons (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      debate_id TEXT NOT NULL,
+      text TEXT NOT NULL,
+      destination TEXT NOT NULL,
+      soul_version INTEGER,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`,
+    `CREATE TABLE IF NOT EXISTS carried_forward (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      debate_id TEXT,
+      lesson_id TEXT,
+      kind TEXT NOT NULL,
+      text TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`,
     `INSERT INTO debate_feedback (id, user_id, debate_id, body, status, created_at)
      SELECT d.id || '-legacy-feedback', d.user_id, d.id, d.user_feedback, 'done', d.created_at
      FROM debates d

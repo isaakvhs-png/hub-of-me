@@ -10,9 +10,14 @@ import { eur, when } from "@/lib/utils";
 
 export function BriefPage() {
   const [briefs, setBriefs] = useState<{ id: string; content: string; why: string; createdAt: string }[]>([]);
+  const [carried, setCarried] = useState<{ id: string; kind: string; text: string; debateId: string | null; debateQuestion: string | null }[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  async function reload() { setBriefs(await api("/api/brief")); }
+  async function reload() {
+    const [nextBriefs, nextCarried] = await Promise.all([api<typeof briefs>("/api/brief"), api<typeof carried>("/api/carried")]);
+    setBriefs(nextBriefs);
+    setCarried(nextCarried);
+  }
   useEffect(() => { reload().catch((err) => setError(err.message)); }, []);
   async function write() {
     setBusy(true);
@@ -28,6 +33,18 @@ export function BriefPage() {
         <Button onClick={() => void write()} disabled={busy}>{busy ? "Writing…" : "Write one"}</Button>
       </div>
       {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
+      <h2 className="mt-8 font-serif text-2xl">Carried forward</h2>
+      <p className="mt-1 text-sm text-muted-foreground">Open actions and memory from debates. Conversation and the brief can use them. When a reply uses one, Why records it.</p>
+      <div className="mt-4 space-y-3">
+        {carried.length === 0 ? <p className="text-sm text-muted-foreground">Nothing carried yet.</p> : null}
+        {carried.map((item) => (
+          <Card key={item.id} className="p-4">
+            <div className="text-xs uppercase tracking-wide text-muted-foreground">{item.kind}</div>
+            <p className="mt-1">{item.text}</p>
+            {item.debateId ? <Link className="mt-2 inline-block text-sm text-primary" to={`/debates/${item.debateId}`}>{item.debateQuestion || "From a debate"}</Link> : null}
+          </Card>
+        ))}
+      </div>
       <div className="mt-6 space-y-4">
         {briefs.length === 0 ? <p className="text-sm text-muted-foreground">No brief yet. Ask for one whenever you want the day in one page.</p> : null}
         {briefs.map((brief) => (
@@ -42,7 +59,7 @@ export function BriefPage() {
 }
 
 export function AsksPage() {
-  const [asks, setAsks] = useState<{ id: string; question: string; why: string; status: string; answer: string | null }[]>([]);
+  const [asks, setAsks] = useState<{ id: string; question: string; why: string; status: string; answer: string | null; subject?: string; context?: string; debateId?: string | null }[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   async function reload() { setAsks(await api("/api/asks")); }
@@ -64,8 +81,11 @@ export function AsksPage() {
         {open.length === 0 ? <p className="text-sm text-muted-foreground">Nothing waiting. That is allowed.</p> : null}
         {open.map((ask) => (
           <Card key={ask.id} className="p-4">
-            <div className="font-serif text-2xl">{ask.question}</div>
+            <div className="text-xs uppercase tracking-wide text-muted-foreground">{ask.subject || "Ask"}</div>
+            <div className="mt-1 font-serif text-2xl">{ask.question}</div>
+            {ask.context ? <p className="mt-2 text-sm">{ask.context}</p> : null}
             <p className="mt-2 text-sm text-muted-foreground">{ask.why}</p>
+            {ask.debateId ? <Link className="mt-2 inline-block text-sm text-primary" to={`/debates/${ask.debateId}`}>From the debate</Link> : null}
             <Textarea className="mt-3" value={drafts[ask.id] ?? ""} onChange={(event) => setDrafts({ ...drafts, [ask.id]: event.target.value })} placeholder="Your answer" />
             <div className="mt-3 flex flex-wrap gap-2">
               <Button size="sm" onClick={() => void act(ask.id, "answer", drafts[ask.id])}>Answer</Button>
@@ -79,7 +99,7 @@ export function AsksPage() {
   );
 }
 
-interface DebateRow { id: string; question: string; status: string; whyWon: string | null; loserGotRight: string | null; closeCall: boolean; commitment: string | null; createdAt: string; userFeedback: string | null; mockEra?: boolean; judgeModel?: string | null }
+interface DebateRow { id: string; question: string; status: string; whyWon: string | null; loserGotRight: string | null; closeCall: boolean; commitment: string | null; createdAt: string; userFeedback: string | null; mockEra?: boolean; judgeModel?: string | null; winnerSideId?: string | null }
 interface DebateFeedbackItem { id: string; body: string; status: string; createdAt: string; ledToDebateId: string | null; ledToQuestion: string | null; soulVersion: number | null; soulReason: string | null; error: string | null }
 interface DebateView {
   debate: DebateRow;
@@ -87,6 +107,8 @@ interface DebateView {
   predictions: { id: string; prediction: string; cameTrue: boolean | null; outcome: string | null }[];
   feedback: DebateFeedbackItem[];
   triggeredBy: { debateId: string; question: string; feedback: string } | null;
+  lessons: { id: string; text: string; destination: string; soulVersion: number | null }[];
+  evidence: { id: string; quote: string; source: string }[];
 }
 
 export function DebatesPage() {
@@ -177,6 +199,29 @@ export function DebatePage() {
     <div>
       <Link to="/debates" className="text-xs uppercase tracking-wide text-muted-foreground">All debates</Link>
       <h1 className="mt-2 font-serif text-4xl italic">{data.debate.question}</h1>
+      {data.sides.find((side) => side.id === data.debate.winnerSideId) ? (
+        <p className="mt-4 max-w-2xl text-lg"><span className="mr-2 text-xs uppercase tracking-wide text-muted-foreground">Winner</span>{data.sides.find((side) => side.id === data.debate.winnerSideId)?.position}</p>
+      ) : null}
+      {data.lessons?.length ? (
+        <div className="mt-6 max-w-2xl">
+          <h2 className="font-serif text-2xl">Lessons</h2>
+          <ul className="mt-3 space-y-3">
+            {data.lessons.map((lesson) => (
+              <li key={lesson.id} className="text-sm">
+                <span className="text-xs uppercase tracking-wide text-muted-foreground">{lesson.destination === "soul" ? (lesson.soulVersion ? <Link className="text-primary" to="/soul">soul v{lesson.soulVersion}</Link> : "soul") : lesson.destination}</span>
+                <div className="mt-1">{lesson.text}</div>
+              </li>
+            ))}
+          </ul>
+          {data.evidence?.length ? (
+            <div className="mt-4 space-y-2">
+              {data.evidence.map((quote) => (
+                <blockquote key={quote.id} className="border-l-2 border-border pl-3 text-sm text-muted-foreground">“{quote.quote}” <span className="uppercase tracking-wide">{quote.source}</span></blockquote>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {data.triggeredBy ? (
         <div className="mt-4 max-w-2xl border-l-2 border-primary pl-3 text-sm">
           <p>Started because of your feedback on <Link className="text-primary" to={`/debates/${data.triggeredBy.debateId}`}>{data.triggeredBy.question}</Link></p>

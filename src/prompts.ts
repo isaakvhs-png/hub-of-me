@@ -4,7 +4,7 @@ Do not attach confidence scores, percentages, or certainty gauges.
 Code already enforces the hard boundaries: no sending, no deleting, no private details in web search, no signing in for him. Drafting is allowed. The in-app calendar may be written.
 Return only what this task asks for. No preamble.`;
 
-export function conversationPrompt(input: { soul: string; notes: string; name: string }): string {
+export function conversationPrompt(input: { soul: string; notes: string; name: string; carried?: string }): string {
   return `${PREAMBLE}
 ROLE: conversation
 You are his thinking partner. Work from the soul and the few notes below, not from everything he ever said.
@@ -19,7 +19,11 @@ NOTES:
 ${input.notes || "(none yet)"}
 END NOTES
 
-His name is ${input.name}.`;
+His name is ${input.name}.
+
+CARRIED FORWARD (open actions and memory from debates). If you rely on one, add a final line Used: <id> and no other markup.
+${input.carried || "(none)"}
+END CARRIED`;
 }
 
 export function criticPrompt(soul: string): string {
@@ -121,7 +125,8 @@ You are not a debater. The arguments are anonymous and in an order that is not m
 Pick one winner. Do not seek consensus, a middle, or an average.
 Say why it won, and what the losing side got right.
 If HIS WORDS name a fact, do not call that fact unsupported just because the soul omits it. His words are evidence. They are not one of the anonymous sides.
-Return JSON: {"winner":"A","why":"","loserGotRight":"","closeCall":false}
+Return JSON: {"winner":"A","why":"","loserGotRight":"","closeCall":false,"lessons":[{"text":"","destination":"soul"}]}
+lessons are concrete takeaways. destination is soul only for a general principle, action for a next step, memory for a fact later conversations should remember. Include one lesson from the winner and one from what the losing side got right.
 
 CURRENT SOUL:
 ${input.soul}
@@ -154,9 +159,10 @@ ROLE: reflection
 TASK: commit
 The debate is already decided. Commit the strategy. The commitment field must contain this sentence shape and no hedge: this matters most now, because X, at the cost of Y.
 If the soul should change, do not return the whole document. Return sections to merge: an array of {heading, body}. Required sections that must stay are "How this system thinks", "Values and long-term direction", "Goals", "Current strategy", and "Personality". Return only the sections you are changing. To record the commitment, use the heading "Last reflection". Omitting a required heading leaves it as it is. A reply that is only the last reflection is rejected. A single dump is a weak reason to rewrite values.
+The soul states general principles. Do not copy his sentences, names, or scenes into it. Put his exact words in evidence as quotes. An ask must name its subject, and the question and context must not say this, that, or it unless that subject is written out in the same text. Context is one sentence: which decision, what is missing, and why it matters.
 Preference rules must be general understandings. Keep the samples as evidence ids, and do not copy a complaint into the rule.
 Do not re-ask anything in NEVER ASK.
-Return JSON with commitment, optional soul {content, reason}, picture, preferenceRules, infoRequests, predictions, predictionChecks, conflictsResolved.
+Return JSON with commitment, optional soul {reason, sections}, optional evidence [{quote, source}], picture, preferenceRules, infoRequests [{subject, question, context, why}], predictions, predictionChecks, conflictsResolved.
 
 CURRENT SOUL:
 ${input.soul}
@@ -237,7 +243,7 @@ ${input.notes || "(none)"}
 END NOTES`;
 }
 
-export function briefPrompt(input: { soul: string; recent: string; waiting: string }): string {
+export function briefPrompt(input: { soul: string; recent: string; waiting: string; carried?: string }): string {
   return `${PREAMBLE}
 ROLE: conversation
 TASK: brief
@@ -253,7 +259,11 @@ END RECENT
 
 WAITING:
 ${input.waiting || "(nothing queued)"}
-END WAITING`;
+END WAITING
+
+CARRIED FORWARD:
+${input.carried || "(none)"}
+END CARRIED`;
 }
 
 export function section(text: string, name: string): string {

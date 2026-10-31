@@ -49,7 +49,12 @@ describe("debate conditions", () => {
       {
         commitment: "This matters most now, because the bet can be checked, at the cost of leaving it open.",
         predictionChecks: [{ id: predictionId, cameTrue: false, observed: "He moved on." }],
-        infoRequests: [{ question: "What would you put down to stay with this?", why: "Need a cost." }],
+        infoRequests: [{
+          subject: "keeping the latest dump in view",
+          question: "What would you put down to stay with keeping the latest dump in view?",
+          context: "The debate committed to keeping the latest dump visible, and the record does not name what that costs.",
+          why: "A commitment without a named cost is not a decision yet.",
+        }],
       },
       null,
     );

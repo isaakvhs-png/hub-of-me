@@ -15,9 +15,11 @@ import {
   insertNote,
   insertSource,
   listNoteVersions,
+  listOpenCarried,
   logAction,
   reviseNote,
 } from "../repo.js";
+import { takeCarriedCitations } from "../wording.js";
 import { criticSchema, filingSchema } from "../schemas.js";
 import type { Note } from "../types.js";
 import { loadVisibleNotes, renderNotes } from "./context.js";
@@ -48,13 +50,15 @@ export async function runDump(db: Db, ai: Router, userId: string, input: { text:
   const visible = await loadVisibleNotes(db, userId, settings);
   const meta = { conversationId, jobKind: "conversation" as const };
   const noteBlock = renderNotes(visible.notes);
+  const carried = await listOpenCarried(db, userId);
+  const carriedBlock = carried.map((item) => `${item.id} (${item.kind}) ${item.text}`).join("\n");
   let reply = await completeText(
     db,
     userId,
     ai,
     {
       role: "conversation",
-      system: conversationPrompt({ soul: soul.content, notes: noteBlock, name }),
+      system: conversationPrompt({ soul: soul.content, notes: noteBlock, name, carried: carriedBlock }),
       messages: [{ role: "user", content: `DUMP:\n${text}\nEND DUMP` }],
     },
     meta,
@@ -78,7 +82,7 @@ export async function runDump(db: Db, ai: Router, userId: string, input: { text:
       ai,
       {
         role: "conversation",
-        system: conversationPrompt({ soul: soul.content, notes: noteBlock, name }),
+        system: conversationPrompt({ soul: soul.content, notes: noteBlock, name, carried: carriedBlock }),
         messages: [
           { role: "user", content: `DUMP:\n${text}\nEND DUMP` },
           { role: "assistant", content: reply },
@@ -87,6 +91,18 @@ export async function runDump(db: Db, ai: Router, userId: string, input: { text:
       },
       meta,
     );
+  }
+  const cited = takeCarriedCitations(reply);
+  reply = cited.text;
+  for (const carriedId of cited.ids) {
+    const item = carried.find((entry) => entry.id === carriedId);
+    if (!item) continue;
+    await logAction(db, userId, {
+      what: "used carried forward",
+      why: String(item.text),
+      source: "conversation",
+      payload: { carriedId, debateId: item.debateId ?? null },
+    });
   }
   await addMessage(db, conversationId, "assistant", reply);
 

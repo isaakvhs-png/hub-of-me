@@ -63,6 +63,9 @@ import {
   setBudget,
   insertDebateFeedback,
   listDebateFeedback,
+  listEvidenceQuotes,
+  listLessons,
+  listOpenCarried,
   setPredictionOutcome,
   updateInfoRequest,
   updateSettings,
@@ -415,10 +418,12 @@ export function createApp(db: Db) {
     const userId = c.get("userId");
     const debate = await getDebate(db, userId, c.req.param("id"));
     if (!debate) return c.json({ error: "Debate not found." }, 404);
-    const [sides, feedback, predictions] = await Promise.all([
+    const [sides, feedback, predictions, lessons, evidence] = await Promise.all([
       listDebateSides(db, c.req.param("id")),
       listDebateFeedback(db, c.req.param("id")),
       listPredictions(db, userId),
+      listLessons(db, c.req.param("id")),
+      listEvidenceQuotes(db, c.req.param("id")),
     ]);
     let triggeredBy: { debateId: string; question: string; feedback: string } | null = null;
     if (debate.triggeredByDebateId) {
@@ -438,8 +443,12 @@ export function createApp(db: Db) {
       predictions: predictions.filter((item) => item.debateId === c.req.param("id")),
       feedback,
       triggeredBy,
+      lessons,
+      evidence,
     });
   });
+
+  app.get("/api/carried", async (c) => c.json(await listOpenCarried(db, c.get("userId"))));
 
   app.post("/api/debates/:id/rerun", async (c) => {
     const userId = c.get("userId");

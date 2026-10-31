@@ -89,6 +89,7 @@ export class MockProvider {
         why: "We should split the difference and seek consensus.",
         loserGotRight: "Both sides named a real cost.",
         closeCall: true,
+        lessons: [{ text: "A split decision is not a strategy.", destination: "memory" }],
       });
     }
     let winner = "A";
@@ -101,6 +102,10 @@ export class MockProvider {
       why: "It refuses to let a single dump erase a strategy that was already written down.",
       loserGotRight: "The dump would be lost if nobody kept it in view.",
       closeCall: false,
+      lessons: [
+        { text: "A written strategy outranks one unexplored dump.", destination: "soul" },
+        { text: "Keep the latest dump visible until it is taken up or archived.", destination: "memory" },
+      ],
     });
   }
 }
@@ -166,8 +171,10 @@ function commit(blob: string): string {
       : [],
     infoRequests: [
       {
-        question: "What would you put down to stay with this?",
-        why: "The commitment needs a real cost, and the record does not name one.",
+        subject: "keeping the latest dump in view",
+        question: "What would you put down to stay with keeping the latest dump in view?",
+        context: "The debate committed to keeping the latest dump visible, and the record does not name what that costs.",
+        why: "A commitment without a named cost is not a decision yet.",
       },
     ],
     predictions: ["The next dump returns to this same thread if it stays unexplored."],

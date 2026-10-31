@@ -57,11 +57,17 @@ export const argumentSchema = z.object({
   prediction: z.string().optional(),
 });
 
+export const lessonSchema = z.object({
+  text: z.string().min(1),
+  destination: z.enum(["soul", "action", "memory"]),
+});
+
 export const judgmentSchema = z.object({
   winner: z.string().regex(/^[A-D]$/),
   why: z.string().min(1),
   loserGotRight: z.string().min(1),
   closeCall: z.boolean(),
+  lessons: z.array(lessonSchema).min(1),
 });
 
 export const reflectionOutcomeSchema = z.object({
@@ -91,8 +97,18 @@ export const reflectionOutcomeSchema = z.object({
   infoRequests: z
     .array(
       z.object({
+        subject: z.string().min(1),
         question: z.string().min(1),
+        context: z.string().min(1),
         why: z.string().min(1),
+      }),
+    )
+    .optional(),
+  evidence: z
+    .array(
+      z.object({
+        quote: z.string().min(1),
+        source: z.enum(["feedback", "dump", "note"]),
       }),
     )
     .optional(),

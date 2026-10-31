@@ -528,10 +528,17 @@ export async function resolveConflict(db: Db, userId: string, conflictId: string
   await db.query(`UPDATE conflicts SET resolved_at = now(), resolution = $3 WHERE id = $1 AND user_id = $2 AND resolved_at IS NULL`, [conflictId, userId, resolution]);
 }
 
-export async function insertInfoRequest(db: Db, userId: string, question: string, why: string): Promise<string> {
+export async function insertInfoRequest(
+  db: Db,
+  userId: string,
+  input: { question: string; why: string; subject: string; context: string; debateId?: string | null },
+): Promise<string> {
   const requestId = id();
-  await db.query(`INSERT INTO info_requests (id, user_id, question, why, status) VALUES ($1,$2,$3,$4,'open')`, [requestId, userId, question, why]);
-  await logAction(db, userId, { what: "info request", why, source: "reflection", payload: { requestId, question } });
+  await db.query(
+    `INSERT INTO info_requests (id, user_id, question, why, subject, context, debate_id, status) VALUES ($1,$2,$3,$4,$5,$6,$7,'open')`,
+    [requestId, userId, input.question, input.why, input.subject, input.context, input.debateId ?? null],
+  );
+  await logAction(db, userId, { what: "info request", why: input.why, source: "reflection", payload: { requestId, question: input.question, subject: input.subject, debateId: input.debateId ?? null } });
   return requestId;
 }
 
@@ -541,6 +548,9 @@ export async function listInfoRequests(db: Db, userId: string): Promise<Row[]> {
     id: String(row.id),
     question: String(row.question),
     why: String(row.why),
+    subject: row.subject == null ? "" : String(row.subject),
+    context: row.context == null ? "" : String(row.context),
+    debateId: row.debate_id == null ? null : String(row.debate_id),
     status: String(row.status),
     answer: row.answer == null ? null : String(row.answer),
     postponeUntil: text(row.postpone_until),
@@ -553,6 +563,88 @@ export async function updateInfoRequest(db: Db, userId: string, requestId: strin
     `UPDATE info_requests SET status=$3, answer=$4, postpone_until=$5, updated_at=now() WHERE id=$1 AND user_id=$2`,
     [requestId, userId, patch.status, patch.answer ?? null, patch.postponeUntil ?? null],
   );
+}
+
+export async function insertEvidenceQuote(db: Db, userId: string, input: { debateId?: string | null; quote: string; source: string; sourceId?: string | null }): Promise<string> {
+  const quoteId = id();
+  await db.query(`INSERT INTO evidence_quotes (id, user_id, debate_id, quote, source, source_id) VALUES ($1,$2,$3,$4,$5,$6)`, [
+    quoteId,
+    userId,
+    input.debateId ?? null,
+    input.quote,
+    input.source,
+    input.sourceId ?? null,
+  ]);
+  return quoteId;
+}
+
+export async function listEvidenceQuotes(db: Db, debateId: string): Promise<Row[]> {
+  const result = await db.query(`SELECT * FROM evidence_quotes WHERE debate_id = $1 ORDER BY created_at`, [debateId]);
+  return result.rows.map((row) => ({
+    id: String(row.id),
+    quote: String(row.quote),
+    source: String(row.source),
+    sourceId: row.source_id == null ? null : String(row.source_id),
+    createdAt: iso(row.created_at),
+  }));
+}
+
+export async function insertLesson(db: Db, userId: string, input: { debateId: string; text: string; destination: string; soulVersion?: number | null }): Promise<string> {
+  const lessonId = id();
+  await db.query(`INSERT INTO debate_lessons (id, user_id, debate_id, text, destination, soul_version) VALUES ($1,$2,$3,$4,$5,$6)`, [
+    lessonId,
+    userId,
+    input.debateId,
+    input.text,
+    input.destination,
+    input.soulVersion ?? null,
+  ]);
+  return lessonId;
+}
+
+export async function listLessons(db: Db, debateId: string): Promise<Row[]> {
+  const result = await db.query(`SELECT * FROM debate_lessons WHERE debate_id = $1 ORDER BY created_at`, [debateId]);
+  return result.rows.map((row) => ({
+    id: String(row.id),
+    text: String(row.text),
+    destination: String(row.destination),
+    soulVersion: row.soul_version == null ? null : num(row.soul_version),
+    createdAt: iso(row.created_at),
+  }));
+}
+
+export async function stampSoulLessons(db: Db, debateId: string, soulVersion: number): Promise<void> {
+  await db.query(`UPDATE debate_lessons SET soul_version = $2 WHERE debate_id = $1 AND destination = 'soul' AND soul_version IS NULL`, [debateId, soulVersion]);
+}
+
+export async function insertCarried(db: Db, userId: string, input: { debateId?: string | null; lessonId?: string | null; kind: string; text: string }): Promise<string> {
+  const carriedId = id();
+  await db.query(`INSERT INTO carried_forward (id, user_id, debate_id, lesson_id, kind, text, status) VALUES ($1,$2,$3,$4,$5,$6,'open')`, [
+    carriedId,
+    userId,
+    input.debateId ?? null,
+    input.lessonId ?? null,
+    input.kind,
+    input.text,
+  ]);
+  await logAction(db, userId, { what: `carried ${input.kind}`, why: input.text, source: "reflection", payload: { carriedId, debateId: input.debateId ?? null, kind: input.kind } });
+  return carriedId;
+}
+
+export async function listOpenCarried(db: Db, userId: string): Promise<Row[]> {
+  const result = await db.query(
+    `SELECT c.*, d.question AS debate_question FROM carried_forward c LEFT JOIN debates d ON d.id = c.debate_id WHERE c.user_id = $1 AND c.status = 'open' ORDER BY c.created_at DESC`,
+    [userId],
+  );
+  return result.rows.map((row) => ({
+    id: String(row.id),
+    debateId: row.debate_id == null ? null : String(row.debate_id),
+    debateQuestion: row.debate_question == null ? null : String(row.debate_question),
+    kind: String(row.kind),
+    text: String(row.text),
+    status: String(row.status),
+    createdAt: iso(row.created_at),
+  }));
 }
 
 export async function enqueueReflection(db: Db, userId: string, noteId: string, reason: string): Promise<void> {

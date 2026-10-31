@@ -16,6 +16,7 @@ import {
   insertSource,
   listActions,
   listInfoRequests,
+  listOpenCarried,
   listNotes,
   logAction,
   openQueue,
@@ -168,12 +169,14 @@ export async function writeBrief(db: Db, ai: Router, userId: string): Promise<{ 
   const actions = await listActions(db, userId, 12);
   const waiting = await openQueue(db, userId);
   const asks = (await listInfoRequests(db, userId)).filter((item) => item.status === "open");
+  const carried = await listOpenCarried(db, userId);
   const content = await completeText(db, userId, ai, {
     role: "conversation",
     system: briefPrompt({
       soul: soul?.content ?? "",
       recent: actions.map((item) => `${item.what} — ${item.why}`).join("\n"),
-      waiting: [...waiting.map((item) => String(item.reason)), ...asks.map((item) => String(item.question))].join("\n"),
+      waiting: [...waiting.map((item) => String(item.reason)), ...asks.map((item) => `${item.subject ? `${item.subject}: ` : ""}${item.question}`)].join("\n"),
+      carried: carried.map((item) => `${item.kind}: ${item.text}`).join("\n"),
     }),
     messages: [{ role: "user", content: "Write the brief." }],
   }, { jobKind: "brief" });

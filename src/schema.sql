@@ -128,11 +128,45 @@ CREATE TABLE IF NOT EXISTS info_requests (
   user_id TEXT NOT NULL REFERENCES users(id),
   question TEXT NOT NULL,
   why TEXT NOT NULL,
+  subject TEXT NOT NULL DEFAULT '',
+  context TEXT NOT NULL DEFAULT '',
+  debate_id TEXT,
   status TEXT NOT NULL,
   answer TEXT,
   postpone_until TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS evidence_quotes (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  debate_id TEXT,
+  quote TEXT NOT NULL,
+  source TEXT NOT NULL,
+  source_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS debate_lessons (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  debate_id TEXT NOT NULL,
+  text TEXT NOT NULL,
+  destination TEXT NOT NULL,
+  soul_version INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS carried_forward (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  debate_id TEXT,
+  lesson_id TEXT,
+  kind TEXT NOT NULL,
+  text TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS conflicts (

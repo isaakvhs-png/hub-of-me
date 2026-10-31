@@ -10,9 +10,12 @@ import {
   finishJob,
   getSettings,
   getSoul,
+  insertCarried,
   insertDebate,
   insertDebateSide,
+  insertEvidenceQuote,
   insertInfoRequest,
+  insertLesson,
   insertPicture,
   insertPrediction,
   insertPreference,
@@ -31,6 +34,8 @@ import {
   updateDebateSide,
 } from "../repo.js";
 import { extractJson } from "../json.js";
+import { ValidationError } from "../errors.js";
+import { askProblem, copiedPhrase, looksLikeAction } from "../wording.js";
 import { argumentSchema, debatePlanSchema, judgmentSchema, reflectionOutcomeSchema, type ReflectionOutcome } from "../schemas.js";
 import { changeSoul, mergeSoulSections } from "../soul.js";
 import { loadVisibleNotes, partitionEvidence, renderNotes, scrubArgument, shuffle } from "./context.js";
@@ -73,10 +78,15 @@ export async function applyOutcome(db: Db, userId: string, debateId: string, out
     await insertPreference(db, userId, rule.statement, evidence);
   }
   for (const request of outcome.infoRequests ?? []) {
+    const problem = askProblem(request);
+    if (problem) throw new ValidationError(problem);
     const key = norm(request.question);
     if (never.has(key) || openQuestions.has(key)) continue;
-    await insertInfoRequest(db, userId, request.question, request.why);
+    await insertInfoRequest(db, userId, { ...request, debateId });
     openQuestions.add(key);
+  }
+  for (const quote of outcome.evidence ?? []) {
+    await insertEvidenceQuote(db, userId, { debateId, quote: quote.quote, source: quote.source });
   }
   for (const prediction of outcome.predictions ?? []) {
     await insertPrediction(db, userId, debateId, prediction);
@@ -227,6 +237,7 @@ export async function runReflection(
     const openPredictions = (await listPredictions(db, userId)).filter((item) => item.cameTrue == null);
     const openConflicts = (await listConflicts(db, userId)).filter((item) => !item.resolvedAt);
     const neverAsk = (await listInfoRequests(db, userId)).filter((item) => item.status === "never");
+    const verbatim = [opts.trigger?.feedback ?? "", ...dumps.map((dump) => dump.content)].filter((item) => item.trim().length > 0);
     const outcome = await completeJson(
       db,
       userId,
@@ -253,14 +264,43 @@ export async function runReflection(
         reject: (text) => {
           try {
             const data = reflectionOutcomeSchema.parse(extractJson(text));
-            return reflectionRejection(data.commitment);
+            const hedged = reflectionRejection(data.commitment);
+            if (hedged) return hedged;
+            for (const section of data.soul?.sections ?? []) {
+              const copied = copiedPhrase(`${section.heading}\n${section.body}`, verbatim);
+              if (copied) return `The soul copied his words ("${copied}"). Write a general principle and keep the quote as evidence.`;
+            }
+            for (const ask of data.infoRequests ?? []) {
+              const problem = askProblem(ask);
+              if (problem) return problem;
+            }
+            return null;
           } catch {
             return "missing commitment";
           }
         },
       },
     );
+    const soulBefore = soul.version;
     const soulVersion = await applyOutcome(db, userId, debateId, outcome, opts.causingMessageId);
+    if (soulVersion > soulBefore && opts.trigger) {
+      await insertEvidenceQuote(db, userId, { debateId, quote: opts.trigger.feedback, source: "feedback", sourceId: opts.trigger.feedbackId });
+    }
+    const lessons = [...judgment.lessons];
+    const loser = judgment.loserGotRight.trim();
+    const covered = lessons.some((lesson) => loser && (lesson.text.includes(loser.slice(0, 48)) || loser.includes(lesson.text.slice(0, 48))));
+    if (loser && !covered) lessons.push({ text: loser, destination: looksLikeAction(loser) ? "action" : "memory" });
+    for (const lesson of lessons) {
+      const lessonId = await insertLesson(db, userId, {
+        debateId,
+        text: lesson.text,
+        destination: lesson.destination,
+        soulVersion: lesson.destination === "soul" && soulVersion > soulBefore ? soulVersion : null,
+      });
+      if (lesson.destination === "action" || lesson.destination === "memory") {
+        await insertCarried(db, userId, { debateId, lessonId, kind: lesson.destination, text: lesson.text });
+      }
+    }
     await concludeDebate(db, debateId, {
       status: "concluded",
       winnerSideId: winner.sideId,
