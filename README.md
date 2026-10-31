@@ -104,7 +104,7 @@ They cover the mock path (dump, filing, versions, debate, judge, soul update, us
 
 ## Deploy
 
-Neon for Postgres and Render for the web process both have free tiers. Fly.io works the same way if you prefer it.
+The app deploys from the GitHub repo [isaakvhs-png/hub-of-me](https://github.com/isaakvhs-png/hub-of-me), branch `main`. Neon holds Postgres. Render runs the free web service described in `render.yaml` (build `npm install && npm run build`, start `npm start`). That file lists the env var names and no values. Fill them in the Render dashboard. Do not commit secrets.
 
 ### 1. Postgres
 
@@ -113,11 +113,9 @@ Neon for Postgres and Render for the web process both have free tiers. Fly.io wo
 
 ### 2. Web service on Render
 
-1. New Web Service, connect this repo.
-2. Environment: Node.
-3. Build command: `npm install && npm run build`
-4. Start command: `npm start`
-5. Environment variables:
+1. In Render, New Blueprint (or New Web Service) and connect [github.com/isaakvhs-png/hub-of-me](https://github.com/isaakvhs-png/hub-of-me), branch `main`.
+2. `render.yaml` already sets a free Node web service, the build command, and the start command. If you create the service by hand instead, use build `npm install && npm run build` and start `npm start`.
+3. Environment variables (names only; set the values in Render, not in git):
 
 | Name | Value |
 | --- | --- |
@@ -132,12 +130,14 @@ Neon for Postgres and Render for the web process both have free tiers. Fly.io wo
 | `GEMINI_API_KEY` | optional |
 | `USD_TO_EUR` | `0.8959` or today's rate |
 | `MONTHLY_CAP_EUR_CENTS` | `2000` |
-| `PUBLIC_URL` | `https://your-service.onrender.com` |
-| `HUB_PORT` | Render sets `PORT`. Set the start command to `HUB_PORT=$PORT npm start` if Render's port is not 43123. |
+| `PUBLIC_URL` | the Render service URL, once it exists |
+| `GOOGLE_CLIENT_ID` | only if you link Gmail |
+| `GOOGLE_CLIENT_SECRET` | only if you link Gmail |
+| `SEARCH_ENABLED` | `true` to allow web search after the privacy guard |
 
-`npm start` listens on `PORT` if the host set one, otherwise `HUB_PORT`, otherwise **43123**. Render's `PORT` is picked up.
+`npm start` sets `NODE_ENV=production` and listens on Render's `PORT`.
 
-6. Open the service URL, sign in, and install the PWA from the browser menu.
+4. Open the service URL, sign in, and install the PWA from the browser menu.
 
 The free Render instance sleeps when idle. The first request after that is slow. Data stays in Neon. Uploaded audio is on the instance disk (`data/recordings`) and does not survive a redeploy; the transcript does, because it is in Postgres.
 

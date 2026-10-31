@@ -1,0 +1,43 @@
+# Render Blueprint for Hub of Me.
+# Connect this file's GitHub repo (https://github.com/isaakvhs-png/hub-of-me), branch main.
+# Env vars are listed with no values. Fill them in the Render dashboard. Do not commit secrets.
+services:
+  - type: web
+    name: hub-of-me
+    runtime: node
+    plan: free
+    branch: main
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/healthz
+    envVars:
+      - key: NODE_ENV
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: USER_EMAIL
+        sync: false
+      - key: USER_PASSWORD
+        sync: false
+      - key: USER_NAME
+        sync: false
+      - key: AI_PROVIDER
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: USD_TO_EUR
+        sync: false
+      - key: MONTHLY_CAP_EUR_CENTS
+        sync: false
+      - key: PUBLIC_URL
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: SEARCH_ENABLED
+        sync: false
