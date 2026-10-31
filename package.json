@@ -1,0 +1,85 @@
+{
+  "name": "hub-of-me",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "desktop/main.cjs",
+  "scripts": {
+    "dev": "concurrently -k -n api,web \"HUB_PORT=43124 tsx watch server/index.ts\" \"vite\"",
+    "start": "NODE_ENV=production tsx server/index.ts",
+    "build": "vite build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "desktop": "electron desktop/main.cjs",
+    "desktop:pack": "electron-builder --dir",
+    "icons": "node scripts/icons.mjs"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.3.14",
+    "@hono/node-server": "^1.19.6",
+    "docx": "^9.5.1",
+    "hono": "^4.10.4",
+    "mammoth": "^1.11.0",
+    "pg": "^8.16.3",
+    "tsx": "^4.20.6",
+    "unpdf": "^1.4.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-label": "^2.1.7",
+    "@radix-ui/react-scroll-area": "^1.2.10",
+    "@radix-ui/react-separator": "^1.1.7",
+    "@radix-ui/react-slot": "^1.2.3",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@types/pg": "^8.15.5",
+    "@types/react": "^18.3.26",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.7.0",
+    "autoprefixer": "^10.4.21",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "concurrently": "^9.2.1",
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
+    "lucide-react": "^0.468.0",
+    "pdf-lib": "^1.17.1",
+    "postcss": "^8.5.6",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.1",
+    "tailwind-merge": "^2.6.0",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.1",
+    "vite-plugin-pwa": "^0.21.2",
+    "vitest": "^3.2.4"
+  },
+  "build": {
+    "appId": "me.hubof.app",
+    "productName": "Hub of Me",
+    "directories": {
+      "output": "desktop-dist"
+    },
+    "files": [
+      "desktop/**/*",
+      "package.json"
+    ],
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    }
+  }
+}

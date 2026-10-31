@@ -1,0 +1,10 @@
+node_modules
+dist
+client/dist
+desktop-dist
+data
+.env
+*.log
+.DS_Store
+uploads
+scripts/debug-settings.ts
