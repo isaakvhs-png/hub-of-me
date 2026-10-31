@@ -134,7 +134,7 @@ export function commitPrompt(input: {
 ROLE: reflection
 TASK: commit
 The debate is already decided. Commit the strategy. The commitment field must contain this sentence shape and no hedge: this matters most now, because X, at the cost of Y.
-If the soul should change, return the full document and the reason. A single dump is a weak reason to rewrite values.
+If the soul should change, do not return the whole document. Return sections to merge: an array of {heading, body}. Required sections that must stay are "How this system thinks", "Values and long-term direction", "Goals", "Current strategy", and "Personality". Return only the sections you are changing. To record the commitment, use the heading "Last reflection". Omitting a required heading leaves it as it is. A reply that is only the last reflection is rejected. A single dump is a weak reason to rewrite values.
 Preference rules must be general understandings. Keep the samples as evidence ids, and do not copy a complaint into the rule.
 Do not re-ask anything in NEVER ASK.
 Return JSON with commitment, optional soul {content, reason}, picture, preferenceRules, infoRequests, predictions, predictionChecks, conflictsResolved.

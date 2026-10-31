@@ -14,7 +14,7 @@ describe("debate conditions", () => {
     expect(result.reflection && "error" in result.reflection).toBe(true);
     expect((await getSoul(db, user.id))?.version).toBe(1);
     const judgeCalls = mock.calls.filter((call) => call.role === "judge");
-    expect(judgeCalls.length).toBe(3);
+    expect(judgeCalls.length).toBe(4);
     await db.close();
   });
 

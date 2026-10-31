@@ -1,9 +1,56 @@
 import { BoundaryError } from "./errors.js";
 import type { Db } from "./db.js";
-import { getSoul, insertSoulVersion, listSoulVersions, logAction } from "./repo.js";
+import { getSoul, insertSoulVersion, listSoulVersions, listUsers, logAction } from "./repo.js";
 import type { SoulVersion } from "./types.js";
 
-const ALLOWED = new Set(["reflection", "user", "seed"]);
+const ALLOWED = new Set(["reflection", "user", "seed", "repair"]);
+
+export const REQUIRED_SOUL_HEADINGS = [
+  "How this system thinks",
+  "Values and long-term direction",
+  "Goals",
+  "Current strategy",
+  "Personality",
+] as const;
+
+export function soulHeadings(content: string): string[] {
+  return [...content.matchAll(/^##\s+(.+?)\s*$/gm)].map((match) => match[1].trim());
+}
+
+export function missingSoulSections(content: string): string[] {
+  const have = new Set(soulHeadings(content));
+  return REQUIRED_SOUL_HEADINGS.filter((heading) => !have.has(heading));
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Replace or append named sections. The rest of the document stays. */
+export function mergeSoulSections(current: string, edits: { heading: string; body: string }[]): string {
+  let doc = `${current.trimEnd()}\n`;
+  for (const edit of edits) {
+    const heading = edit.heading.trim();
+    const body = edit.body.trim();
+    const pattern = new RegExp(`^##\\s+${escapeRegExp(heading)}\\s*$`, "m");
+    if (!pattern.test(doc)) {
+      doc = `${doc.trimEnd()}\n\n## ${heading}\n${body}\n`;
+      continue;
+    }
+    const lines = doc.split("\n");
+    const start = lines.findIndex((line) => new RegExp(`^##\\s+${escapeRegExp(heading)}\\s*$`).test(line));
+    let end = lines.length;
+    for (let index = start + 1; index < lines.length; index += 1) {
+      if (/^##\s+/.test(lines[index])) {
+        end = index;
+        break;
+      }
+    }
+    const next = [...lines.slice(0, start + 1), body, "", ...lines.slice(end)];
+    doc = next.join("\n").replace(/\n{3,}/g, "\n\n");
+  }
+  return `${doc.trim()}\n`;
+}
 
 export async function changeSoul(
   db: Db,
@@ -20,6 +67,10 @@ export async function changeSoul(
   if (!input.reason.trim() || !input.content.trim()) {
     throw new BoundaryError("A soul change needs content and a reason.");
   }
+  const missing = missingSoulSections(input.content);
+  if (missing.length > 0) {
+    throw new BoundaryError(`A soul update cannot drop required sections: ${missing.join(", ")}.`);
+  }
   const saved = await insertSoulVersion(db, {
     userId,
     version: (current?.version ?? 0) + 1,
@@ -35,6 +86,26 @@ export async function changeSoul(
     payload: { version: saved.version },
   });
   return saved;
+}
+
+/** If the current soul is missing required sections, append a new version with version 1's text. */
+export async function restoreCorruptedSouls(db: Db): Promise<number> {
+  const users = await listUsers(db);
+  let restored = 0;
+  for (const user of users) {
+    const current = await getSoul(db, user.id);
+    if (!current || missingSoulSections(current.content).length === 0) continue;
+    const versions = await listSoulVersions(db, user.id);
+    const original = versions.find((version) => version.version === 1);
+    if (!original || missingSoulSections(original.content).length > 0) continue;
+    await changeSoul(db, user.id, {
+      content: original.content,
+      reason: "Restored after mock-era overwrite",
+      via: "repair",
+    });
+    restored += 1;
+  }
+  return restored;
 }
 
 export async function undoSoul(db: Db, userId: string): Promise<SoulVersion> {

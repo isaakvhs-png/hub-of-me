@@ -72,6 +72,7 @@ function mapNote(row: Row): Note {
     forNowExpiresAt: text(row.for_now_expires_at),
     archivedAt: text(row.archived_at),
     currentVersion: num(row.current_version),
+    mockEra: row.mock_era === true || row.mock_era === "t",
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
   };
@@ -372,6 +373,7 @@ export interface NoteDraft {
   reason: string;
   causingMessageId: string | null;
   source: string;
+  mockEra?: boolean;
 }
 
 async function writeVersion(db: Db, noteId: string, version: number, draft: NoteDraft): Promise<void> {
@@ -386,8 +388,8 @@ export async function insertNote(db: Db, userId: string, draft: NoteDraft): Prom
   const archivedAt = draft.status === "archived" ? new Date().toISOString() : null;
   await db.transaction(async (tx) => {
     await tx.query(
-      `INSERT INTO notes (id, user_id, folder_id, type, title, body, status, for_now_expires_at, archived_at, current_version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,1)`,
-      [noteId, userId, draft.folderId, draft.type, draft.title, draft.body, draft.status, draft.forNowExpiresAt, archivedAt],
+      `INSERT INTO notes (id, user_id, folder_id, type, title, body, status, for_now_expires_at, archived_at, current_version, mock_era) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,1,$10)`,
+      [noteId, userId, draft.folderId, draft.type, draft.title, draft.body, draft.status, draft.forNowExpiresAt, archivedAt, Boolean(draft.mockEra)],
     );
     await writeVersion(tx, noteId, 1, draft);
     await logAction(tx, userId, {
@@ -589,14 +591,15 @@ export async function listJobs(db: Db, userId: string): Promise<Row[]> {
   }));
 }
 
-export async function insertDebate(db: Db, row: { userId: string; question: string; judgeModel: string; jobId: string }): Promise<string> {
+export async function insertDebate(db: Db, row: { userId: string; question: string; judgeModel: string; jobId: string; mockEra?: boolean }): Promise<string> {
   const debateId = id();
-  await db.query(`INSERT INTO debates (id, user_id, question, status, judge_model, job_id) VALUES ($1,$2,$3,'running',$4,$5)`, [
+  await db.query(`INSERT INTO debates (id, user_id, question, status, judge_model, job_id, mock_era) VALUES ($1,$2,$3,'running',$4,$5,$6)`, [
     debateId,
     row.userId,
     row.question,
     row.judgeModel,
     row.jobId,
+    Boolean(row.mockEra),
   ]);
   return debateId;
 }
@@ -619,6 +622,29 @@ export async function updateDebateSide(
     `UPDATE debate_sides SET argument=$2, prediction=COALESCE($3, prediction), anonymous_label=COALESCE($4, anonymous_label), model=COALESCE($5, model), provider=COALESCE($6, provider) WHERE id=$1`,
     [sideId, patch.argument, patch.prediction ?? null, patch.anonymousLabel ?? null, patch.model ?? null, patch.provider ?? null],
   );
+}
+
+export async function failDebate(db: Db, debateId: string, reason: string): Promise<void> {
+  await db.query(`UPDATE debates SET status = 'failed', why_won = $2 WHERE id = $1 AND status = 'running'`, [debateId, reason]);
+}
+
+/** A restart has no debate in flight. Anything still running was cut off. */
+export async function settleStuckDebates(db: Db): Promise<number> {
+  const marked = await db.query(
+    `UPDATE debates d
+     SET status = 'failed',
+         why_won = COALESCE((SELECT NULLIF(j.report, '') FROM jobs j WHERE j.id = d.job_id), 'The server stopped before this debate finished.')
+     WHERE d.status = 'running'
+     RETURNING d.id`,
+  );
+  await db.query(
+    `UPDATE jobs
+     SET status = 'failed',
+         report = CASE WHEN report = '' THEN 'The server stopped before this job finished.' ELSE report END,
+         finished_at = COALESCE(finished_at, now())
+     WHERE status = 'running'`,
+  );
+  return marked.rows.length;
 }
 
 export async function concludeDebate(db: Db, debateId: string, patch: { status: string; winnerSideId?: string | null; winnerModel?: string | null; whyWon?: string; loserGotRight?: string; closeCall?: boolean; commitment?: string }): Promise<void> {
@@ -667,6 +693,7 @@ function mapDebate(row: Row): Row {
     userFeedback: row.user_feedback == null ? null : String(row.user_feedback),
     judgeModel: row.judge_model == null ? null : String(row.judge_model),
     jobId: row.job_id == null ? null : String(row.job_id),
+    mockEra: row.mock_era === true || row.mock_era === "t",
     createdAt: iso(row.created_at),
   };
 }

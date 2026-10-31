@@ -8,8 +8,9 @@ import { createDb, migrate } from "../src/db.js";
 import { MockProvider } from "../src/ai/mock.js";
 import { Router } from "../src/ai/router.js";
 import { runNightly } from "../src/pipeline/jobs.js";
-import { getSettings } from "../src/repo.js";
+import { getSettings, settleStuckDebates } from "../src/repo.js";
 import { applyEnvProvider, ensureUser } from "../src/seed.js";
+import { restoreCorruptedSouls } from "../src/soul.js";
 import { zonedParts } from "../src/time.js";
 import { createApp } from "./app.js";
 
@@ -18,6 +19,8 @@ const db = await createDb();
 await migrate(db);
 await ensureUser(db);
 await applyEnvProvider(db);
+await settleStuckDebates(db);
+await restoreCorruptedSouls(db);
 
 const app = createApp(db);
 const dist = join(process.cwd(), "client", "dist");

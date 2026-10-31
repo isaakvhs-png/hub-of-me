@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS notes (
   for_now_expires_at TIMESTAMPTZ,
   archived_at TIMESTAMPTZ,
   current_version INTEGER NOT NULL DEFAULT 1,
+  mock_era BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -169,6 +170,7 @@ CREATE TABLE IF NOT EXISTS debates (
   user_feedback TEXT,
   judge_model TEXT,
   job_id TEXT,
+  mock_era BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -220,8 +222,8 @@ CREATE TABLE IF NOT EXISTS usage_records (
   output_tokens INTEGER NOT NULL,
   cache_write_tokens INTEGER NOT NULL DEFAULT 0,
   cache_read_tokens INTEGER NOT NULL DEFAULT 0,
-  cost_usd_cents INTEGER,
-  cost_eur_cents INTEGER,
+  cost_usd_cents DOUBLE PRECISION,
+  cost_eur_cents DOUBLE PRECISION,
   price_known BOOLEAN NOT NULL,
   duration_ms INTEGER NOT NULL,
   input_chars INTEGER NOT NULL,

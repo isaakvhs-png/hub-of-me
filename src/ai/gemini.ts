@@ -2,7 +2,7 @@ import { UsageMissingError } from "../errors.js";
 import type { AiRequest, ProviderUsage } from "./types.js";
 
 interface GeminiResponse {
-  candidates?: { content?: { parts?: { text?: string }[] } }[];
+  candidates?: { finishReason?: string; content?: { parts?: { text?: string }[] } }[];
   usageMetadata?: {
     promptTokenCount?: number;
     candidatesTokenCount?: number;
@@ -16,7 +16,7 @@ export async function geminiComplete(
   req: AiRequest & { model: string },
   apiKey: string,
   fetchImpl: typeof fetch = fetch,
-): Promise<{ text: string; usage: ProviderUsage }> {
+): Promise<{ text: string; usage: ProviderUsage; stopReason: string | null }> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(req.model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const response = await fetchImpl(url, {
     method: "POST",
@@ -50,6 +50,8 @@ export async function geminiComplete(
     .map((part) => part.text ?? "")
     .join("\n")
     .trim();
-  if (!text) throw new Error("Gemini response had no text.");
-  return { text, usage };
+  const finish = json.candidates?.[0]?.finishReason ?? null;
+  const stopReason = finish === "MAX_TOKENS" ? "max_tokens" : finish;
+  if (!text && stopReason !== "max_tokens") throw new Error("Gemini response had no text.");
+  return { text, usage, stopReason };
 }

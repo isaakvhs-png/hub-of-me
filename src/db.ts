@@ -108,4 +108,15 @@ export async function migrate(db: Db): Promise<void> {
   for (const statement of statements) {
     await db.query(statement);
   }
+  const extras = [
+    `ALTER TABLE notes ADD COLUMN IF NOT EXISTS mock_era BOOLEAN NOT NULL DEFAULT false`,
+    `ALTER TABLE debates ADD COLUMN IF NOT EXISTS mock_era BOOLEAN NOT NULL DEFAULT false`,
+    `ALTER TABLE usage_records ALTER COLUMN cost_usd_cents TYPE DOUBLE PRECISION`,
+    `ALTER TABLE usage_records ALTER COLUMN cost_eur_cents TYPE DOUBLE PRECISION`,
+    `UPDATE debates SET mock_era = true WHERE mock_era = false AND (judge_model LIKE 'mock%' OR id IN (SELECT debate_id FROM debate_sides WHERE provider = 'mock' OR model LIKE 'mock%'))`,
+    `UPDATE notes SET mock_era = true WHERE mock_era = false AND EXISTS (SELECT 1 FROM usage_records u WHERE u.user_id = notes.user_id AND u.provider = 'mock') AND (NOT EXISTS (SELECT 1 FROM usage_records u WHERE u.user_id = notes.user_id AND u.provider <> 'mock') OR notes.created_at < (SELECT MIN(u.created_at) FROM usage_records u WHERE u.user_id = notes.user_id AND u.provider <> 'mock'))`,
+  ];
+  for (const statement of extras) {
+    await db.query(statement);
+  }
 }

@@ -6,6 +6,7 @@ import { completeJson } from "../ai/tracked.js";
 import { commitPrompt, debaterPrompt, judgePrompt, planPrompt } from "../prompts.js";
 import {
   concludeDebate,
+  failDebate,
   finishJob,
   getSettings,
   getSoul,
@@ -30,7 +31,7 @@ import {
 } from "../repo.js";
 import { extractJson } from "../json.js";
 import { argumentSchema, debatePlanSchema, judgmentSchema, reflectionOutcomeSchema, type ReflectionOutcome } from "../schemas.js";
-import { changeSoul } from "../soul.js";
+import { changeSoul, mergeSoulSections } from "../soul.js";
 import { loadVisibleNotes, partitionEvidence, renderNotes, scrubArgument, shuffle } from "./context.js";
 
 function norm(value: string): string {
@@ -49,10 +50,12 @@ export async function applyOutcome(db: Db, userId: string, debateId: string, out
   const never = new Set((await listInfoRequests(db, userId)).filter((request) => request.status === "never").map((request) => norm(String(request.question))));
   const openQuestions = new Set((await listInfoRequests(db, userId)).filter((request) => request.status === "open").map((request) => norm(String(request.question))));
 
-  let soulVersion = (await getSoul(db, userId))?.version ?? 0;
+  const currentSoul = await getSoul(db, userId);
+  let soulVersion = currentSoul?.version ?? 0;
   if (outcome.soul) {
+    if (!currentSoul) throw new Error("Soul is missing.");
     const saved = await changeSoul(db, userId, {
-      content: outcome.soul.content,
+      content: mergeSoulSections(currentSoul.content, outcome.soul.sections),
       reason: outcome.soul.reason,
       via: "reflection",
       causingMessageId,
@@ -99,6 +102,7 @@ export async function runReflection(
   const rng = opts.rng ?? Math.random;
   const jobId = await startJob(db, userId, "debate", opts.cause);
   const meta = { conversationId: opts.conversationId ?? null, jobId, jobKind: "debate" };
+  let debateId: string | null = null;
   try {
     const settings = await getSettings(db, userId);
     const soul = await getSoul(db, userId);
@@ -125,7 +129,7 @@ export async function runReflection(
       plan.sides.map((side) => side.evidenceNoteIds ?? []),
     );
     const judgeModel = settings.provider === "mock" ? "mock-judge" : settings.judgeModel;
-    const debateId = await insertDebate(db, { userId, question: plan.question, judgeModel, jobId });
+    debateId = await insertDebate(db, { userId, question: plan.question, judgeModel, jobId, mockEra: settings.provider === "mock" });
     const sides: { id: string; argument: string; model: string; uncomfortable: boolean; position: string }[] = [];
     for (let index = 0; index < plan.sides.length; index += 1) {
       const side = plan.sides[index];
@@ -267,6 +271,7 @@ export async function runReflection(
     return { debateId, soulVersion, commitment: outcome.commitment };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Reflection failed.";
+    if (debateId) await failDebate(db, debateId, message);
     await finishJob(db, jobId, "failed", message);
     await logAction(db, userId, { what: "reflection stopped", why: message, source: "reflection", payload: { jobId } });
     return { error: message };

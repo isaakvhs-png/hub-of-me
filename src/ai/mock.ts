@@ -32,13 +32,13 @@ export class MockProvider {
     const usage = { ...USAGE[req.role] };
     if ((this.hedgeOnRole[req.role] ?? 0) > 0) {
       this.hedgeOnRole[req.role] = (this.hedgeOnRole[req.role] ?? 1) - 1;
-      return { text: "It depends. On the one hand this, on the other hand that.", usage, provider: "mock", model: req.model };
+      return { text: "It depends. On the one hand this, on the other hand that.", usage, provider: "mock", model: req.model, stopReason: "end_turn" };
     }
     if ((this.invalidOnRole[req.role] ?? 0) > 0) {
       this.invalidOnRole[req.role] = (this.invalidOnRole[req.role] ?? 1) - 1;
-      return { text: "this is not json", usage, provider: "mock", model: req.model };
+      return { text: "this is not json", usage, provider: "mock", model: req.model, stopReason: "end_turn" };
     }
-    return { text: this.canned(req), usage, provider: "mock", model: req.model };
+    return { text: this.canned(req), usage, provider: "mock", model: req.model, stopReason: "end_turn" };
   }
 
   private canned(req: AiRequest): string {
@@ -146,16 +146,14 @@ function argument(blob: string): string {
 }
 
 function commit(blob: string): string {
-  const soul = section(blob, "CURRENT SOUL");
   const commitment = "This matters most now, because the latest dump is still unexplored, at the cost of opening a new thread.";
-  const base = soul.replace(/\n## Last reflection[\s\S]*$/, "").trimEnd();
   const samples = [...blob.matchAll(/sample:([0-9a-f-]{36})/gi)].map((match) => match[1]);
   const noteIds = [...blob.matchAll(/note:([0-9a-f-]{36})/gi)].map((match) => match[1]);
   return JSON.stringify({
     commitment,
     soul: {
-      content: `${base}\n\n## Last reflection\n${commitment}\n`,
       reason: "Reflection committed a strategy after the debate.",
+      sections: [{ heading: "Last reflection", body: commitment }],
     },
     picture: [
       {

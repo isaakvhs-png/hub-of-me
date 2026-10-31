@@ -68,8 +68,8 @@ export const reflectionOutcomeSchema = z.object({
   commitment: z.string().min(1),
   soul: z
     .object({
-      content: z.string().min(1),
       reason: z.string().min(1),
+      sections: z.array(z.object({ heading: z.string().min(1), body: z.string().min(1) })).min(1),
     })
     .optional(),
   picture: z

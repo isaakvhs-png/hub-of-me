@@ -72,7 +72,7 @@ export function isPriced(model: string, overrides?: Record<string, Price>): bool
   return priceFor(model, overrides) != null;
 }
 
-/** Whole US cents. Uses only the counts passed in and the list price. */
+/** US cents, including fractions of a cent. Uses only the counts passed in and the list price. */
 export function costUsdCents(model: string, usage: TokenCounts, overrides?: Record<string, Price>): number | null {
   const price = priceFor(model, overrides);
   if (!price) return null;
@@ -89,9 +89,9 @@ export function costUsdCents(model: string, usage: TokenCounts, overrides?: Reco
     (usage.outputTokens / 1_000_000) * outputRate +
     (cacheWrite / 1_000_000) * (price.cacheWritePerMTokUsd ?? 0) +
     (cacheRead / 1_000_000) * (price.cacheReadPerMTokUsd ?? 0);
-  return Math.round(usd * 100);
+  return usd * 100;
 }
 
 export function toEurCents(usdCents: number, usdToEur: number): number {
-  return Math.round(usdCents * usdToEur);
+  return usdCents * usdToEur;
 }

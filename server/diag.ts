@@ -123,6 +123,7 @@ function callView(row: UsageRow) {
     costEurCents: row.costEurCents,
     priceKnown: row.priceKnown,
     error: null as string | null,
+    mock: row.provider === "mock",
   };
 }
 
@@ -187,7 +188,7 @@ export function mountDiagnostics(app: Hono<{ Variables: { userId: string } }>, d
         [userId, limit],
       ),
       db.query(
-        `SELECT id, type, title, body, status, created_at FROM notes WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2`,
+        `SELECT id, type, title, body, status, mock_era, created_at FROM notes WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2`,
         [userId, limit],
       ),
       listUsage(db, userId, "1970-01-01T00:00:00.000Z"),
@@ -217,6 +218,7 @@ export function mountDiagnostics(app: Hono<{ Variables: { userId: string } }>, d
           title: String(row.title),
           body: String(row.body),
           status: String(row.status),
+          mockEra: row.mock_era === true || row.mock_era === "t",
           createdAt: isoTime(row.created_at),
         })),
         calls: usage.slice(-limit).reverse().map(callView),

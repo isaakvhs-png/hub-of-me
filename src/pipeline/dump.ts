@@ -119,6 +119,7 @@ export async function runDump(db: Db, ai: Router, userId: string, input: { text:
         reason: "Filed from a dump.",
         causingMessageId: userMessageId,
         source: "filing",
+        mockEra: settings.provider === "mock",
       });
       notes.push(saved);
       if (item.contradicts) {

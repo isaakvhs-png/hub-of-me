@@ -7,7 +7,9 @@ export function cn(...inputs: ClassValue[]) {
 
 export function eur(cents: number): string {
   const sign = cents < 0 ? "-" : "";
-  return `${sign}€${(Math.abs(cents) / 100).toFixed(2)}`;
+  const euros = Math.abs(cents) / 100;
+  const digits = euros !== 0 && euros < 0.005 ? 4 : 2;
+  return `${sign}€${euros.toFixed(digits)}`;
 }
 
 export function when(iso: string): string {

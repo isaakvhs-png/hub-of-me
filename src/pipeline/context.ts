@@ -11,6 +11,7 @@ export async function loadVisibleNotes(db: Db, userId: string, settings: Setting
     .map((note) => note.body);
   const visible = notes
     .filter((note) => note.status !== "archived")
+    .filter((note) => settings.provider === "mock" || !note.mockEra)
     .filter((note) => !blockedNames.has(folderName(note.folderId)))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, 12);

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { SEED_SOUL } from "../src/soul-seed.js";
 import { changeSoul, undoSoul } from "../src/soul.js";
 import { undoNote } from "../src/pipeline/dump.js";
 import { expireForNow } from "../src/pipeline/jobs.js";
@@ -36,10 +37,13 @@ describe("versioning and cleanup", () => {
     expect(restored.body).toBe("Original.");
     expect(restored.currentVersion).toBe(3);
     expect(await listNoteVersions(db, note.id)).toHaveLength(3);
-    await changeSoul(db, user.id, { content: "Rewritten by reflection.\n", reason: "A commitment.", via: "reflection" });
+    const edited = SEED_SOUL.replace("Judgment, not instructions.", "Judgment, not instructions. Edited.");
+    await changeSoul(db, user.id, { content: edited, reason: "A commitment.", via: "reflection" });
     const undone = await undoSoul(db, user.id);
     expect(undone.version).toBe(3);
     expect(undone.content).toMatch(/How this system thinks/);
+    expect(undone.content).not.toMatch(/Edited/);
+    await expect(changeSoul(db, user.id, { content: "## Last reflection\nOnly this.\n", reason: "A wipe.", via: "reflection" })).rejects.toThrow(/required sections/);
     expect((await getSoul(db, user.id))?.version).toBe(3);
     await expect(changeSoul(db, user.id, { content: "no", reason: "chat", via: "conversation" })).rejects.toThrow(/reflection/);
     await db.close();

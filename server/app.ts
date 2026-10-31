@@ -417,6 +417,16 @@ export function createApp(db: Db) {
     return c.json({ debate, sides, predictions });
   });
 
+  app.post("/api/debates/:id/rerun", async (c) => {
+    const userId = c.get("userId");
+    const debate = await getDebate(db, userId, c.req.param("id"));
+    if (!debate) return c.json({ error: "Debate not found." }, 404);
+    if (String(debate.status) !== "failed") return c.json({ error: "Only a failed debate can be run again." }, 422);
+    const settings = await getSettings(db, userId);
+    const reflection = await runReflection(db, aiFor(settings), userId, { cause: `Re-run after a failed debate. ${String(debate.whyWon ?? "")}`.trim() });
+    return c.json({ reflection });
+  });
+
   app.post("/api/debates/:id/feedback", async (c) => {
     const body = z.object({ text: z.string().min(1) }).parse(await c.req.json());
     const userId = c.get("userId");
@@ -548,6 +558,7 @@ export function createApp(db: Db) {
       excerpt: extracted.text.slice(0, 400),
       origin: "ingest",
     });
+    const ingestSettings = await getSettings(db, userId);
     const note = await insertNote(db, userId, {
       folderId: await ensureFolderPath(db, userId, "Inbox"),
       type: "file",
@@ -555,6 +566,7 @@ export function createApp(db: Db) {
       body: extracted.text.slice(0, 8000),
       status: "unexplored",
       forNowExpiresAt: null,
+      mockEra: ingestSettings.provider === "mock",
       reason: "Imported. Stored in full as a source, with no quality gate.",
       causingMessageId: null,
       source: "ingest",

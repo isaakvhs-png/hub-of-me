@@ -2,6 +2,7 @@ import type { ZodType } from "zod";
 import type { Db } from "../db.js";
 import { BudgetError, ValidationError } from "../errors.js";
 import { extractJson } from "../json.js";
+import { OUTPUT_CEILING, outputLimit } from "./limits.js";
 import { costUsdCents, toEurCents } from "../prices.js";
 import { getBudget, getSettings, insertUsage, spendSince } from "../repo.js";
 import { startOfMonth } from "../time.js";
@@ -58,7 +59,23 @@ export async function trackedComplete(db: Db, userId: string, ai: Router, req: A
 
 export async function completeText(db: Db, userId: string, ai: Router, req: AiRequest, meta?: TrackMeta): Promise<string> {
   const result = await trackedComplete(db, userId, ai, req, meta);
-  return result.text.trim();
+  if (result.stopReason !== "max_tokens") return result.text.trim();
+  const continued = await trackedComplete(
+    db,
+    userId,
+    ai,
+    {
+      ...req,
+      maxTokens: Math.min((req.maxTokens ?? outputLimit(req.role)) * 2, OUTPUT_CEILING),
+      messages: [
+        ...req.messages,
+        { role: "assistant", content: result.text },
+        { role: "user", content: "Continue from the exact point the answer was cut off. Do not repeat the start." },
+      ],
+    },
+    meta,
+  );
+  return `${result.text}${continued.text}`.trim();
 }
 
 export async function completeJson<T>(
@@ -70,9 +87,17 @@ export async function completeJson<T>(
   meta: TrackMeta & { reject?: (text: string) => string | null },
 ): Promise<T> {
   const messages = [...req.messages];
+  let maxTokens = req.maxTokens ?? outputLimit(req.role);
   let last = "invalid";
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const result = await trackedComplete(db, userId, ai, { ...req, messages }, meta);
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const result = await trackedComplete(db, userId, ai, { ...req, structured: true, maxTokens, messages }, meta);
+    if (result.stopReason === "max_tokens") {
+      last = "Output hit max_tokens and was cut off before the JSON finished.";
+      maxTokens = Math.min(maxTokens * 2, OUTPUT_CEILING);
+      messages.push({ role: "assistant", content: result.text || "(cut off with no text)" });
+      messages.push({ role: "user", content: "That answer was cut off at max_tokens. Do not continue the fragment. Return one complete JSON object." });
+      continue;
+    }
     try {
       const parsed = schema.parse(extractJson(result.text));
       const reason = meta.reject?.(result.text) ?? null;
@@ -86,7 +111,7 @@ export async function completeJson<T>(
     } catch (error) {
       last = error instanceof Error ? error.message : "invalid";
       messages.push({ role: "assistant", content: result.text });
-      messages.push({ role: "user", content: `Rejected by code: the output did not match the required form (${last}). Return one JSON object only.` });
+      messages.push({ role: "user", content: `Rejected by code: the output did not match the required form (${last}). Return one complete JSON object only.` });
     }
   }
   throw new ValidationError(last);

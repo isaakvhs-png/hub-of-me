@@ -10,7 +10,7 @@ import { when } from "@/lib/utils";
 interface Folder { id: string; name: string; parentId: string | null; archivedAt: string | null }
 interface Note {
   id: string; folderId: string | null; type: string; title: string; body: string; status: string;
-  forNowExpiresAt: string | null; currentVersion: number; updatedAt: string;
+  forNowExpiresAt: string | null; currentVersion: number; updatedAt: string; mockEra?: boolean;
 }
 interface Version { id: string; version: number; title: string; body: string; status: string; reason: string; createdAt: string }
 
@@ -108,7 +108,7 @@ export function LibraryPage() {
             {visible.map((item) => (
               <button key={item.id} className={`block w-full rounded-lg border px-3 py-2 text-left ${item.id === selected ? "border-primary" : "border-border"}`} onClick={() => setParams({ note: item.id })}>
                 <div className="text-sm">{item.title}</div>
-                <div className="mt-1 text-[11px] uppercase tracking-wide text-muted-foreground">{item.type} · {item.status}</div>
+                <div className="mt-1 text-[11px] uppercase tracking-wide text-muted-foreground">{item.type} · {item.status}{item.mockEra ? " · mock" : ""}</div>
               </button>
             ))}
           </div>
@@ -118,6 +118,7 @@ export function LibraryPage() {
             <div className="space-y-4">
               <div className="flex flex-wrap gap-2">
                 <Badge>{note.status}</Badge>
+                {note.mockEra ? <Badge>mock</Badge> : null}
                 <Badge>v{note.currentVersion}</Badge>
                 {note.forNowExpiresAt ? <Badge>until {when(note.forNowExpiresAt)}</Badge> : null}
               </div>

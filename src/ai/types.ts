@@ -11,6 +11,8 @@ export interface AiRequest {
   messages: ChatMessage[];
   model?: string;
   maxTokens?: number;
+  /** Ask Anthropic to return one JSON object through tool use. */
+  structured?: boolean;
   /** Set by the debate runner so two debaters can be given different models. */
   debaterIndex?: number;
 }
@@ -29,6 +31,7 @@ export interface AiResult {
   model: string;
   durationMs: number;
   inputChars: number;
+  stopReason: string | null;
 }
 
 export function usageIsReal(usage: Partial<ProviderUsage> | undefined): usage is ProviderUsage {

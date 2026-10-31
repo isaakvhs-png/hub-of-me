@@ -79,7 +79,7 @@ export function AsksPage() {
   );
 }
 
-interface DebateRow { id: string; question: string; status: string; whyWon: string | null; loserGotRight: string | null; closeCall: boolean; commitment: string | null; createdAt: string; userFeedback: string | null }
+interface DebateRow { id: string; question: string; status: string; whyWon: string | null; loserGotRight: string | null; closeCall: boolean; commitment: string | null; createdAt: string; userFeedback: string | null; mockEra?: boolean; judgeModel?: string | null }
 
 export function DebatesPage() {
   const [rows, setRows] = useState<DebateRow[]>([]);
@@ -93,7 +93,7 @@ export function DebatesPage() {
         {rows.map((row) => (
           <Link key={row.id} to={`/debates/${row.id}`} className="block rounded-xl border border-border p-4 hover:border-primary">
             <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-              {row.status} {row.closeCall ? <span className="text-primary">close call</span> : null}
+              {row.status} {row.mockEra || row.judgeModel?.startsWith("mock") ? <span>mock</span> : null} {row.closeCall ? <span className="text-primary">close call</span> : null}
             </div>
             <div className="mt-1 text-lg">{row.question}</div>
             {row.commitment ? <div className="mt-2 text-sm text-primary">{row.commitment}</div> : null}
@@ -119,6 +119,13 @@ export function DebatePage() {
     <div>
       <Link to="/debates" className="text-xs uppercase tracking-wide text-muted-foreground">All debates</Link>
       <h1 className="mt-2 font-serif text-4xl italic">{data.debate.question}</h1>
+      {data.debate.mockEra || data.debate.judgeModel?.startsWith("mock") ? <p className="mt-2 text-xs uppercase tracking-wide text-muted-foreground">Mock-era debate. It is not evidence for a real provider.</p> : null}
+      {data.debate.status === "failed" ? (
+        <div className="mt-4">
+          <p className="text-sm text-destructive">{data.debate.whyWon || "This debate failed."}</p>
+          <Button className="mt-3" variant="outline" disabled={busy} onClick={() => { setBusy(true); setError(""); api<{ reflection: { error?: string; debateId?: string } }>(`/api/debates/${id}/rerun`, { method: "POST", body: "{}" }).then((result) => { if (result.reflection.error) setError(result.reflection.error); else if (result.reflection.debateId) window.location.href = `/debates/${result.reflection.debateId}`; }).catch((err) => setError(err instanceof Error ? err.message : "Could not run it again.")).finally(() => setBusy(false)); }}>Run again</Button>
+        </div>
+      ) : null}
       {data.debate.closeCall ? <p className="mt-2 text-sm text-primary">Close call. The conclusion already stands.</p> : null}
       <p className="mt-4 max-w-2xl">{data.debate.whyWon}</p>
       <p className="mt-2 text-sm text-muted-foreground">What the losing side got right: {data.debate.loserGotRight}</p>
@@ -237,7 +244,7 @@ export function WhyPage() {
 
 interface Health {
   capEurCents: number; spentEurCents: number; leftEurCents: number; unpricedCalls: number; usdToEur: number;
-  calls: number; inputTokens: number; outputTokens: number;
+  calls: number; mockCalls: number; inputTokens: number; outputTokens: number;
   byDay: { key: string; calls: number; inputTokens: number; outputTokens: number; costEurCents: number }[];
   byConversation: { key: string; calls: number; inputTokens: number; outputTokens: number; costEurCents: number }[];
   byJob: { key: string; calls: number; inputTokens: number; outputTokens: number; costEurCents: number }[];
@@ -256,6 +263,7 @@ export function HealthPage() {
       <div className="mt-4 font-serif text-6xl text-primary ledger">{eur(health.leftEurCents)}</div>
       <p className="mt-1 text-sm text-muted-foreground">left of {eur(health.capEurCents)} this month. Spent {eur(health.spentEurCents)}. Rate {health.usdToEur} USD to EUR. {health.calls} calls, {health.inputTokens} in, {health.outputTokens} out.</p>
       {health.unpricedCalls > 0 ? <p className="mt-2 text-sm text-destructive">{health.unpricedCalls} calls have no list price, so further calls are blocked rather than guessed.</p> : null}
+      {health.mockCalls > 0 ? <p className="mt-2 text-sm text-muted-foreground">{health.mockCalls} calls are tagged mock. They are not used as evidence once a real provider is selected.</p> : null}
       <p className={`mt-3 text-sm ${health.drift.flagged ? "text-primary" : "text-muted-foreground"}`}>{health.drift.detail}</p>
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <Ledger title="By day" rows={health.byDay} />

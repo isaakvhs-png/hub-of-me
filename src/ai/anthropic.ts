@@ -2,8 +2,16 @@ import { UsageMissingError } from "../errors.js";
 import type { AiRequest, ProviderUsage } from "./types.js";
 import { usageIsReal } from "./types.js";
 
+interface AnthropicBlock {
+  type: string;
+  text?: string;
+  name?: string;
+  input?: unknown;
+}
+
 interface AnthropicResponse {
-  content?: { type: string; text?: string }[];
+  content?: AnthropicBlock[];
+  stop_reason?: string;
   usage?: {
     input_tokens?: number;
     output_tokens?: number;
@@ -17,7 +25,23 @@ export async function anthropicComplete(
   req: AiRequest & { model: string },
   apiKey: string,
   fetchImpl: typeof fetch = fetch,
-): Promise<{ text: string; usage: ProviderUsage }> {
+): Promise<{ text: string; usage: ProviderUsage; stopReason: string | null }> {
+  const body: Record<string, unknown> = {
+    model: req.model,
+    max_tokens: req.maxTokens ?? 2000,
+    system: req.system,
+    messages: req.messages.map((message) => ({ role: message.role, content: message.content })),
+  };
+  if (req.structured) {
+    body.tools = [
+      {
+        name: "submit_result",
+        description: "Return the task result as one JSON object.",
+        input_schema: { type: "object", additionalProperties: true },
+      },
+    ];
+    body.tool_choice = { type: "tool", name: "submit_result" };
+  }
   const response = await fetchImpl("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -25,12 +49,7 @@ export async function anthropicComplete(
       "anthropic-version": "2023-06-01",
       "content-type": "application/json",
     },
-    body: JSON.stringify({
-      model: req.model,
-      max_tokens: req.maxTokens ?? 2000,
-      system: req.system,
-      messages: req.messages.map((message) => ({ role: message.role, content: message.content })),
-    }),
+    body: JSON.stringify(body),
   });
   const json = (await response.json()) as AnthropicResponse;
   if (!response.ok) {
@@ -45,11 +64,16 @@ export async function anthropicComplete(
   if (!usageIsReal(usage)) {
     throw new UsageMissingError("Anthropic response had no token usage. Refusing to estimate.");
   }
-  const text = (json.content ?? [])
-    .filter((block) => block.type === "text" && block.text)
-    .map((block) => block.text)
-    .join("\n")
-    .trim();
-  if (!text) throw new Error("Anthropic response had no text.");
-  return { text, usage };
+  const blocks = json.content ?? [];
+  const tool = blocks.find((block) => block.type === "tool_use" && block.input && typeof block.input === "object");
+  const text = tool
+    ? JSON.stringify(tool.input)
+    : blocks
+        .filter((block) => block.type === "text" && block.text)
+        .map((block) => block.text)
+        .join("\n")
+        .trim();
+  const stopReason = json.stop_reason ?? null;
+  if (!text && stopReason !== "max_tokens") throw new Error("Anthropic response had no text.");
+  return { text, usage, stopReason };
 }

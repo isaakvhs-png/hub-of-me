@@ -12,9 +12,14 @@ describe("usage accounting", () => {
   it("prices reported tokens and converts with the configured rate", () => {
     const usd = costUsdCents("priced-test", { inputTokens: 500_000, outputTokens: 0 });
     expect(usd).toBe(150);
-    expect(toEurCents(150, 0.8959)).toBe(134);
+    expect(toEurCents(150, 0.8959)).toBeCloseTo(134.385, 5);
     const haiku = costUsdCents("claude-haiku-5-5", { inputTokens: 150_000, outputTokens: 1_000 });
-    expect(haiku).toBe(Math.round(((150_000 / 1_000_000) * 0.5 + (1_000 / 1_000_000) * 2.5) * 100));
+    expect(haiku).toBeCloseTo((150_000 / 1_000_000) * 0.5 * 100 + (1_000 / 1_000_000) * 2.5 * 100, 6);
+    const small = costUsdCents("claude-haiku-5-5", { inputTokens: 6915, outputTokens: 2000 });
+    expect(small).toBeGreaterThan(0);
+    expect(small).toBeLessThan(1);
+    expect(small).toBeCloseTo((6915 / 1_000_000) * 0.1 * 100 + (2000 / 1_000_000) * 0.5 * 100, 6);
+    expect(toEurCents(small ?? 0, 0.8959)).toBeGreaterThan(0);
     expect(costUsdCents("missing-model", { inputTokens: 10, outputTokens: 10 })).toBeNull();
   });
 

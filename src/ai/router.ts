@@ -1,3 +1,4 @@
+import { outputLimit } from "./limits.js";
 import { UnpricedModelError, UsageMissingError } from "../errors.js";
 import { isPriced } from "../prices.js";
 import type { ProviderName, Settings } from "../types.js";
@@ -125,9 +126,10 @@ export class Router {
     }
     const started = Date.now();
     const inputChars = req.system.length + req.messages.reduce((sum, message) => sum + message.content.length, 0);
-    const withModel = { ...req, model: resolved.model };
+    const withModel = { ...req, model: resolved.model, maxTokens: req.maxTokens ?? outputLimit(req.role) };
     let text: string;
     let usage: AiResult["usage"];
+    let stopReason: string | null = null;
     if (resolved.provider === "mock") {
       if (this.settings.provider !== "mock") {
         throw new Error(`Refusing to use the mock provider while Settings selects ${this.settings.provider}.`);
@@ -136,18 +138,21 @@ export class Router {
       const result = await mock.complete(withModel);
       text = result.text;
       usage = result.usage;
+      stopReason = result.stopReason;
     } else if (resolved.provider === "anthropic") {
       const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
       if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set.");
       const result = await anthropicComplete(withModel, apiKey, this.deps.fetchImpl);
       text = result.text;
       usage = result.usage;
+      stopReason = result.stopReason;
     } else if (resolved.provider === "gemini") {
       const apiKey = process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim();
       if (!apiKey) throw new Error("GEMINI_API_KEY is not set.");
       const result = await geminiComplete(withModel, apiKey, this.deps.fetchImpl);
       text = result.text;
       usage = result.usage;
+      stopReason = result.stopReason;
     } else {
       throw new Error(`Unknown provider ${resolved.provider}`);
     }
@@ -161,6 +166,7 @@ export class Router {
       model: resolved.model,
       durationMs: Date.now() - started,
       inputChars,
+      stopReason,
     };
   }
 }

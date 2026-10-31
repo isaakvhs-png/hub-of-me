@@ -61,6 +61,7 @@ export interface Note {
   forNowExpiresAt: string | null;
   archivedAt: string | null;
   currentVersion: number;
+  mockEra: boolean;
   createdAt: string;
   updatedAt: string;
 }

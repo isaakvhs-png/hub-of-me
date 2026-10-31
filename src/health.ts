@@ -50,6 +50,7 @@ export async function healthReport(db: Db, userId: string) {
     unpricedCalls: spend.unpriced,
     usdToEur: settings.usdToEur,
     calls: usage.length,
+    mockCalls: usage.filter((row) => row.provider === "mock").length,
     inputTokens: usage.reduce((sum, row) => sum + row.inputTokens, 0),
     outputTokens: usage.reduce((sum, row) => sum + row.outputTokens, 0),
     byDay: group(usage.map((row) => ({ key: dayKey(row.createdAt), inputTokens: row.inputTokens, outputTokens: row.outputTokens, costEurCents: row.costEurCents }))),
