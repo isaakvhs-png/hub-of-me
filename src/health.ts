@@ -1,5 +1,5 @@
 import type { Db } from "./db.js";
-import { getBudget, getSettings, listDebates, listUsage, spendSince } from "./repo.js";
+import { getBudget, getSettings, listDebates, listUsage, listUserDebateFeedback, spendSince } from "./repo.js";
 import { startOfMonth } from "./time.js";
 
 export function judgeDrift(debates: { status: string; winnerModel: string | null; userFeedback: string | null }[]): { flagged: boolean; detail: string } {
@@ -33,12 +33,13 @@ function group(rows: { key: string; inputTokens: number; outputTokens: number; c
 
 export async function healthReport(db: Db, userId: string) {
   const since = startOfMonth("Europe/Amsterdam");
-  const [budget, settings, usage, debates, spend] = await Promise.all([
+  const [budget, settings, usage, debates, spend, feedback] = await Promise.all([
     getBudget(db, userId),
     getSettings(db, userId),
     listUsage(db, userId, since.toISOString()),
     listDebates(db, userId),
     spendSince(db, userId, since.toISOString()),
+    listUserDebateFeedback(db, userId),
   ]);
   const dayKey = (isoDate: string) =>
     new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Amsterdam", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(isoDate));
@@ -58,7 +59,11 @@ export async function healthReport(db: Db, userId: string) {
       usage.map((row) => ({ key: row.conversationId ?? "(no conversation)", inputTokens: row.inputTokens, outputTokens: row.outputTokens, costEurCents: row.costEurCents })),
     ),
     byJob: group(usage.map((row) => ({ key: row.jobKind ?? row.role, inputTokens: row.inputTokens, outputTokens: row.outputTokens, costEurCents: row.costEurCents }))),
-    drift: judgeDrift(debates.map((debate) => ({ status: String(debate.status), winnerModel: debate.winnerModel as string | null, userFeedback: debate.userFeedback as string | null }))),
+    drift: judgeDrift(debates.map((debate) => {
+      const texts = feedback.filter((item) => item.debateId === String(debate.id)).map((item) => item.body);
+      const combined = texts.join("\n") || (debate.userFeedback as string | null);
+      return { status: String(debate.status), winnerModel: debate.winnerModel as string | null, userFeedback: combined };
+    })),
     winsByModel: debates.reduce<Record<string, number>>((acc, debate) => {
       if (debate.status !== "concluded" || !debate.winnerModel) return acc;
       const key = String(debate.winnerModel);

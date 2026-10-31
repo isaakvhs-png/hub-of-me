@@ -115,6 +115,25 @@ export async function migrate(db: Db): Promise<void> {
     `ALTER TABLE usage_records ALTER COLUMN cost_eur_cents TYPE DOUBLE PRECISION`,
     `UPDATE debates SET mock_era = true WHERE mock_era = false AND (judge_model LIKE 'mock%' OR id IN (SELECT debate_id FROM debate_sides WHERE provider = 'mock' OR model LIKE 'mock%'))`,
     `UPDATE notes SET mock_era = true WHERE mock_era = false AND EXISTS (SELECT 1 FROM usage_records u WHERE u.user_id = notes.user_id AND u.provider = 'mock') AND (NOT EXISTS (SELECT 1 FROM usage_records u WHERE u.user_id = notes.user_id AND u.provider <> 'mock') OR notes.created_at < (SELECT MIN(u.created_at) FROM usage_records u WHERE u.user_id = notes.user_id AND u.provider <> 'mock'))`,
+    `ALTER TABLE debates ADD COLUMN IF NOT EXISTS triggered_by_debate_id TEXT`,
+    `ALTER TABLE debates ADD COLUMN IF NOT EXISTS triggered_by_feedback_id TEXT`,
+    `CREATE TABLE IF NOT EXISTS debate_feedback (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      debate_id TEXT NOT NULL REFERENCES debates(id),
+      body TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      led_to_debate_id TEXT,
+      soul_version INTEGER,
+      soul_reason TEXT,
+      error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`,
+    `INSERT INTO debate_feedback (id, user_id, debate_id, body, status, created_at)
+     SELECT d.id || '-legacy-feedback', d.user_id, d.id, d.user_feedback, 'done', d.created_at
+     FROM debates d
+     WHERE d.user_feedback IS NOT NULL AND d.user_feedback <> ''
+       AND NOT EXISTS (SELECT 1 FROM debate_feedback f WHERE f.debate_id = d.id)`,
   ];
   for (const statement of extras) {
     await db.query(statement);

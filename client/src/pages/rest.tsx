@@ -80,6 +80,14 @@ export function AsksPage() {
 }
 
 interface DebateRow { id: string; question: string; status: string; whyWon: string | null; loserGotRight: string | null; closeCall: boolean; commitment: string | null; createdAt: string; userFeedback: string | null; mockEra?: boolean; judgeModel?: string | null }
+interface DebateFeedbackItem { id: string; body: string; status: string; createdAt: string; ledToDebateId: string | null; ledToQuestion: string | null; soulVersion: number | null; soulReason: string | null; error: string | null }
+interface DebateView {
+  debate: DebateRow;
+  sides: { id: string; position: string; argument: string; uncomfortable: boolean; model: string; anonymousLabel: string | null }[];
+  predictions: { id: string; prediction: string; cameTrue: boolean | null; outcome: string | null }[];
+  feedback: DebateFeedbackItem[];
+  triggeredBy: { debateId: string; question: string; feedback: string } | null;
+}
 
 export function DebatesPage() {
   const [rows, setRows] = useState<DebateRow[]>([]);
@@ -106,7 +114,7 @@ export function DebatesPage() {
 
 export function DebatePage() {
   const { id } = useParams();
-  const [data, setData] = useState<{ debate: DebateRow; sides: { id: string; position: string; argument: string; uncomfortable: boolean; model: string; anonymousLabel: string | null }[]; predictions: { id: string; prediction: string; cameTrue: boolean | null; outcome: string | null }[] } | null>(null);
+  const [data, setData] = useState<DebateView | null>(null);
   const [feedback, setFeedback] = useState("");
   const [observed, setObserved] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
@@ -120,6 +128,12 @@ export function DebatePage() {
     const timer = window.setInterval(() => { void reload().catch(() => undefined); }, 1500);
     return () => window.clearInterval(timer);
   }, [id, data?.debate.status]);
+  const folding = Boolean(data?.feedback?.some((item) => item.status === "pending" || item.status === "running"));
+  useEffect(() => {
+    if (!folding) return;
+    const timer = window.setInterval(() => { void reload().catch(() => undefined); }, 2000);
+    return () => window.clearInterval(timer);
+  }, [id, folding]);
   async function runAgain() {
     if (!id) return;
     setRerunning(true);
@@ -163,6 +177,12 @@ export function DebatePage() {
     <div>
       <Link to="/debates" className="text-xs uppercase tracking-wide text-muted-foreground">All debates</Link>
       <h1 className="mt-2 font-serif text-4xl italic">{data.debate.question}</h1>
+      {data.triggeredBy ? (
+        <div className="mt-4 max-w-2xl border-l-2 border-primary pl-3 text-sm">
+          <p>Started because of your feedback on <Link className="text-primary" to={`/debates/${data.triggeredBy.debateId}`}>{data.triggeredBy.question}</Link></p>
+          {data.triggeredBy.feedback ? <blockquote className="mt-2 whitespace-pre-wrap text-muted-foreground">“{data.triggeredBy.feedback}”</blockquote> : null}
+        </div>
+      ) : null}
       {data.debate.mockEra || data.debate.judgeModel?.startsWith("mock") ? <p className="mt-2 text-xs uppercase tracking-wide text-muted-foreground">Mock-era debate. It is not evidence for a real provider.</p> : null}
       {data.debate.status === "running" || rerunning ? (
         <p className="mt-4 text-sm text-primary" role="status">Running the debate…</p>
@@ -211,9 +231,24 @@ export function DebatePage() {
         finally { setBusy(false); }
       }}>
         <Label>Your reaction, if you have one</Label>
-        <Textarea value={feedback} onChange={(event) => setFeedback(event.target.value)} placeholder="Kept as evidence, not as a rule." />
-        <Button type="submit" disabled={busy || !feedback.trim()}>{busy ? "Folding it in…" : "Send feedback"}</Button>
-        {data.debate.userFeedback ? <p className="text-sm text-muted-foreground">Already noted: {data.debate.userFeedback}</p> : null}
+        <Textarea value={feedback} onChange={(event) => setFeedback(event.target.value)} placeholder="Kept as evidence, not as a rule. You can add another while one is folding in." />
+        <Button type="submit" disabled={busy || !feedback.trim()}>{busy ? "Sending…" : "Send feedback"}</Button>
+        {folding ? <p className="text-sm text-primary" role="status">Folding it in… this takes about a minute</p> : null}
+        <div className="space-y-3">
+          {data.feedback.map((item) => (
+            <div key={item.id} className="border-l-2 border-border pl-3 text-sm">
+              <div className="text-xs uppercase tracking-wide text-muted-foreground">{when(item.createdAt)} · {item.status}</div>
+              <blockquote className="mt-1 whitespace-pre-wrap">“{item.body}”</blockquote>
+              {item.ledToDebateId ? (
+                <p className="mt-2">
+                  Your feedback led to: <Link className="text-primary" to={`/debates/${item.ledToDebateId}`}>{item.ledToQuestion || "the next debate"}</Link>
+                  {item.soulVersion ? <> and soul v{item.soulVersion}{item.soulReason ? ` (${item.soulReason})` : ""}</> : null}
+                </p>
+              ) : null}
+              {item.status === "failed" && item.error ? <p className="mt-1 text-destructive">{item.error}</p> : null}
+            </div>
+          ))}
+        </div>
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         {winner ? null : null}
       </form>

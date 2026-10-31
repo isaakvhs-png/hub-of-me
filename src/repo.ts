@@ -591,16 +591,15 @@ export async function listJobs(db: Db, userId: string): Promise<Row[]> {
   }));
 }
 
-export async function insertDebate(db: Db, row: { userId: string; question: string; judgeModel: string; jobId: string; mockEra?: boolean }): Promise<string> {
+export async function insertDebate(
+  db: Db,
+  row: { userId: string; question: string; judgeModel: string; jobId: string; mockEra?: boolean; triggeredByDebateId?: string | null; triggeredByFeedbackId?: string | null },
+): Promise<string> {
   const debateId = id();
-  await db.query(`INSERT INTO debates (id, user_id, question, status, judge_model, job_id, mock_era) VALUES ($1,$2,$3,'running',$4,$5,$6)`, [
-    debateId,
-    row.userId,
-    row.question,
-    row.judgeModel,
-    row.jobId,
-    Boolean(row.mockEra),
-  ]);
+  await db.query(
+    `INSERT INTO debates (id, user_id, question, status, judge_model, job_id, mock_era, triggered_by_debate_id, triggered_by_feedback_id) VALUES ($1,$2,$3,'running',$4,$5,$6,$7,$8)`,
+    [debateId, row.userId, row.question, row.judgeModel, row.jobId, Boolean(row.mockEra), row.triggeredByDebateId ?? null, row.triggeredByFeedbackId ?? null],
+  );
   return debateId;
 }
 
@@ -694,8 +693,109 @@ function mapDebate(row: Row): Row {
     judgeModel: row.judge_model == null ? null : String(row.judge_model),
     jobId: row.job_id == null ? null : String(row.job_id),
     mockEra: row.mock_era === true || row.mock_era === "t",
+    triggeredByDebateId: row.triggered_by_debate_id == null ? null : String(row.triggered_by_debate_id),
+    triggeredByFeedbackId: row.triggered_by_feedback_id == null ? null : String(row.triggered_by_feedback_id),
     createdAt: iso(row.created_at),
   };
+}
+
+export interface DebateFeedback {
+  id: string;
+  debateId: string;
+  body: string;
+  status: string;
+  ledToDebateId: string | null;
+  ledToQuestion: string | null;
+  soulVersion: number | null;
+  soulReason: string | null;
+  error: string | null;
+  createdAt: string;
+}
+
+function mapDebateFeedback(row: Row): DebateFeedback {
+  return {
+    id: String(row.id),
+    debateId: String(row.debate_id),
+    body: String(row.body),
+    status: String(row.status),
+    ledToDebateId: row.led_to_debate_id == null ? null : String(row.led_to_debate_id),
+    ledToQuestion: row.led_to_question == null ? null : String(row.led_to_question),
+    soulVersion: row.soul_version == null ? null : num(row.soul_version),
+    soulReason: row.soul_reason == null ? null : String(row.soul_reason),
+    error: row.error == null ? null : String(row.error),
+    createdAt: iso(row.created_at),
+  };
+}
+
+export async function insertDebateFeedback(db: Db, userId: string, debateId: string, body: string): Promise<DebateFeedback> {
+  const feedbackId = id();
+  await db.query(`INSERT INTO debate_feedback (id, user_id, debate_id, body, status) VALUES ($1,$2,$3,$4,'pending')`, [feedbackId, userId, debateId, body]);
+  const rows = await listDebateFeedback(db, debateId);
+  return rows.find((item) => item.id === feedbackId) as DebateFeedback;
+}
+
+export async function listDebateFeedback(db: Db, debateId: string): Promise<DebateFeedback[]> {
+  const result = await db.query(
+    `SELECT f.*, led.question AS led_to_question
+     FROM debate_feedback f
+     LEFT JOIN debates led ON led.id = f.led_to_debate_id
+     WHERE f.debate_id = $1
+     ORDER BY f.created_at`,
+    [debateId],
+  );
+  return result.rows.map(mapDebateFeedback);
+}
+
+export async function listUserDebateFeedback(db: Db, userId: string): Promise<DebateFeedback[]> {
+  const result = await db.query(
+    `SELECT f.*, led.question AS led_to_question
+     FROM debate_feedback f
+     LEFT JOIN debates led ON led.id = f.led_to_debate_id
+     WHERE f.user_id = $1
+     ORDER BY f.created_at`,
+    [userId],
+  );
+  return result.rows.map(mapDebateFeedback);
+}
+
+export async function claimNextDebateFeedback(db: Db, userId: string): Promise<DebateFeedback | null> {
+  const running = await db.query(`SELECT id FROM debate_feedback WHERE user_id = $1 AND status = 'running' LIMIT 1`, [userId]);
+  if (running.rows[0]) return null;
+  const pending = await db.query(
+    `SELECT id, debate_id FROM debate_feedback WHERE user_id = $1 AND status = 'pending' ORDER BY created_at LIMIT 1`,
+    [userId],
+  );
+  const next = pending.rows[0];
+  if (!next) return null;
+  const updated = await db.query(`UPDATE debate_feedback SET status = 'running' WHERE id = $1 AND status = 'pending' RETURNING *`, [next.id]);
+  const row = updated.rows[0];
+  if (!row) return null;
+  const listed = await listDebateFeedback(db, String(row.debate_id));
+  return listed.find((item) => item.id === String(row.id)) ?? mapDebateFeedback(row);
+}
+
+export async function finishDebateFeedback(
+  db: Db,
+  feedbackId: string,
+  patch: { status: string; ledToDebateId?: string | null; soulVersion?: number | null; soulReason?: string | null; error?: string | null },
+): Promise<void> {
+  await db.query(
+    `UPDATE debate_feedback SET status=$2, led_to_debate_id=$3, soul_version=$4, soul_reason=$5, error=$6 WHERE id=$1`,
+    [feedbackId, patch.status, patch.ledToDebateId ?? null, patch.soulVersion ?? null, patch.soulReason ?? null, patch.error ?? null],
+  );
+}
+
+export async function listRecentDumps(db: Db, userId: string, limit = 5): Promise<{ content: string; createdAt: string }[]> {
+  const result = await db.query(
+    `SELECT m.content, m.created_at
+     FROM messages m
+     JOIN conversations c ON c.id = m.conversation_id
+     WHERE c.user_id = $1 AND m.role = 'user'
+     ORDER BY m.created_at DESC
+     LIMIT $2`,
+    [userId, limit],
+  );
+  return result.rows.map((row) => ({ content: String(row.content).slice(0, 2000), createdAt: iso(row.created_at) }));
 }
 
 export async function setDebateFeedback(db: Db, userId: string, debateId: string, feedback: string): Promise<void> {

@@ -55,7 +55,19 @@ ${input.notes || "(none)"}
 END NOTES`;
 }
 
-export function planPrompt(input: { soul: string; notes: string; queue: string }): string {
+export function hisWordsBlock(feedback: string, dumps: string[]): string {
+  const dumpText = dumps.filter(Boolean).map((dump) => dump.trim()).join("\n---\n");
+  return `HIS WORDS are his, not a side. Do not assign them to an anonymous label and do not mention models.
+FEEDBACK:
+${feedback.trim() || "(none)"}
+END FEEDBACK
+
+DUMPS:
+${dumpText || "(none)"}
+END DUMPS`;
+}
+
+export function planPrompt(input: { soul: string; notes: string; queue: string; hisWords?: string }): string {
   return `${PREAMBLE}
 ROLE: reflection
 TASK: plan
@@ -74,10 +86,12 @@ END NOTES
 
 QUEUE:
 ${input.queue || "(empty)"}
-END QUEUE`;
+END QUEUE
+
+${input.hisWords || ""}`;
 }
 
-export function debaterPrompt(input: { soul: string; position: string; evidence: string; uncomfortable: boolean }): string {
+export function debaterPrompt(input: { soul: string; position: string; evidence: string; uncomfortable: boolean; hisWords?: string }): string {
   return `${PREAMBLE}
 ROLE: debater
 Argue only this position. Do not mention other sides, models, or whether the position is comfortable.
@@ -94,16 +108,19 @@ END POSITION
 
 EVIDENCE:
 ${input.evidence || "(no notes in this slice)"}
-END EVIDENCE`;
+END EVIDENCE
+
+${input.hisWords || ""}`;
 }
 
-export function judgePrompt(input: { soul: string; question: string; argumentsText: string }): string {
+export function judgePrompt(input: { soul: string; question: string; argumentsText: string; hisWords?: string }): string {
   return `${PREAMBLE}
 ROLE: judge
 TASK: judge
 You are not a debater. The arguments are anonymous and in an order that is not meaningful.
 Pick one winner. Do not seek consensus, a middle, or an average.
 Say why it won, and what the losing side got right.
+If HIS WORDS name a fact, do not call that fact unsupported just because the soul omits it. His words are evidence. They are not one of the anonymous sides.
 Return JSON: {"winner":"A","why":"","loserGotRight":"","closeCall":false}
 
 CURRENT SOUL:
@@ -113,6 +130,8 @@ END SOUL
 QUESTION:
 ${input.question}
 END QUESTION
+
+${input.hisWords || ""}
 
 ${input.argumentsText}
 END ARGUMENTS`;

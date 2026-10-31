@@ -61,7 +61,8 @@ import {
   logAction,
   reviseNote,
   setBudget,
-  setDebateFeedback,
+  insertDebateFeedback,
+  listDebateFeedback,
   setPredictionOutcome,
   updateInfoRequest,
   updateSettings,
@@ -76,6 +77,7 @@ import { changeSoul, undoSoul } from "../src/soul.js";
 import type { Settings } from "../src/types.js";
 import { mountDiagnostics } from "./diag.js";
 import { recordServerError } from "./error-log.js";
+import { scheduleFeedbackDrain } from "../src/feedback.js";
 import { clearSession, hashToken, readSession, writeSession } from "./session.js";
 
 const sharedMock = new MockProvider();
@@ -410,11 +412,33 @@ export function createApp(db: Db) {
   app.get("/api/debates", async (c) => c.json(await listDebates(db, c.get("userId"))));
 
   app.get("/api/debates/:id", async (c) => {
-    const debate = await getDebate(db, c.get("userId"), c.req.param("id"));
+    const userId = c.get("userId");
+    const debate = await getDebate(db, userId, c.req.param("id"));
     if (!debate) return c.json({ error: "Debate not found." }, 404);
-    const sides = await listDebateSides(db, c.req.param("id"));
-    const predictions = (await listPredictions(db, c.get("userId"))).filter((item) => item.debateId === c.req.param("id"));
-    return c.json({ debate, sides, predictions });
+    const [sides, feedback, predictions] = await Promise.all([
+      listDebateSides(db, c.req.param("id")),
+      listDebateFeedback(db, c.req.param("id")),
+      listPredictions(db, userId),
+    ]);
+    let triggeredBy: { debateId: string; question: string; feedback: string } | null = null;
+    if (debate.triggeredByDebateId) {
+      const source = await getDebate(db, userId, String(debate.triggeredByDebateId));
+      const sourceFeedback = debate.triggeredByFeedbackId
+        ? (await listDebateFeedback(db, String(debate.triggeredByDebateId))).find((item) => item.id === debate.triggeredByFeedbackId)
+        : null;
+      triggeredBy = {
+        debateId: String(debate.triggeredByDebateId),
+        question: String(source?.question ?? "the earlier debate"),
+        feedback: sourceFeedback?.body ?? "",
+      };
+    }
+    return c.json({
+      debate,
+      sides,
+      predictions: predictions.filter((item) => item.debateId === c.req.param("id")),
+      feedback,
+      triggeredBy,
+    });
   });
 
   app.post("/api/debates/:id/rerun", async (c) => {
@@ -432,11 +456,10 @@ export function createApp(db: Db) {
     const userId = c.get("userId");
     const debate = await getDebate(db, userId, c.req.param("id"));
     if (!debate) return c.json({ error: "Debate not found." }, 404);
-    await setDebateFeedback(db, userId, c.req.param("id"), body.text);
+    const saved = await insertDebateFeedback(db, userId, c.req.param("id"), body.text);
     await insertFeedback(db, userId, body.text, `debate:${c.req.param("id")}`);
-    const settings = await getSettings(db, userId);
-    const reflection = await runReflection(db, aiFor(settings), userId, { cause: "You gave feedback on a debate. The conclusion already stands; this folds the reaction in." });
-    return c.json({ reflection });
+    scheduleFeedbackDrain(db, userId, async () => aiFor(await getSettings(db, userId)));
+    return c.json({ feedback: saved, queued: true });
   });
 
   app.get("/api/predictions", async (c) => c.json(await listPredictions(db, c.get("userId"))));

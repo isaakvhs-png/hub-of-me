@@ -3,7 +3,7 @@ import { argumentRejection, judgeRejection, reflectionRejection } from "../hedge
 import type { Router } from "../ai/router.js";
 import { debaterPool, resolveRoleModel } from "../ai/router.js";
 import { completeJson } from "../ai/tracked.js";
-import { commitPrompt, debaterPrompt, judgePrompt, planPrompt } from "../prompts.js";
+import { commitPrompt, debaterPrompt, hisWordsBlock, judgePrompt, planPrompt } from "../prompts.js";
 import {
   concludeDebate,
   failDebate,
@@ -21,6 +21,7 @@ import {
   listInfoRequests,
   listNotes,
   listPredictions,
+  listRecentDumps,
   logAction,
   markQueueHandled,
   openQueue,
@@ -97,8 +98,14 @@ export async function runReflection(
   db: Db,
   ai: Router,
   userId: string,
-  opts: { cause: string; conversationId?: string | null; causingMessageId?: string | null; rng?: () => number },
-): Promise<{ debateId: string; soulVersion: number; commitment: string } | { error: string }> {
+  opts: {
+    cause: string;
+    conversationId?: string | null;
+    causingMessageId?: string | null;
+    rng?: () => number;
+    trigger?: { debateId: string; feedbackId: string; feedback: string; question: string };
+  },
+): Promise<{ debateId: string; soulVersion: number; commitment: string } | { error: string; debateId: string | null }> {
   const rng = opts.rng ?? Math.random;
   const jobId = await startJob(db, userId, "debate", opts.cause);
   const meta = { conversationId: opts.conversationId ?? null, jobId, jobKind: "debate" };
@@ -110,13 +117,15 @@ export async function runReflection(
     const { notes } = await loadVisibleNotes(db, userId, settings);
     const queue = await openQueue(db, userId);
     const noteText = renderNotes(notes);
+    const dumps = opts.trigger ? await listRecentDumps(db, userId, 5) : [];
+    const hisWords = opts.trigger ? hisWordsBlock(opts.trigger.feedback, dumps.map((dump) => dump.content)) : "";
     const plan = await completeJson(
       db,
       userId,
       ai,
       {
         role: "reflection",
-        system: planPrompt({ soul: soul.content, notes: noteText, queue: queue.map((item) => `${item.noteId}: ${item.reason}`).join("\n") }),
+        system: planPrompt({ soul: soul.content, notes: noteText, queue: queue.map((item) => `${item.noteId}: ${item.reason}`).join("\n"), hisWords }),
         messages: [{ role: "user", content: "Choose the question and the sides." }],
       },
       debatePlanSchema,
@@ -129,7 +138,15 @@ export async function runReflection(
       plan.sides.map((side) => side.evidenceNoteIds ?? []),
     );
     const judgeModel = settings.provider === "mock" ? "mock-judge" : settings.judgeModel;
-    debateId = await insertDebate(db, { userId, question: plan.question, judgeModel, jobId, mockEra: settings.provider === "mock" });
+    debateId = await insertDebate(db, {
+      userId,
+      question: plan.question,
+      judgeModel,
+      jobId,
+      mockEra: settings.provider === "mock",
+      triggeredByDebateId: opts.trigger?.debateId ?? null,
+      triggeredByFeedbackId: opts.trigger?.feedbackId ?? null,
+    });
     const sides: { id: string; argument: string; model: string; uncomfortable: boolean; position: string }[] = [];
     for (let index = 0; index < plan.sides.length; index += 1) {
       const side = plan.sides[index];
@@ -155,6 +172,7 @@ export async function runReflection(
             position: side.position,
             evidence: renderNotes(evidenceNotes),
             uncomfortable: side.uncomfortable,
+            hisWords,
           }),
           messages: [{ role: "user", content: "Argue your position." }],
         },
@@ -185,6 +203,7 @@ export async function runReflection(
           soul: soul.content,
           question: plan.question,
           argumentsText: labeled.map((item) => `ARGUMENT ${item.label}\n${item.text}`).join("\n"),
+          hisWords,
         }),
         messages: [{ role: "user", content: "Pick a winner." }],
       },
@@ -274,6 +293,6 @@ export async function runReflection(
     if (debateId) await failDebate(db, debateId, message);
     await finishJob(db, jobId, "failed", message);
     await logAction(db, userId, { what: "reflection stopped", why: message, source: "reflection", payload: { jobId } });
-    return { error: message };
+    return { error: message, debateId };
   }
 }

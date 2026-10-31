@@ -8,6 +8,7 @@ import { createDb, migrate } from "../src/db.js";
 import { MockProvider } from "../src/ai/mock.js";
 import { Router } from "../src/ai/router.js";
 import { runNightly } from "../src/pipeline/jobs.js";
+import { scheduleFeedbackDrain } from "../src/feedback.js";
 import { getSettings, settleStuckDebates } from "../src/repo.js";
 import { applyEnvProvider, ensureUser } from "../src/seed.js";
 import { restoreCorruptedSouls } from "../src/soul.js";
@@ -21,6 +22,15 @@ await ensureUser(db);
 await applyEnvProvider(db);
 await settleStuckDebates(db);
 await restoreCorruptedSouls(db);
+await db.query(`UPDATE debate_feedback SET status = 'pending' WHERE status = 'running'`);
+const queuedFeedback = await db.query<{ user_id: string }>(`SELECT DISTINCT user_id FROM debate_feedback WHERE status = 'pending'`);
+for (const row of queuedFeedback.rows) {
+  const userId = String(row.user_id);
+  scheduleFeedbackDrain(db, userId, async () => {
+    const settings = await getSettings(db, userId);
+    return new Router(settings, { mock: settings.provider === "mock" ? new MockProvider() : undefined });
+  });
+}
 
 const app = createApp(db);
 const dist = join(process.cwd(), "client", "dist");

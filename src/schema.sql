@@ -171,6 +171,21 @@ CREATE TABLE IF NOT EXISTS debates (
   judge_model TEXT,
   job_id TEXT,
   mock_era BOOLEAN NOT NULL DEFAULT false,
+  triggered_by_debate_id TEXT,
+  triggered_by_feedback_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS debate_feedback (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  debate_id TEXT NOT NULL REFERENCES debates(id),
+  body TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  led_to_debate_id TEXT,
+  soul_version INTEGER,
+  soul_reason TEXT,
+  error TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
