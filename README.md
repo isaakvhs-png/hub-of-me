@@ -104,7 +104,7 @@ They cover the mock path (dump, filing, versions, debate, judge, soul update, us
 
 ## Deploy
 
-The app deploys from the GitHub repo [isaakvhs-png/hub-of-me](https://github.com/isaakvhs-png/hub-of-me), branch `main`. Neon holds Postgres. Render runs the free web service described in `render.yaml` (build `npm install && npm run build`, start `npm start`). That file lists the env var names and no values. Fill them in the Render dashboard. Do not commit secrets.
+The app deploys from the GitHub repo [isaakvhs-png/hub-of-me](https://github.com/isaakvhs-png/hub-of-me), branch `main`. Neon holds Postgres. Render runs the free web service described in `render.yaml` (build `npm install --include=dev && npm run build`, start `npm start`). `NODE_ENV=production` makes a plain `npm install` skip devDependencies, and Vite is one of those, so the build would fail with `vite: not found`. `--include=dev` installs it for the build. That file lists the env var names and no values. Fill them in the Render dashboard. Do not commit secrets.
 
 ### 1. Postgres
 
@@ -114,7 +114,7 @@ The app deploys from the GitHub repo [isaakvhs-png/hub-of-me](https://github.com
 ### 2. Web service on Render
 
 1. In Render, New Blueprint (or New Web Service) and connect [github.com/isaakvhs-png/hub-of-me](https://github.com/isaakvhs-png/hub-of-me), branch `main`.
-2. `render.yaml` already sets a free Node web service, the build command, and the start command. If you create the service by hand instead, use build `npm install && npm run build` and start `npm start`.
+2. `render.yaml` already sets a free Node web service, the build command, and the start command. If you create the service by hand instead, use build `npm install --include=dev && npm run build` and start `npm start`. The `--include=dev` flag is required because `NODE_ENV=production` otherwise skips devDependencies, and the client build needs Vite.
 3. Environment variables (names only; set the values in Render, not in git):
 
 | Name | Value |
