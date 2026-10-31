@@ -111,8 +111,52 @@ export function DebatePage() {
   const [observed, setObserved] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [rerunning, setRerunning] = useState(false);
+  const [rerunError, setRerunError] = useState("");
   async function reload() { if (id) setData(await api(`/api/debates/${id}`)); }
   useEffect(() => { reload().catch((err) => setError(err.message)); }, [id]);
+  useEffect(() => {
+    if (data?.debate.status !== "running") return;
+    const timer = window.setInterval(() => { void reload().catch(() => undefined); }, 1500);
+    return () => window.clearInterval(timer);
+  }, [id, data?.debate.status]);
+  async function runAgain() {
+    if (!id) return;
+    setRerunning(true);
+    setRerunError("");
+    setError("");
+    try {
+      const result = await api<{ reflection: { error?: string; debateId?: string } }>(`/api/debates/${id}/rerun`, { method: "POST", body: "{}" });
+      if (result.reflection.error) {
+        setRerunError(result.reflection.error);
+        await reload();
+        return;
+      }
+      const nextId = result.reflection.debateId;
+      if (!nextId) {
+        setRerunError("The rerun did not start a debate.");
+        return;
+      }
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        const view = await api<{ debate: DebateRow }>(`/api/debates/${nextId}`);
+        if (view.debate.status === "running") {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          continue;
+        }
+        if (view.debate.status === "failed") {
+          setRerunError(view.debate.whyWon || "The debate failed.");
+          return;
+        }
+        window.location.assign(`/debates/${nextId}`);
+        return;
+      }
+      setRerunError("The debate is still running. It will keep updating on this page if you open it.");
+    } catch (err) {
+      setRerunError(err instanceof Error ? err.message : "Could not run it again.");
+    } finally {
+      setRerunning(false);
+    }
+  }
   if (!data) return <p className="text-sm text-muted-foreground">{error || "Opening the debate…"}</p>;
   const winner = data.sides.find((side) => data.debate.whyWon && side.position);
   return (
@@ -120,10 +164,13 @@ export function DebatePage() {
       <Link to="/debates" className="text-xs uppercase tracking-wide text-muted-foreground">All debates</Link>
       <h1 className="mt-2 font-serif text-4xl italic">{data.debate.question}</h1>
       {data.debate.mockEra || data.debate.judgeModel?.startsWith("mock") ? <p className="mt-2 text-xs uppercase tracking-wide text-muted-foreground">Mock-era debate. It is not evidence for a real provider.</p> : null}
+      {data.debate.status === "running" || rerunning ? (
+        <p className="mt-4 text-sm text-primary" role="status">Running the debate…</p>
+      ) : null}
       {data.debate.status === "failed" ? (
         <div className="mt-4">
-          <p className="text-sm text-destructive">{data.debate.whyWon || "This debate failed."}</p>
-          <Button className="mt-3" variant="outline" disabled={busy} onClick={() => { setBusy(true); setError(""); api<{ reflection: { error?: string; debateId?: string } }>(`/api/debates/${id}/rerun`, { method: "POST", body: "{}" }).then((result) => { if (result.reflection.error) setError(result.reflection.error); else if (result.reflection.debateId) window.location.href = `/debates/${result.reflection.debateId}`; }).catch((err) => setError(err instanceof Error ? err.message : "Could not run it again.")).finally(() => setBusy(false)); }}>Run again</Button>
+          <p className="text-sm text-destructive">{rerunError || data.debate.whyWon || "This debate failed."}</p>
+          <Button className="mt-3" variant="outline" disabled={rerunning || busy} onClick={() => void runAgain()}>{rerunning ? "Running…" : "Run again"}</Button>
         </div>
       ) : null}
       {data.debate.closeCall ? <p className="mt-2 text-sm text-primary">Close call. The conclusion already stands.</p> : null}

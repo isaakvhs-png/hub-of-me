@@ -1,6 +1,9 @@
 import { UsageMissingError } from "../errors.js";
+import { isForcedToolChoiceError, rememberForcedToolChoiceRejected, supportsForcedToolChoice } from "./capabilities.js";
 import type { AiRequest, ProviderUsage } from "./types.js";
 import { usageIsReal } from "./types.js";
+
+const STRUCTURED_HINT = "Call the submit_result tool with one JSON object. If you answer in text, return one JSON object and no other prose.";
 
 interface AnthropicBlock {
   type: string;
@@ -21,27 +24,36 @@ interface AnthropicResponse {
   error?: { message?: string };
 }
 
-export async function anthropicComplete(
-  req: AiRequest & { model: string },
-  apiKey: string,
-  fetchImpl: typeof fetch = fetch,
-): Promise<{ text: string; usage: ProviderUsage; stopReason: string | null }> {
+function requestBody(req: AiRequest & { model: string }, forceTool: boolean): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model: req.model,
     max_tokens: req.maxTokens ?? 2000,
     system: req.system,
     messages: req.messages.map((message) => ({ role: message.role, content: message.content })),
   };
-  if (req.structured) {
-    body.tools = [
-      {
-        name: "submit_result",
-        description: "Return the task result as one JSON object.",
-        input_schema: { type: "object", additionalProperties: true },
-      },
-    ];
+  if (!req.structured) return body;
+  body.tools = [
+    {
+      name: "submit_result",
+      description: "Return the task result as one JSON object.",
+      input_schema: { type: "object", additionalProperties: true },
+    },
+  ];
+  if (forceTool) {
     body.tool_choice = { type: "tool", name: "submit_result" };
+    return body;
   }
+  body.tool_choice = { type: "auto" };
+  body.system = req.system.includes("submit_result") ? req.system : `${req.system}\n\n${STRUCTURED_HINT}`;
+  return body;
+}
+
+async function anthropicOnce(
+  req: AiRequest & { model: string },
+  apiKey: string,
+  fetchImpl: typeof fetch,
+  forceTool: boolean,
+): Promise<{ text: string; usage: ProviderUsage; stopReason: string | null }> {
   const response = await fetchImpl("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -49,7 +61,7 @@ export async function anthropicComplete(
       "anthropic-version": "2023-06-01",
       "content-type": "application/json",
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(requestBody(req, forceTool)),
   });
   const json = (await response.json()) as AnthropicResponse;
   if (!response.ok) {
@@ -65,7 +77,7 @@ export async function anthropicComplete(
     throw new UsageMissingError("Anthropic response had no token usage. Refusing to estimate.");
   }
   const blocks = json.content ?? [];
-  const tool = blocks.find((block) => block.type === "tool_use" && block.input && typeof block.input === "object");
+  const tool = blocks.find((block) => block.type === "tool_use" && block.name === "submit_result" && block.input && typeof block.input === "object");
   const text = tool
     ? JSON.stringify(tool.input)
     : blocks
@@ -76,4 +88,20 @@ export async function anthropicComplete(
   const stopReason = json.stop_reason ?? null;
   if (!text && stopReason !== "max_tokens") throw new Error("Anthropic response had no text.");
   return { text, usage, stopReason };
+}
+
+export async function anthropicComplete(
+  req: AiRequest & { model: string },
+  apiKey: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ text: string; usage: ProviderUsage; stopReason: string | null }> {
+  const forceTool = Boolean(req.structured) && supportsForcedToolChoice(req.model);
+  try {
+    return await anthropicOnce(req, apiKey, fetchImpl, forceTool);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (!req.structured || !forceTool || !isForcedToolChoiceError(message)) throw error;
+    rememberForcedToolChoiceRejected(req.model);
+    return anthropicOnce(req, apiKey, fetchImpl, false);
+  }
 }

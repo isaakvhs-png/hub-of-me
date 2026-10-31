@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { resetForcedToolChoiceMemory, supportsForcedToolChoice } from "../src/ai/capabilities.js";
 import { completeJson } from "../src/ai/tracked.js";
 import { Router } from "../src/ai/router.js";
 import { loadVisibleNotes } from "../src/pipeline/context.js";
@@ -12,6 +13,7 @@ import { fresh } from "./helpers.js";
 const savedKey = process.env.ANTHROPIC_API_KEY;
 
 afterEach(() => {
+  resetForcedToolChoiceMemory();
   if (savedKey == null) delete process.env.ANTHROPIC_API_KEY;
   else process.env.ANTHROPIC_API_KEY = savedKey;
 });
@@ -65,6 +67,63 @@ describe("repairs from the live diagnostics", () => {
     expect(bodies[1].max_tokens).toBe(4000);
     expect(bodies[0].tools).toBeTruthy();
     expect(bodies[1].tools).toBeTruthy();
+    expect(supportsForcedToolChoice("claude-sonnet-5-5")).toBe(false);
+    await db.close();
+  });
+
+  it("falls back when the model rejects a forced tool_choice and still parses text JSON", async () => {
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test-secret-value";
+    const { db, user } = await fresh();
+    const settings = await getSettings(db, user.id);
+    const bodies: { model?: string; tool_choice?: { type?: string }; system?: string }[] = [];
+    const ai = new Router(
+      { ...settings, provider: "anthropic", strongModel: "anthropic:claude-haiku-5-5" },
+      {
+        fetchImpl: async (_url, init) => {
+          const body = JSON.parse(String(init?.body)) as { model?: string; tool_choice?: { type?: string }; system?: string };
+          bodies.push(body);
+          if (body.tool_choice?.type === "tool") {
+            return new Response(
+              JSON.stringify({ error: { message: 'tool_choice: type "tool" and "any" are not supported for this model.' } }),
+              { status: 400 },
+            );
+          }
+          const autoCalls = bodies.filter((item) => item.tool_choice?.type === "auto").length;
+          if (autoCalls === 1) {
+            return new Response(
+              JSON.stringify({
+                stop_reason: "end_turn",
+                content: [{ type: "text", text: "I would rather answer in prose than call the tool." }],
+                usage: { input_tokens: 9, output_tokens: 11 },
+              }),
+              { status: 200 },
+            );
+          }
+          return new Response(
+            JSON.stringify({
+              stop_reason: "end_turn",
+              content: [{ type: "text", text: 'Sure.\n{"ok": true, "problem": ""}' }],
+              usage: { input_tokens: 14, output_tokens: 18 },
+            }),
+            { status: 200 },
+          );
+        },
+      },
+    );
+    const parsed = await completeJson(
+      db,
+      user.id,
+      ai,
+      { role: "critic", system: "Return JSON.", messages: [{ role: "user", content: "Check it." }] },
+      criticSchema,
+      {},
+    );
+    expect(parsed).toEqual({ ok: true, problem: "" });
+    expect(bodies.map((body) => body.tool_choice?.type)).toEqual(["tool", "auto", "auto"]);
+    expect(bodies[0].model).toBe("claude-haiku-5-5");
+    expect(bodies[1].system).toMatch(/submit_result/);
+    expect(supportsForcedToolChoice("claude-haiku-5-5")).toBe(false);
+    expect(supportsForcedToolChoice("claude-sonnet-5-5")).toBe(false);
     await db.close();
   });
 
