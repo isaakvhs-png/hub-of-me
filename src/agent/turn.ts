@@ -466,7 +466,8 @@ function mediaType(name: string): string {
 export async function greetIfNeeded(db: Db, ai: Router, userId: string): Promise<void> {
   const fresh = await db.query(`SELECT greeted_at FROM fresh_starts WHERE user_id = $1`, [userId]);
   const row = fresh.rows[0];
-  if (row && row.greeted_at == null) {
+  const live = await db.query(`SELECT id FROM conversations WHERE user_id = $1 AND archived_at IS NULL LIMIT 1`, [userId]);
+  if ((row && row.greeted_at == null) || (row && !live.rows[0])) {
     await runAgentTurn(db, ai, userId, { cue: "GREETING DUE" });
     await db.query(`UPDATE fresh_starts SET greeted_at = now() WHERE user_id = $1`, [userId]);
     await db.query(

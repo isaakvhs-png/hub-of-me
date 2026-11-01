@@ -4,7 +4,7 @@ import { Mic, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { TraceDetail, TraceView, type TraceSpan } from "@/components/trace";
-import { api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 import { readSse } from "@/lib/sse";
 import { appendAttachments, removeAttachment } from "../../../src/attachments";
 
@@ -54,7 +54,8 @@ export function ChatPage() {
       .then(async () => {
         const list = await api<Conversation[]>("/api/conversations");
         setConversations(list);
-        if (!params.get("c") && list[0]) setParams({ c: list[0].id }, { replace: true });
+        const current = params.get("c");
+        if (!current || !list.some((item) => item.id === current)) setParams(list[0] ? { c: list[0].id } : {}, { replace: true });
       })
       .catch((err) => setError(err.message));
     api<{ mind: { content: string } | null }>("/api/mind").then((data) => setMind(data.mind?.content ?? "")).catch(() => undefined);
@@ -82,7 +83,10 @@ export function ChatPage() {
       skipLoad.current = false;
       return;
     }
-    loadThread(conversationId).catch((err) => setError(err.message));
+    loadThread(conversationId).catch((err) => {
+      if (err instanceof ApiError && err.status === 404) setParams({}, { replace: true });
+      else setError(err.message);
+    });
   }, [conversationId]);
 
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, busy]);

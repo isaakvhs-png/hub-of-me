@@ -31,5 +31,49 @@ export async function freshStart(db: Db): Promise<number> {
     await logAction(db, user.id, { what: "fresh start", why: FRESH_REASON, source: "fresh", payload: {} });
     started += 1;
   }
+  for (const user of users) await catchUpFreshStart(db, user.id);
   return started;
+}
+
+/** Archive anything older than the fresh-start marker that is still in the live chat. Safe to run every boot. */
+export async function catchUpFreshStart(db: Db, userId: string): Promise<void> {
+  const marker = await db.query(`SELECT created_at FROM fresh_starts WHERE user_id = $1`, [userId]);
+  const at = marker.rows[0]?.created_at;
+  if (!at) return;
+  await db.query(
+    `UPDATE conversations SET archived_at = COALESCE(archived_at, now()) WHERE user_id = $1 AND archived_at IS NULL AND created_at < $2`,
+    [userId, at],
+  );
+  await db.query(
+    `UPDATE notes SET status = 'archived', archived_at = COALESCE(archived_at, now()), updated_at = now() WHERE user_id = $1 AND status <> 'archived' AND created_at < $2`,
+    [userId, at],
+  );
+  await db.query(
+    `UPDATE tasks SET status = 'archived', fade_reason = CASE WHEN fade_reason IS NULL OR fade_reason = '' THEN $3 ELSE fade_reason END, updated_at = now() WHERE user_id = $1 AND status <> 'archived' AND created_at < $2`,
+    [userId, at, FRESH_REASON],
+  );
+  await db.query(
+    `UPDATE info_requests SET status = 'archived', updated_at = now() WHERE user_id = $1 AND status <> 'archived' AND created_at < $2`,
+    [userId, at],
+  );
+  await db.query(
+    `UPDATE debates SET archived_at = COALESCE(archived_at, now()) WHERE user_id = $1 AND archived_at IS NULL AND created_at < $2`,
+    [userId, at],
+  );
+  await db.query(
+    `UPDATE claims SET archived_at = COALESCE(archived_at, now()) WHERE user_id = $1 AND archived_at IS NULL AND created_at < $2`,
+    [userId, at],
+  );
+  await db.query(
+    `UPDATE mind_notes SET archived_at = COALESCE(archived_at, now()) WHERE user_id = $1 AND archived_at IS NULL AND created_at < $2`,
+    [userId, at],
+  );
+  await db.query(
+    `UPDATE jobs SET archived_at = COALESCE(archived_at, now()) WHERE user_id = $1 AND archived_at IS NULL AND started_at < $2`,
+    [userId, at],
+  );
+  await db.query(
+    `UPDATE soul_versions SET archived_at = COALESCE(archived_at, now()) WHERE user_id = $1 AND version > 1 AND archived_at IS NULL AND version < (SELECT MAX(version) FROM soul_versions WHERE user_id = $1)`,
+    [userId],
+  );
 }

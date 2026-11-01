@@ -24,6 +24,9 @@ await ensureUser(db);
 await applyEnvProvider(db);
 await settleStuckDebates(db);
 await restoreCorruptedSouls(db);
+await db.query(
+  `UPDATE settings SET alternate_model = 'gemini:gemini-2.5-flash-lite' WHERE alternate_model LIKE '%gemini-2.5-flash' AND alternate_model NOT LIKE '%flash-lite%'`,
+);
 const fresh = await freshStart(db);
 if (fresh) console.log(`Fresh start archived the previous center for ${fresh} account(s). Reason: Fresh start before core redesign.`);
 await ensureCuriosity(db);

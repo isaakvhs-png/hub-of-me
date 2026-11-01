@@ -136,7 +136,17 @@ export async function listTraceForMessage(db: Db, userId: string, messageId: str
 
 export async function listTraceForConversation(db: Db, userId: string, conversationId: string): Promise<TraceEvent[]> {
   const result = await db.query(
-    `SELECT t.* FROM trace_events t JOIN messages m ON m.id = t.message_id WHERE t.user_id = $1 AND m.conversation_id = $2 ORDER BY t.created_at`,
+    `SELECT t.* FROM trace_events t
+     JOIN messages m ON m.id = t.message_id
+     WHERE t.user_id = $1 AND m.conversation_id = $2
+       AND (
+         t.target_id IS NULL
+         OR EXISTS (SELECT 1 FROM claims c WHERE c.id = t.target_id AND c.archived_at IS NULL)
+         OR EXISTS (SELECT 1 FROM tasks k WHERE k.id = t.target_id AND k.status <> 'archived')
+         OR EXISTS (SELECT 1 FROM debates d WHERE d.id = t.target_id AND d.archived_at IS NULL)
+         OR EXISTS (SELECT 1 FROM notes n WHERE n.id = t.target_id AND n.status <> 'archived')
+       )
+     ORDER BY t.created_at`,
     [userId, conversationId],
   );
   return result.rows.map(mapTrace);

@@ -454,13 +454,16 @@ export async function createConversation(db: Db, userId: string, title: string, 
   return conversationId;
 }
 
-export async function listConversations(db: Db, userId: string): Promise<Row[]> {
-  const result = await db.query(`SELECT * FROM conversations WHERE user_id = $1 AND archived_at IS NULL ORDER BY created_at DESC`, [userId]);
+export async function listConversations(db: Db, userId: string, history = false): Promise<Row[]> {
+  const result = history
+    ? await db.query(`SELECT * FROM conversations WHERE user_id = $1 AND archived_at IS NOT NULL ORDER BY created_at DESC`, [userId])
+    : await db.query(`SELECT * FROM conversations WHERE user_id = $1 AND archived_at IS NULL ORDER BY created_at DESC`, [userId]);
   return result.rows.map((row) => ({
     id: String(row.id),
     title: String(row.title),
     discoveryCardId: row.discovery_card_id == null ? null : String(row.discovery_card_id),
     createdAt: iso(row.created_at),
+    archivedAt: row.archived_at == null ? null : iso(row.archived_at),
   }));
 }
 
@@ -468,7 +471,13 @@ export async function getConversation(db: Db, userId: string, conversationId: st
   const result = await db.query(`SELECT * FROM conversations WHERE id = $1 AND user_id = $2`, [conversationId, userId]);
   const row = result.rows[0];
   if (!row) return null;
-  return { id: String(row.id), title: String(row.title), discoveryCardId: row.discovery_card_id == null ? null : String(row.discovery_card_id), createdAt: iso(row.created_at) };
+  return {
+    id: String(row.id),
+    title: String(row.title),
+    discoveryCardId: row.discovery_card_id == null ? null : String(row.discovery_card_id),
+    createdAt: iso(row.created_at),
+    archivedAt: row.archived_at == null ? null : iso(row.archived_at),
+  };
 }
 
 export async function addMessage(db: Db, conversationId: string, role: string, content: string): Promise<string> {
@@ -759,6 +768,7 @@ export async function listJobs(db: Db, userId: string): Promise<Row[]> {
     why: String(row.why),
     startedAt: iso(row.started_at),
     finishedAt: text(row.finished_at),
+    archivedAt: row.archived_at == null ? null : iso(row.archived_at),
   }));
 }
 
@@ -867,6 +877,7 @@ function mapDebate(row: Row): Row {
     triggeredByDebateId: row.triggered_by_debate_id == null ? null : String(row.triggered_by_debate_id),
     triggeredByFeedbackId: row.triggered_by_feedback_id == null ? null : String(row.triggered_by_feedback_id),
     createdAt: iso(row.created_at),
+    archivedAt: row.archived_at == null ? null : iso(row.archived_at),
   };
 }
 

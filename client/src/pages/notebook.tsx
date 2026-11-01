@@ -9,9 +9,11 @@ interface Wish { name: string; reason: string }
 export function NotebookPage() {
   const [tools, setTools] = useState<ToolRow[]>([]);
   const [wishes, setWishes] = useState<Wish[]>([]);
+  const [history, setHistory] = useState<{ id: string; title: string }[]>([]);
   const [error, setError] = useState("");
   useEffect(() => {
     api<{ tools: ToolRow[]; wishes: Wish[] }>("/api/tools").then((data) => { setTools(data.tools); setWishes(data.wishes); }).catch((err) => setError(err.message));
+    api<{ id: string; title: string }[]>("/api/conversations?history=1").then(setHistory).catch(() => setHistory([]));
   }, []);
   const sections = [
     { href: "/picture", title: "Picture of you", text: "Claims, evidence, predictions, and open questions." },
@@ -32,6 +34,13 @@ export function NotebookPage() {
             <div className="font-serif text-2xl">{section.title}</div>
             <p className="mt-1 text-sm text-muted-foreground">{section.text}</p>
           </Link>
+        ))}
+      </div>
+      <h2 className="mt-10 font-serif text-2xl">Earlier conversations</h2>
+      <div className="mt-3 space-y-2">
+        {history.length === 0 ? <p className="text-sm text-muted-foreground">Nothing archived.</p> : null}
+        {history.map((item) => (
+          <p key={item.id} className="text-sm text-muted-foreground">{item.title}</p>
         ))}
       </div>
       <h2 className="mt-10 font-serif text-2xl">Tools</h2>

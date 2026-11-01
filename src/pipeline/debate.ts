@@ -1,13 +1,14 @@
 import type { Db } from "../db.js";
 import { argumentRejection, judgeRejection, reflectionRejection } from "../hedge.js";
 import type { Router } from "../ai/router.js";
-import { debaterPool, resolveRoleModel } from "../ai/router.js";
+import { debaterPool, freeDebaterIsWiser, resolveRoleModel } from "../ai/router.js";
 import { completeJson } from "../ai/tracked.js";
 import { commitPrompt, debaterPrompt, hisWordsBlock, judgePrompt, planPrompt } from "../prompts.js";
 import {
   concludeDebate,
   failDebate,
   finishJob,
+  getBudget,
   getSettings,
   getSoul,
   insertCarried,
@@ -27,6 +28,7 @@ import {
   listRecentDumps,
   logAction,
   markQueueHandled,
+  spendSince,
   openQueue,
   resolveConflict,
   setPredictionOutcome,
@@ -36,6 +38,7 @@ import {
 import { extractJson } from "../json.js";
 import { ValidationError } from "../errors.js";
 import { askProblem, copiedPhrase, looksLikeAction } from "../wording.js";
+import { startOfMonth } from "../time.js";
 import { listClaims, recordReaction, saveClaims, scoreReaction } from "../picture.js";
 import { argumentSchema, debatePlanSchema, judgmentSchema, reflectionOutcomeSchema, type ReflectionOutcome } from "../schemas.js";
 import { changeSoul, mergeSoulSections } from "../soul.js";
@@ -204,7 +207,10 @@ export async function runReflection(
       debatePlanSchema,
       meta,
     );
-    if (settings.provider !== "mock") debaterPool(settings);
+    const budget = await getBudget(db, userId);
+    const spent = await spendSince(db, userId, startOfMonth("Europe/Amsterdam").toISOString());
+    const allowFreeLite = settings.provider !== "mock" && freeDebaterIsWiser(budget.monthlyCapEurCents - spent.spentEurCents, budget.monthlyCapEurCents);
+    if (settings.provider !== "mock") debaterPool(settings, { allowFreeLite });
     const slices = partitionEvidence(
       notes.map((note) => note.id),
       plan.sides.length,
@@ -224,7 +230,7 @@ export async function runReflection(
     for (let index = 0; index < plan.sides.length; index += 1) {
       const side = plan.sides[index];
       const evidenceNotes = notes.filter((note) => slices[index].includes(note.id));
-      const resolved = resolveRoleModel(settings, { role: "debater", debaterIndex: index });
+      const resolved = resolveRoleModel(settings, { role: "debater", debaterIndex: index, allowFreeLite });
       const savedId = await insertDebateSide(db, {
         debateId,
         position: side.position,

@@ -197,7 +197,7 @@ export function createApp(db: Db) {
     });
   });
 
-  app.get("/api/conversations", async (c) => c.json(await listConversations(db, c.get("userId"))));
+  app.get("/api/conversations", async (c) => c.json(await listConversations(db, c.get("userId"), c.req.query("history") === "1")));
 
   app.post("/api/conversations", async (c) => {
     const body = z.object({ title: z.string().optional() }).parse(await c.req.json().catch(() => ({})));
@@ -208,6 +208,7 @@ export function createApp(db: Db) {
   app.get("/api/conversations/:id/messages", async (c) => {
     const conversation = await getConversation(db, c.get("userId"), c.req.param("id"));
     if (!conversation) return c.json({ error: "Not found." }, 404);
+    if (conversation.archivedAt && c.req.query("history") !== "1") return c.json({ error: "That conversation is in the notebook history." }, 404);
     return c.json(await listMessages(db, c.req.param("id")));
   });
 

@@ -82,6 +82,10 @@ function isoTime(value: unknown): string {
   return Number.isNaN(date.getTime()) ? String(value) : date.toISOString();
 }
 
+function includeArchived(c: Context): boolean {
+  return c.req.query("includeArchived") === "1";
+}
+
 function limitOf(c: Context): number {
   const raw = Number(c.req.query("limit") ?? 20);
   if (!Number.isFinite(raw)) return 20;
@@ -175,6 +179,7 @@ export function mountDiagnostics(app: Hono<{ Variables: { userId: string } }>, d
 
   app.get("/api/diag/recent", async (c) => {
     const limit = limitOf(c);
+    const archived = includeArchived(c);
     const userId = await soleUserId(db);
     if (!userId) return c.json(redactSecrets({ limit, dumps: [], notes: [], calls: [], failures: [] }));
     const [dumps, notes, usage, jobs, actions] = await Promise.all([
@@ -182,21 +187,22 @@ export function mountDiagnostics(app: Hono<{ Variables: { userId: string } }>, d
         `SELECT m.id, m.conversation_id, m.content, m.created_at
          FROM messages m
          JOIN conversations c ON c.id = m.conversation_id
-         WHERE c.user_id = $1 AND m.role = 'user'
+         WHERE c.user_id = $1 AND m.role = 'user' AND ($3::boolean OR c.archived_at IS NULL)
          ORDER BY m.created_at DESC
          LIMIT $2`,
-        [userId, limit],
+        [userId, limit, archived],
       ),
       db.query(
-        `SELECT id, type, title, body, status, mock_era, created_at FROM notes WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2`,
-        [userId, limit],
+        `SELECT id, type, title, body, status, mock_era, created_at FROM notes WHERE user_id = $1 AND ($3::boolean OR status <> 'archived') ORDER BY created_at DESC LIMIT $2`,
+        [userId, limit, archived],
       ),
       listUsage(db, userId, "1970-01-01T00:00:00.000Z"),
       listJobs(db, userId),
       listActions(db, userId, limit),
     ]);
+    const visibleJobs = archived ? jobs : jobs.filter((job) => !job.archivedAt);
     const failures = [
-      ...jobs
+      ...visibleJobs
         .filter((job) => String(job.status) === "failed" || String(job.status) === "refused")
         .map((job) => ({ at: String(job.finishedAt ?? job.startedAt), what: `${String(job.kind)} ${String(job.status)}`, why: String(job.report), source: "job" })),
       ...actions
@@ -231,7 +237,8 @@ export function mountDiagnostics(app: Hono<{ Variables: { userId: string } }>, d
     const limit = limitOf(c);
     const userId = await soleUserId(db);
     if (!userId) return c.json(redactSecrets({ debates: [] }));
-    const debates = (await listDebates(db, userId)).slice(0, limit);
+    const archived = includeArchived(c);
+    const debates = (await listDebates(db, userId)).filter((debate) => archived || !debate.archivedAt).slice(0, limit);
     const withSides = await Promise.all(
       debates.map(async (debate) => ({
         ...debate,
@@ -250,14 +257,22 @@ export function mountDiagnostics(app: Hono<{ Variables: { userId: string } }>, d
 
   app.get("/api/diag/errors", async (c) => {
     const limit = limitOf(c);
+    const archived = includeArchived(c);
     const userId = await soleUserId(db);
     const jobs = userId ? await listJobs(db, userId) : [];
     const actions = userId ? await listActions(db, userId, 200) : [];
+    const marker = userId ? await db.query(`SELECT created_at FROM fresh_starts WHERE user_id = $1`, [userId]) : { rows: [] };
+    const mark = marker.rows[0]?.created_at ? new Date(String(marker.rows[0].created_at)).getTime() : null;
+    const afterMarker = (at: string) => archived || mark == null || new Date(at).getTime() >= mark;
     return c.json(
       redactSecrets({
         server: recentServerErrors(limit),
-        jobs: jobs.filter((job) => String(job.status) === "failed" || String(job.status) === "refused").slice(0, limit),
-        actions: actions.filter((action) => /fail|stopped|error|refused/i.test(String(action.what))).slice(0, limit),
+        jobs: jobs
+          .filter((job) => (archived || !job.archivedAt) && (String(job.status) === "failed" || String(job.status) === "refused"))
+          .slice(0, limit),
+        actions: actions
+          .filter((action) => /fail|stopped|error|refused/i.test(String(action.what)) && afterMarker(String(action.createdAt)))
+          .slice(0, limit),
       }),
     );
   });

@@ -30,6 +30,23 @@ describe("fresh start", () => {
     });
     expect(await freshStart(db)).toBe(1);
     expect(await freshStart(db)).toBe(0);
+    const old = await db.query(
+      `INSERT INTO conversations (id, user_id, title, created_at) VALUES ('old-chat', $1, 'Old dump', $2) RETURNING id`,
+      [user.id, "2020-01-01T00:00:00.000Z"],
+    );
+    expect(old.rows[0]?.id).toBe("old-chat");
+    const { catchUpFreshStart } = await import("../src/fresh.js");
+    await catchUpFreshStart(db, user.id);
+    const archived = await db.query(`SELECT archived_at FROM conversations WHERE id = 'old-chat'`);
+    expect(archived.rows[0]?.archived_at).toBeTruthy();
+    const live = await db.query(
+      `INSERT INTO conversations (id, user_id, title) VALUES ('new-chat', $1, 'Hello') RETURNING archived_at`,
+      [user.id],
+    );
+    await catchUpFreshStart(db, user.id);
+    const still = await db.query(`SELECT archived_at FROM conversations WHERE id = 'new-chat'`);
+    expect(still.rows[0]?.archived_at ?? null).toBeNull();
+    expect(live.rows[0]?.archived_at ?? null).toBeNull();
     const soul = await getSoul(db, user.id);
     expect(soul?.reason).toBe(FRESH_REASON);
     expect(soul?.content).toMatch(/## Purpose/);

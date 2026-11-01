@@ -15,6 +15,8 @@ export interface AiRequest {
   structured?: boolean;
   /** Set by the debate runner so two debaters can be given different models. */
   debaterIndex?: number;
+  /** When the paid budget is nearly gone, a debater may use Flash-Lite. */
+  allowFreeLite?: boolean;
   /** How hard this call is. The router picks a model from it when the provider is not mock. */
   effort?: "light" | "conversation" | "deep";
   images?: { mediaType: string; base64: string }[];

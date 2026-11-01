@@ -32,6 +32,9 @@ describe("provider selection", () => {
     const settings = await getSettings(db, user.id);
     expect(settings.provider).toBe("anthropic");
     expect(resolveRoleModel(settings, { role: "debater", debaterIndex: 0 }).provider).toBe("anthropic");
+    const withFlash = { ...settings, alternateModel: "gemini:gemini-2.5-flash" };
+    expect(resolveRoleModel(withFlash, { role: "debater", debaterIndex: 1 }).model).not.toContain("gemini");
+    expect(resolveRoleModel(withFlash, { role: "debater", debaterIndex: 1, allowFreeLite: true }).model).not.toContain("gemini-2.5-flash");
     expect(resolveRoleModel(settings, { role: "judge" }).model).not.toMatch(/^mock/);
     expect(resolveRoleModel(settings, { role: "conversation" }).model).toBe("claude-haiku-5-5");
 

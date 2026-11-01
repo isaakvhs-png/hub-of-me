@@ -76,6 +76,12 @@ describe("diagnostics", () => {
     expect(blob).not.toContain(TOKEN);
     expect(blob).toContain("[redacted]");
     expect(recent.notes[0].title).toBe("Contains a secret");
+    const userId = (await ensureUser(db, { email: "peter@local", password: "hub-of-me", name: "Peter", provider: "mock" })).id;
+    await db.query(`UPDATE notes SET status = 'archived' WHERE user_id = $1`, [userId]);
+    const withoutArchive = await (await app.request("/api/diag/recent", { headers: { authorization: `Bearer ${TOKEN}` } })).json();
+    expect(withoutArchive.notes).toHaveLength(0);
+    const shown = await (await app.request("/api/diag/recent?includeArchived=1", { headers: { authorization: `Bearer ${TOKEN}` } })).json();
+    expect(shown.notes[0].title).toBe("Contains a secret");
     expect(errors.server[0].path).toBe("/api/dump");
 
     const health = await (await app.request("/api/diag/health", { headers: { authorization: `Bearer ${TOKEN}` } })).json();

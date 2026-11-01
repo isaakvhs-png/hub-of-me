@@ -80,7 +80,7 @@ export function providerReport(settingsProvider: ProviderName): ProviderReport {
   return { active, why, envAiProvider: env.raw, envNormalized: env.normalized, settingsProvider, keys };
 }
 
-export function resolveRoleModel(settings: Settings, req: Pick<AiRequest, "role" | "debaterIndex" | "model">): ResolvedModel {
+export function resolveRoleModel(settings: Settings, req: Pick<AiRequest, "role" | "debaterIndex" | "model" | "allowFreeLite">): ResolvedModel {
   if (settings.provider !== "mock" && req.model?.startsWith("gemini-")) return { provider: "gemini", model: req.model };
   if (settings.provider !== "mock" && req.model?.startsWith("claude-")) return { provider: "anthropic", model: req.model };
   if (settings.provider === "mock") {
@@ -92,21 +92,30 @@ export function resolveRoleModel(settings: Settings, req: Pick<AiRequest, "role"
   if (req.role === "judge") return parseModel(settings.judgeModel, settings.provider);
   if (req.role === "reflection" || req.role === "critic") return parseModel(settings.strongModel, settings.provider);
   if (req.role === "debater") {
-    const pool = debaterPool(settings);
+    const pool = debaterPool(settings, { allowFreeLite: req.allowFreeLite });
     return pool[(req.debaterIndex ?? 0) % pool.length];
   }
   return parseModel(settings.cheapModel, settings.provider);
 }
 
-export function debaterPool(settings: Settings): ResolvedModel[] {
+/** Flash (about 20 free requests a day) is not a debater. Flash-Lite only when the paid budget is nearly spent. */
+export function freeDebaterIsWiser(leftEurCents: number, capEurCents: number): boolean {
+  if (capEurCents <= 0) return true;
+  return leftEurCents < Math.min(200, capEurCents * 0.1);
+}
+
+export function debaterPool(settings: Settings, opts?: { allowFreeLite?: boolean }): ResolvedModel[] {
   const judge = parseModel(settings.judgeModel, settings.provider);
   const keys = keysPresent();
-  const candidates = [settings.cheapModel, settings.alternateModel, settings.strongModel].map((spec) => parseModel(spec, settings.provider));
+  const candidates = [settings.cheapModel, settings.strongModel, settings.alternateModel].map((spec) => parseModel(spec, settings.provider));
   const pool: ResolvedModel[] = [];
   for (const candidate of candidates) {
     if (candidate.provider === judge.provider && candidate.model === judge.model) continue;
+    if (candidate.provider === "gemini") {
+      const lite = candidate.model.includes("flash-lite");
+      if (!lite || !opts?.allowFreeLite || !keys.gemini) continue;
+    }
     if (candidate.provider === "anthropic" && !keys.anthropic && settings.provider !== "anthropic") continue;
-    if (candidate.provider === "gemini" && !keys.gemini) continue;
     if (pool.some((item) => item.provider === candidate.provider && item.model === candidate.model)) continue;
     pool.push(candidate);
   }
