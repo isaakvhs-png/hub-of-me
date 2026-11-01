@@ -36,6 +36,7 @@ import {
 import { extractJson } from "../json.js";
 import { ValidationError } from "../errors.js";
 import { askProblem, copiedPhrase, looksLikeAction } from "../wording.js";
+import { listClaims, recordReaction, saveClaims, scoreReaction } from "../picture.js";
 import { argumentSchema, debatePlanSchema, judgmentSchema, reflectionOutcomeSchema, type ReflectionOutcome } from "../schemas.js";
 import { changeSoul, mergeSoulSections } from "../soul.js";
 import { loadVisibleNotes, partitionEvidence, renderNotes, scrubArgument, shuffle } from "./context.js";
@@ -77,13 +78,61 @@ export async function applyOutcome(db: Db, userId: string, debateId: string, out
     if (evidence.length === 0) continue;
     await insertPreference(db, userId, rule.statement, evidence);
   }
-  for (const request of outcome.infoRequests ?? []) {
+  for (const line of outcome.picture ?? []) {
+    await saveClaims(
+      db,
+      userId,
+      [
+        {
+          statement: line.statement,
+          status: "tentative",
+          evidence: (outcome.evidence ?? []).map((quote) => ({ quote: quote.quote, source: quote.source })),
+        },
+      ],
+      "record",
+    );
+  }
+  if (outcome.claimUpdates?.length) await saveClaims(db, userId, outcome.claimUpdates, "revise");
+  else if (outcome.predictionScore) {
+    await logAction(db, userId, {
+      what: "prediction scored",
+      why: `Scored ${outcome.predictionScore}. No claim revision was returned.`,
+      source: "reflection",
+      payload: { debateId },
+    });
+  }
+  for (let index = 0; index < (outcome.infoRequests ?? []).length; index += 1) {
+    const request = outcome.infoRequests?.[index];
+    if (!request) continue;
     const problem = askProblem(request);
     if (problem) throw new ValidationError(problem);
     const key = norm(request.question);
     if (never.has(key) || openQuestions.has(key)) continue;
-    await insertInfoRequest(db, userId, { ...request, debateId });
+    const requestId = await insertInfoRequest(db, userId, {
+      question: request.question,
+      why: request.why,
+      subject: request.subject,
+      context: request.context,
+      debateId,
+      rank: index,
+    });
     openQuestions.add(key);
+    const prediction = request.expect?.trim() ?? "";
+    if (prediction) {
+      await recordReaction(db, userId, { subjectKind: "ask", subjectId: requestId, prediction });
+    } else {
+      await logAction(db, userId, {
+        what: "prediction missing",
+        why: `An ask about ${request.subject} was stored without the model's prediction, so a placeholder was recorded.`,
+        source: "reflection",
+        payload: { requestId },
+      });
+      await recordReaction(db, userId, {
+        subjectKind: "ask",
+        subjectId: requestId,
+        prediction: `He will respond to the ask about ${request.subject}.`,
+      });
+    }
   }
   for (const quote of outcome.evidence ?? []) {
     await insertEvidenceQuote(db, userId, { debateId, quote: quote.quote, source: quote.source });
@@ -252,6 +301,15 @@ export async function runReflection(
     const openConflicts = (await listConflicts(db, userId)).filter((item) => !item.resolvedAt);
     const neverAsk = (await listInfoRequests(db, userId)).filter((item) => item.status === "never");
     const verbatim = [opts.trigger?.feedback ?? "", ...dumps.map((dump) => dump.content)].filter((item) => item.trim().length > 0);
+    let unscored = "";
+    if (opts.trigger) {
+      const prior = await db.query(
+        `SELECT prediction FROM reaction_predictions WHERE user_id = $1 AND subject_id = $2 AND score IS NULL ORDER BY created_at DESC LIMIT 1`,
+        [userId, opts.trigger.debateId],
+      );
+      unscored = prior.rows[0] ? String(prior.rows[0].prediction) : "";
+    }
+    const claims = await listClaims(db, userId);
     const outcome = await completeJson(
       db,
       userId,
@@ -269,8 +327,9 @@ export async function runReflection(
           predictions: openPredictions.map((item) => `prediction:${item.id} ${item.prediction}`).join("\n"),
           conflicts: openConflicts.map((item) => `${item.id}: ${item.description}`).join("\n"),
           neverAsk: neverAsk.map((item) => String(item.question)).join("\n"),
+          claims: claims.map((claim) => `${claim.id} [${claim.status}] ${claim.statement}`).join("\n"),
         }),
-        messages: [{ role: "user", content: "Commit." }],
+        messages: [{ role: "user", content: unscored ? `UNSCORED PREDICTION:\n${unscored}\nEND UNSCORED PREDICTION\nHe has now responded. Score it, then commit.` : "Commit." }],
       },
       reflectionOutcomeSchema,
       {
@@ -342,6 +401,14 @@ export async function runReflection(
       distinctModels.size < sides.length ? "Debaters did not all have different models. The judge model was still kept out of the debate." : "Debaters ran on different models.",
     ].join("\n");
     await finishJob(db, jobId, "done", report);
+    await recordReaction(db, userId, {
+      subjectKind: "debate",
+      subjectId: debateId,
+      prediction: outcome.hisReaction || "He will say whether this commitment fits the way he decides.",
+    });
+    if (opts.trigger && outcome.predictionScore) {
+      await scoreReaction(db, userId, opts.trigger.debateId, opts.trigger.feedback, outcome.predictionScore);
+    }
     return { debateId, soulVersion, commitment: outcome.commitment };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Reflection failed.";

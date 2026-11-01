@@ -32,11 +32,54 @@ export const filingSchema = z.object({
         why: z.string().min(1),
         owner: z.enum(["peter", "system"]),
         due: z.string().optional(),
+        surfaced: z.boolean().optional(),
+        whyNow: z.string().optional(),
       }),
     )
-    .max(8)
+    .max(12)
     .optional(),
-  closeTaskIds: z.array(z.string()).max(8).optional(),
+  closeTaskIds: z.array(z.string()).max(12).optional(),
+  fade: z.array(z.object({ taskId: z.string().min(1), reason: z.string().min(1) })).max(12).optional(),
+});
+
+export const traceSchema = z.object({
+  spans: z.array(
+    z.object({
+      phrase: z.string().min(1),
+      destination: z.enum(["picture", "world", "followup", "soul", "debate", "behavior", "memory"]),
+      label: z.string().min(1).max(160),
+      situations: z.string().max(200).optional(),
+    }),
+  ),
+});
+
+export const claimUpdateSchema = z.object({
+  claimId: z.string().min(1).optional(),
+  statement: z.string().min(1),
+  situations: z.string().optional(),
+  status: z.enum(["tentative", "held", "revised", "dropped"]).optional(),
+  evidence: z
+    .array(
+      z.object({
+        quote: z.string().min(1),
+        source: z.string().min(1),
+      }),
+    )
+    .optional(),
+});
+
+export const reactionScoreSchema = z.object({
+  score: z.enum(["hit", "miss", "partial"]),
+  claimUpdates: z.array(claimUpdateSchema).optional(),
+});
+
+export const mindNoteSchema = z.object({
+  note: z.string().min(1),
+  coversPeter: z.boolean(),
+  coversWorld: z.boolean(),
+  coversItself: z.boolean(),
+  quiet: z.array(z.enum(["peter", "world", "itself"])),
+  quietWhy: z.string().optional(),
 });
 
 export const criticSchema = z.object({
@@ -84,6 +127,8 @@ export const judgmentSchema = z.object({
 
 export const reflectionOutcomeSchema = z.object({
   commitment: z.string().min(1),
+  hisReaction: z.string().min(1).optional(),
+  predictionScore: z.enum(["hit", "miss", "partial"]).optional(),
   soul: z
     .object({
       reason: z.string().min(1),
@@ -113,9 +158,11 @@ export const reflectionOutcomeSchema = z.object({
         question: z.string().min(1),
         context: z.string().min(1),
         why: z.string().min(1),
+        expect: z.string().min(1).optional(),
       }),
     )
     .optional(),
+  claimUpdates: z.array(claimUpdateSchema).optional(),
   evidence: z
     .array(
       z.object({

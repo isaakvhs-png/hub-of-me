@@ -16,6 +16,7 @@ const more = [
   { to: "/brief", label: "Brief" },
   { to: "/asks", label: "Asks" },
   { to: "/debates", label: "Debates" },
+  { to: "/picture", label: "Picture" },
   { to: "/soul", label: "Soul" },
   { to: "/why", label: "Why" },
   { to: "/health", label: "Health" },

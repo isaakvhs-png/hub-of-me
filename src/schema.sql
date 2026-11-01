@@ -131,6 +131,7 @@ CREATE TABLE IF NOT EXISTS info_requests (
   subject TEXT NOT NULL DEFAULT '',
   context TEXT NOT NULL DEFAULT '',
   debate_id TEXT,
+  rank INTEGER,
   status TEXT NOT NULL,
   answer TEXT,
   postpone_until TIMESTAMPTZ,
@@ -380,8 +381,69 @@ CREATE TABLE IF NOT EXISTS tasks (
   source_id TEXT,
   conversation_id TEXT,
   last_raised_at TIMESTAMPTZ,
+  why_now TEXT,
+  surfaced BOOLEAN NOT NULL DEFAULT false,
+  fade_reason TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS claims (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  statement TEXT NOT NULL,
+  situations TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS claim_evidence (
+  id TEXT PRIMARY KEY,
+  claim_id TEXT NOT NULL REFERENCES claims(id),
+  quote TEXT NOT NULL,
+  source TEXT NOT NULL,
+  source_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS reaction_predictions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  subject_kind TEXT NOT NULL,
+  subject_id TEXT NOT NULL,
+  prediction TEXT NOT NULL,
+  outcome TEXT,
+  score TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  scored_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS trace_events (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  message_id TEXT,
+  start_offset INTEGER NOT NULL,
+  end_offset INTEGER NOT NULL,
+  phrase TEXT NOT NULL,
+  destination TEXT NOT NULL,
+  label TEXT NOT NULL,
+  target_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS mind_notes (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  content TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS visits (
+  user_id TEXT NOT NULL REFERENCES users(id),
+  surface TEXT NOT NULL,
+  seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, surface)
 );
 
 CREATE INDEX IF NOT EXISTS notes_user_idx ON notes (user_id, updated_at);

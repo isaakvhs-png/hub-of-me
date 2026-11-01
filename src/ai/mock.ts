@@ -26,6 +26,7 @@ export class MockProvider {
   planMissingUncomfortable = 0;
   judgeAverages = 0;
   criticRejects = 0;
+  mindRejects = 0;
 
   async complete(req: AiRequest & { model: string }): Promise<Omit<AiResult, "durationMs" | "inputChars">> {
     this.calls.push(req);
@@ -51,14 +52,39 @@ export class MockProvider {
       return JSON.stringify({ ok: true, problem: "" });
     }
     if (req.role === "conversation") return conversation(blob);
+    if (req.role === "filing" && req.system.includes("TASK: trace")) return trace(blob);
+    if (req.role === "filing" && req.system.includes("TASK: mind")) return this.mind();
     if (req.role === "filing") return filing(blob);
     if (req.role === "reflection" && req.system.includes("TASK: plan")) return this.plan();
+    if (req.role === "reflection" && req.system.includes("TASK: score")) return score();
     if (req.role === "reflection" && req.system.includes("TASK: commit")) return commit(blob);
     if (req.role === "debater") return argument(blob);
     if (req.role === "judge") return this.judge(blob);
     if (req.role === "research") return research();
     if (req.role === "duties") return duties(blob);
     return conversation(blob);
+  }
+
+  private mind(): string {
+    if (this.mindRejects > 0) {
+      this.mindRejects -= 1;
+      return JSON.stringify({
+        note: "Only a fragment about him.",
+        coversPeter: true,
+        coversWorld: false,
+        coversItself: false,
+        quiet: [],
+        quietWhy: "",
+      });
+    }
+    return JSON.stringify({
+      note: "He is still mostly unknown. His world is quiet because little has been said. I am curious, and I am not steering.",
+      coversPeter: true,
+      coversWorld: true,
+      coversItself: true,
+      quiet: ["world"],
+      quietWhy: "Little has been said about what is ongoing.",
+    });
   }
 
   private plan(): string {
@@ -122,6 +148,14 @@ function conversation(blob: string): string {
   ].join("\n");
 }
 
+function trace(blob: string): string {
+  const dump = section(blob, "DUMP") || blob.trim();
+  const phrase = dump.split(/[.!\n]/).map((part) => part.trim()).find((part) => part.length > 8) ?? dump.slice(0, 80);
+  return JSON.stringify({
+    spans: phrase ? [{ phrase, destination: "world", label: "Noting what he brought" }] : [],
+  });
+}
+
 function filing(blob: string): string {
   const dump = section(blob, "DUMP") || blob.trim();
   const title = (dump.split("\n")[0] || "Untitled").slice(0, 80);
@@ -175,11 +209,31 @@ function commit(blob: string): string {
         question: "What would you put down to stay with keeping the latest dump in view?",
         context: "The debate committed to keeping the latest dump visible, and the record does not name what that costs.",
         why: "A commitment without a named cost is not a decision yet.",
+        expect: "He will name what the commitment costs, or say the ask is the wrong one.",
       },
     ],
+    hisReaction: section(blob, "UNSCORED PREDICTION") ? undefined : "He will say whether this commitment fits the way he decides.",
+    predictionScore: section(blob, "UNSCORED PREDICTION") ? "partial" : undefined,
+    claimUpdates: section(blob, "UNSCORED PREDICTION")
+      ? [{ statement: "What he does with a commitment only partly matches the prediction, so the claim stays tentative.", status: "revised", situations: "after he responds to a commitment" }]
+      : [],
     predictions: ["The next dump returns to this same thread if it stays unexplored."],
     predictionChecks: [],
     conflictsResolved: [],
+  });
+}
+
+function score(): string {
+  return JSON.stringify({
+    score: "partial",
+    claimUpdates: [
+      {
+        statement: "His answer only partly matched the prediction, so the claim stays open.",
+        situations: "when he answers an ask",
+        status: "revised",
+        evidence: [{ quote: "his answer", source: "feedback" }],
+      },
+    ],
   });
 }
 

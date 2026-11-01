@@ -23,6 +23,7 @@ import {
   openQueue,
   startJob,
 } from "../repo.js";
+import { extractTrace } from "../picture.js";
 import { dutiesSchema, researchSchema } from "../schemas.js";
 import { archiveNote } from "./dump.js";
 import { loadVisibleNotes, renderNotes } from "./context.js";
@@ -93,7 +94,13 @@ export async function runNightly(db: Db, ai: Router, userId: string, now = new D
   }
 }
 
-export async function runResearch(db: Db, ai: Router, userId: string, topic: string): Promise<{ blocked: boolean; reason?: string; cardId?: string }> {
+export async function runResearch(
+  db: Db,
+  ai: Router,
+  userId: string,
+  topic: string,
+  onEvent?: (event: Record<string, unknown> & { type: string }) => void | Promise<void>,
+): Promise<{ blocked: boolean; reason?: string; cardId?: string }> {
   const jobId = await startJob(db, userId, "research", "Research the topic and store every source.");
   const meta = { jobId, jobKind: "research" };
   try {
@@ -135,6 +142,17 @@ export async function runResearch(db: Db, ai: Router, userId: string, topic: str
       }
     }
     const cardId = await insertDiscovery(db, userId, { title: topic.slice(0, 140), finding: form.finding, sourceIds });
+    await onEvent?.({ type: "source", text: form.finding, cardId });
+    const traces = await extractTrace(db, ai, userId, form.finding, null, { targetId: cardId });
+    for (const trace of traces) await onEvent?.({ type: "span", ...trace });
+    if (!traces.length) {
+      await logAction(db, userId, {
+        what: "search stored without a marked phrase",
+        why: "Extraction found no phrase from the finding in the finding.",
+        source: "research",
+        payload: { cardId },
+      });
+    }
     await finishJob(db, jobId, "done", form.finding);
     return { blocked: false, cardId };
   } catch (error) {

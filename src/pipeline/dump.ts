@@ -19,10 +19,12 @@ import {
   listTasks,
   logAction,
   markTaskRaised,
+  setTaskStatus,
   reviseNote,
 } from "../repo.js";
 import { takeCarriedCitations, takeTaskRaises, tasksToRaise } from "../wording.js";
 import { closeDeliveredTasks, closeNamedTasks, rememberTasks } from "../tasks.js";
+import { extractTrace, refreshMindNote, rememberWork, type TraceEvent } from "../picture.js";
 import { criticSchema, filingSchema } from "../schemas.js";
 import type { Note } from "../types.js";
 import { loadVisibleNotes, renderNotes } from "./context.js";
@@ -37,7 +39,12 @@ export interface DumpResult {
   reflection: { debateId: string; soulVersion: number; commitment: string } | { error: string } | null;
 }
 
-export async function runDump(db: Db, ai: Router, userId: string, input: { text: string; conversationId?: string | null }): Promise<DumpResult> {
+export async function runDump(
+  db: Db,
+  ai: Router,
+  userId: string,
+  input: { text: string; conversationId?: string | null; onEvent?: (event: Record<string, unknown> & { type: string }) => void | Promise<void> },
+): Promise<DumpResult & { traces: TraceEvent[] }> {
   const text = input.text.trim();
   if (!text) throw new Error("The dump is empty.");
   const settings = await getSettings(db, userId);
@@ -50,6 +57,8 @@ export async function runDump(db: Db, ai: Router, userId: string, input: { text:
     conversationId = await createConversation(db, userId, text.split("\n")[0] || "Dump");
   }
   const userMessageId = await addMessage(db, conversationId, "user", text);
+  const traces = await extractTrace(db, ai, userId, text, userMessageId);
+  for (const trace of traces) await input.onEvent?.({ type: "span", ...trace });
   const visible = await loadVisibleNotes(db, userId, settings);
   const meta = { conversationId, jobKind: "conversation" as const };
   const noteBlock = renderNotes(visible.notes);
@@ -163,6 +172,9 @@ export async function runDump(db: Db, ai: Router, userId: string, input: { text:
       }
     }
     await rememberTasks(db, userId, form.tasks ?? [], { sourceKind: "dump", sourceId: userMessageId, conversationId });
+    for (const item of form.fade ?? []) {
+      await setTaskStatus(db, userId, item.taskId, "archived", item.reason);
+    }
     const closed = [
       ...(await closeNamedTasks(db, userId, form.closeTaskIds ?? [], "The dump delivered it.")),
       ...(await closeDeliveredTasks(db, userId, { title: "", text }, "The dump delivered it.")),
@@ -185,13 +197,34 @@ export async function runDump(db: Db, ai: Router, userId: string, input: { text:
 
   let reflection: DumpResult["reflection"] = null;
   if (flagged) {
+    await input.onEvent?.({ type: "work", status: "running", label: "Reflection is working", targetId: null });
     reflection = await runReflection(db, ai, userId, {
       cause: "A filed note was flagged, so reflection ran. The soul only changes through reflection.",
       conversationId,
       causingMessageId: userMessageId,
     });
+    const failed = Boolean(reflection && "error" in reflection);
+    const targetId = reflection && "debateId" in reflection ? reflection.debateId : null;
+    const label = failed && reflection && "error" in reflection
+      ? reflection.error
+      : reflection && "commitment" in reflection
+        ? reflection.commitment
+        : "Reflection finished";
+    await rememberWork(db, userId, userMessageId, { label, destination: "debate", targetId });
+    await input.onEvent?.({ type: "work", status: failed ? "failed" : "done", label, targetId });
   }
-  return { conversationId, reply, userMessageId, notes, filingError, reflection };
+  try {
+    const mindContext = [
+      `Latest dump:\n${text.slice(0, 800)}`,
+      `Notes just filed:\n${notes.map((note) => note.title).join("\n") || "(none)"}`,
+      `Open tasks:\n${openTasks.map((task) => task.title).join("\n") || "(none)"}`,
+    ].join("\n\n");
+    const mind = await refreshMindNote(db, ai, userId, mindContext);
+    await input.onEvent?.({ type: "mind", label: mind });
+  } catch {
+    /* a mind note is disposable; the dump still stands */
+  }
+  return { conversationId, reply, userMessageId, notes, filingError, reflection, traces };
 }
 
 export async function undoNote(db: Db, userId: string, noteId: string): Promise<Note> {

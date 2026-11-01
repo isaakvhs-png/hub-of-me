@@ -531,19 +531,22 @@ export async function resolveConflict(db: Db, userId: string, conflictId: string
 export async function insertInfoRequest(
   db: Db,
   userId: string,
-  input: { question: string; why: string; subject: string; context: string; debateId?: string | null },
+  input: { question: string; why: string; subject: string; context: string; debateId?: string | null; rank?: number | null },
 ): Promise<string> {
   const requestId = id();
   await db.query(
-    `INSERT INTO info_requests (id, user_id, question, why, subject, context, debate_id, status) VALUES ($1,$2,$3,$4,$5,$6,$7,'open')`,
-    [requestId, userId, input.question, input.why, input.subject, input.context, input.debateId ?? null],
+    `INSERT INTO info_requests (id, user_id, question, why, subject, context, debate_id, rank, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'open')`,
+    [requestId, userId, input.question, input.why, input.subject, input.context, input.debateId ?? null, input.rank ?? null],
   );
   await logAction(db, userId, { what: "info request", why: input.why, source: "reflection", payload: { requestId, question: input.question, subject: input.subject, debateId: input.debateId ?? null } });
   return requestId;
 }
 
 export async function listInfoRequests(db: Db, userId: string): Promise<Row[]> {
-  const result = await db.query(`SELECT * FROM info_requests WHERE user_id = $1 ORDER BY created_at DESC`, [userId]);
+  const result = await db.query(
+    `SELECT * FROM info_requests WHERE user_id = $1 ORDER BY COALESCE(rank, 1000) ASC, created_at DESC`,
+    [userId],
+  );
   return result.rows.map((row) => ({
     id: String(row.id),
     question: String(row.question),
@@ -551,6 +554,7 @@ export async function listInfoRequests(db: Db, userId: string): Promise<Row[]> {
     subject: row.subject == null ? "" : String(row.subject),
     context: row.context == null ? "" : String(row.context),
     debateId: row.debate_id == null ? null : String(row.debate_id),
+    rank: row.rank == null ? null : Number(row.rank),
     status: String(row.status),
     answer: row.answer == null ? null : String(row.answer),
     postponeUntil: text(row.postpone_until),
@@ -658,7 +662,11 @@ export interface Task {
   sourceId: string | null;
   conversationId: string | null;
   lastRaisedAt: string | null;
+  whyNow: string | null;
+  surfaced: boolean;
+  fadeReason: string | null;
   createdAt: string;
+  updatedAt: string;
 }
 
 function mapTask(row: Row): Task {
@@ -673,19 +681,23 @@ function mapTask(row: Row): Task {
     sourceId: row.source_id == null ? null : String(row.source_id),
     conversationId: row.conversation_id == null ? null : String(row.conversation_id),
     lastRaisedAt: text(row.last_raised_at),
+    whyNow: row.why_now == null ? null : String(row.why_now),
+    surfaced: row.surfaced === true || row.surfaced === "t",
+    fadeReason: row.fade_reason == null ? null : String(row.fade_reason),
     createdAt: iso(row.created_at),
+    updatedAt: iso(row.updated_at ?? row.created_at),
   };
 }
 
 export async function insertTask(
   db: Db,
   userId: string,
-  input: { title: string; why: string; owner: string; dueAt?: string | null; sourceKind: string; sourceId?: string | null; conversationId?: string | null },
+  input: { title: string; why: string; owner: string; dueAt?: string | null; sourceKind: string; sourceId?: string | null; conversationId?: string | null; whyNow?: string | null; surfaced?: boolean },
 ): Promise<Task> {
   const taskId = id();
   await db.query(
-    `INSERT INTO tasks (id, user_id, title, why, owner, status, due_at, source_kind, source_id, conversation_id) VALUES ($1,$2,$3,$4,$5,'open',$6,$7,$8,$9)`,
-    [taskId, userId, input.title, input.why, input.owner, input.dueAt ?? null, input.sourceKind, input.sourceId ?? null, input.conversationId ?? null],
+    `INSERT INTO tasks (id, user_id, title, why, owner, status, due_at, source_kind, source_id, conversation_id, why_now, surfaced) VALUES ($1,$2,$3,$4,$5,'open',$6,$7,$8,$9,$10,$11)`,
+    [taskId, userId, input.title, input.why, input.owner, input.dueAt ?? null, input.sourceKind, input.sourceId ?? null, input.conversationId ?? null, input.whyNow ?? null, Boolean(input.surfaced)],
   );
   await logAction(db, userId, { what: "task opened", why: input.why, source: input.sourceKind, payload: { taskId, title: input.title, owner: input.owner } });
   const result = await db.query(`SELECT * FROM tasks WHERE id = $1`, [taskId]);
@@ -700,7 +712,10 @@ export async function listTasks(db: Db, userId: string, status?: string): Promis
 }
 
 export async function setTaskStatus(db: Db, userId: string, taskId: string, status: "open" | "done" | "archived", why: string): Promise<Task | null> {
-  const result = await db.query(`UPDATE tasks SET status = $3, updated_at = now() WHERE id = $1 AND user_id = $2 RETURNING *`, [taskId, userId, status]);
+  const result = await db.query(
+    `UPDATE tasks SET status = $3, fade_reason = CASE WHEN $3 = 'archived' THEN $4 ELSE fade_reason END, updated_at = now() WHERE id = $1 AND user_id = $2 RETURNING *`,
+    [taskId, userId, status, why],
+  );
   const row = result.rows[0];
   if (!row) return null;
   await logAction(db, userId, { what: `task ${status}`, why, source: "user", payload: { taskId, title: String(row.title) } });

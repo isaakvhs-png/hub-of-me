@@ -12,7 +12,7 @@ export function parseDue(value?: string | null): string | null {
 export async function rememberTasks(
   db: Db,
   userId: string,
-  tasks: { title: string; why: string; owner: "peter" | "system"; due?: string }[],
+  tasks: { title: string; why: string; owner: "peter" | "system"; due?: string; surfaced?: boolean; whyNow?: string }[],
   source: { sourceKind: string; sourceId?: string | null; conversationId?: string | null },
 ): Promise<Task[]> {
   const saved: Task[] = [];
@@ -23,6 +23,8 @@ export async function rememberTasks(
         why: task.why,
         owner: task.owner,
         dueAt: parseDue(task.due),
+        whyNow: task.whyNow ?? null,
+        surfaced: Boolean(task.surfaced),
         sourceKind: source.sourceKind,
         sourceId: source.sourceId,
         conversationId: source.conversationId,

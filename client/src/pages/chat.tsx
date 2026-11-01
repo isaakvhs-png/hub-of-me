@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Mic, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { TraceDetail, TraceView, type TraceSpan } from "@/components/trace";
 import { api } from "@/lib/api";
+import { readSse } from "@/lib/sse";
 
 interface Message { id: string; role: string; content: string }
 interface Conversation { id: string; title: string }
@@ -25,6 +27,12 @@ export function ChatPage() {
   const [recording, setRecording] = useState(false);
   const [live, setLive] = useState("");
   const [filed, setFiled] = useState<DumpResult["notes"]>([]);
+  const [traces, setTraces] = useState<TraceSpan[]>([]);
+  const [work, setWork] = useState<{ status: string; label: string; targetId?: string | null } | null>(null);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [draftSpans, setDraftSpans] = useState<TraceSpan[]>([]);
+  const [openTrace, setOpenTrace] = useState<TraceSpan | null>(null);
+  const skipLoad = useRef(false);
   const bottom = useRef<HTMLDivElement>(null);
   const media = useRef<MediaRecorder | null>(null);
   const speech = useRef<{ stop: () => void } | null>(null);
@@ -39,12 +47,26 @@ export function ChatPage() {
 
   useEffect(() => { loadLists().catch((err) => setError(err.message)); }, []);
 
+  async function loadThread(id: string, flash = false) {
+    const [nextMessages, nextTraces] = await Promise.all([
+      api<Message[]>(`/api/conversations/${id}/messages`),
+      api<TraceSpan[]>(`/api/conversations/${id}/traces`),
+    ]);
+    setMessages(nextMessages);
+    setTraces(nextTraces.map((span) => ({ ...span, flash })));
+  }
+
   useEffect(() => {
     if (!conversationId) {
       setMessages([]);
+      setTraces([]);
       return;
     }
-    api<Message[]>(`/api/conversations/${conversationId}/messages`).then(setMessages).catch((err) => setError(err.message));
+    if (skipLoad.current) {
+      skipLoad.current = false;
+      return;
+    }
+    loadThread(conversationId).catch((err) => setError(err.message));
   }, [conversationId]);
 
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, busy]);
@@ -68,8 +90,9 @@ export function ChatPage() {
         if (trimmed) form.set("text", trimmed);
         if (conversationId) form.set("conversationId", conversationId);
         const uploaded = await api<{ note: DumpResult["notes"][number]; closed: { title: string }[]; conversationId: string }>("/api/dump/file", { method: "POST", body: form });
+        if (uploaded.conversationId !== conversationId) skipLoad.current = true;
         setParams({ c: uploaded.conversationId });
-        setMessages(await api<Message[]>(`/api/conversations/${uploaded.conversationId}/messages`));
+        await loadThread(uploaded.conversationId, true);
         setFiled([uploaded.note]);
         setText("");
         setFile(null);
@@ -85,10 +108,33 @@ export function ChatPage() {
         if (conversationId) form.set("conversationId", conversationId);
         result = await api<DumpResult>("/api/voice", { method: "POST", body: form });
       } else {
-        result = await api<DumpResult>("/api/dump", { method: "POST", body: JSON.stringify({ text: trimmed, conversationId }) });
+        setDraft(trimmed);
+        setDraftSpans([]);
+        setWork(null);
+        const response = await fetch("/api/dump/stream", {
+          method: "POST",
+          credentials: "include",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ text: trimmed, conversationId }),
+        });
+        let donePayload: DumpResult | null = null;
+        await readSse(response, (event, data) => {
+          if (event === "span") setDraftSpans((prev) => [...prev, { ...(data as unknown as TraceSpan), flash: true }]);
+          if (event === "work" && typeof data.label === "string") {
+            setWork({ status: typeof data.status === "string" ? data.status : "running", label: data.label, targetId: (data.targetId as string | null) ?? null });
+          }
+          if (event === "error") throw new Error(typeof data.error === "string" ? data.error : "The dump did not land.");
+          if (event === "done") donePayload = data as unknown as DumpResult;
+        });
+        if (!donePayload) throw new Error("The dump did not finish.");
+        result = donePayload;
       }
+      if (result.conversationId !== conversationId) skipLoad.current = true;
       setParams({ c: result.conversationId });
-      setMessages(await api<Message[]>(`/api/conversations/${result.conversationId}/messages`));
+      await loadThread(result.conversationId, true);
+      setDraft(null);
+      setDraftSpans([]);
+      setWork(null);
       setFiled(result.notes);
       setText("");
       setLive("");
@@ -97,6 +143,7 @@ export function ChatPage() {
       if (problems.length) setError(problems.join(" "));
       window.hubDesktop?.notify("Filed", result.notes[0]?.title || "The dump is in.");
     } catch (err) {
+      setDraft(null);
       setError(err instanceof Error ? err.message : "The dump did not land.");
     } finally {
       setBusy(false);
@@ -169,12 +216,33 @@ export function ChatPage() {
         <h1 className="font-serif text-4xl italic">Dump</h1>
         <div className="mt-6 flex-1 space-y-6">
           {messages.length === 0 ? <p className="max-w-xl text-muted-foreground">Say the thing that is taking up the room. It will be filed as a note, and one message will not rewrite the soul.</p> : null}
-          {messages.map((message) => (
-            <article key={message.id} className={message.role === "assistant" ? "border-l-2 border-primary pl-4" : ""}>
-              <div className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground">{message.role === "assistant" ? "Hub" : "You"}</div>
-              <div className="mt-1 whitespace-pre-wrap leading-relaxed">{message.content}</div>
+          {messages.map((message) => {
+            const spans = traces.filter((span) => span.messageId === message.id && span.start >= 0);
+            const lines = traces.filter((span) => span.messageId === message.id && span.start < 0);
+            return (
+              <article key={message.id} className={message.role === "assistant" ? "border-l-2 border-primary pl-4" : ""}>
+                <div className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground">{message.role === "assistant" ? "Hub" : "You"}</div>
+                <div className="mt-1">
+                  {message.role === "user" && spans.length ? <TraceView text={message.content} spans={spans} onOpen={setOpenTrace} /> : <div className="whitespace-pre-wrap leading-relaxed">{message.content}</div>}
+                </div>
+                {lines.map((line) => (
+                  <p key={line.id} className="mt-2 text-sm text-primary">
+                    {line.targetId ? <Link to={`/debates/${line.targetId}`}>{line.label}</Link> : line.label}
+                  </p>
+                ))}
+              </article>
+            );
+          })}
+          {draft ? (
+            <article>
+              <div className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground">You</div>
+              <div className="mt-1">
+                <TraceView text={draft} spans={draftSpans} onOpen={setOpenTrace} />
+              </div>
+              {work ? <p className="mt-2 text-sm text-primary">{work.targetId ? <Link to={`/debates/${work.targetId}`}>{work.label}</Link> : work.label}</p> : null}
             </article>
-          ))}
+          ) : null}
+          {openTrace ? <TraceDetail span={openTrace} onClose={() => setOpenTrace(null)} /> : null}
           {busy ? <p className="text-sm text-primary">Reading it, then filing.</p> : null}
           {filed.length > 0 ? (
             <div className="flex flex-wrap gap-2">

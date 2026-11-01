@@ -160,6 +160,10 @@ export async function migrate(db: Db): Promise<void> {
       status TEXT NOT NULL DEFAULT 'open',
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )`,
+    `ALTER TABLE info_requests ADD COLUMN IF NOT EXISTS rank INTEGER`,
+    `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS why_now TEXT`,
+    `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS surfaced BOOLEAN NOT NULL DEFAULT false`,
+    `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS fade_reason TEXT`,
     `INSERT INTO debate_feedback (id, user_id, debate_id, body, status, created_at)
      SELECT d.id || '-legacy-feedback', d.user_id, d.id, d.user_feedback, 'done', d.created_at
      FROM debates d

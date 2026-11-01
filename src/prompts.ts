@@ -85,7 +85,7 @@ export function planPrompt(input: { soul: string; notes: string; queue: string; 
   return `${PREAMBLE}
 ROLE: reflection
 TASK: plan
-Choose a question worth arguing, then the sides. The sides are not a fixed list. One of them must argue the uncomfortable position, so the debate is never all agreement.
+Choose a question worth arguing, then the sides. The sides are not a fixed list. One of them must argue the uncomfortable position, so the debate is never all agreement. The uncomfortable side may challenge the model of him, not only the practical choice. While the picture of him is still thin, prefer a question that deepens how he thinks, values, or decides. That is judgment, not a quota.
 Give each side evidenceNoteIds drawn from the notes below when those notes support that side. Different sides should not receive the same slice.
 Return JSON:
 {"question":"","sides":[{"position":"","uncomfortable":false,"evidenceNoteIds":[]},{"position":"","uncomfortable":true,"evidenceNoteIds":[]}]}
@@ -163,16 +163,19 @@ export function commitPrompt(input: {
   predictions: string;
   conflicts: string;
   neverAsk: string;
+  claims?: string;
 }): string {
   return `${PREAMBLE}
 ROLE: reflection
 TASK: commit
 The debate is already decided. Commit the strategy. The commitment field must contain this sentence shape and no hedge: this matters most now, because X, at the cost of Y.
 If the soul should change, do not return the whole document. Return sections to merge: an array of {heading, body}. Required sections that must stay are "How this system thinks", "Values and long-term direction", "Goals", "Current strategy", and "Personality". Return only the sections you are changing. To record the commitment, use the heading "Last reflection". Omitting a required heading leaves it as it is. A reply that is only the last reflection is rejected. A single dump is a weak reason to rewrite values.
-The soul states general principles. Do not copy his sentences, names, or scenes into it. Put his exact words in evidence as quotes. An ask must name its subject, and the question and context must not say this, that, or it unless that subject is written out in the same text. Context is one sentence: which decision, what is missing, and why it matters.
+The soul states general principles. Do not copy his sentences, names, or scenes into it. Put his exact words in evidence as quotes. Before you apply an old claim, ask whether this is new ground. On new ground, explore: a tentative claim and an ask, then look for a link to what you already hold. Notice thin areas, missed predictions, contradictions, and debates that hinge on something unknown, and turn the real gaps into asks. Rank them by putting the most useful first.
+An ask must name its subject, and the question and context must not say this, that, or it unless that subject is written out in the same text. Context is one sentence: which decision, what is missing, and why it matters.
+Predict how he will take this conclusion in hisReaction, in general terms, so it can be scored when he responds. For each ask, set expect to how you think he will take that ask. If an unscored prediction is shown and he has now responded, set predictionScore to hit, miss, or partial and return claimUpdates for the claims that should change. A claim states how he thinks. His exact words stay in evidence, not in the claim.
 Preference rules must be general understandings. Keep the samples as evidence ids, and do not copy a complaint into the rule.
 Do not re-ask anything in NEVER ASK.
-Return JSON with commitment, optional soul {reason, sections}, optional evidence [{quote, source}], picture, preferenceRules, infoRequests [{subject, question, context, why}], predictions, predictionChecks, conflictsResolved.
+Return JSON with commitment, optional hisReaction, optional predictionScore, optional soul {reason, sections}, optional evidence [{quote, source}], picture, preferenceRules, infoRequests [{subject, question, context, why, expect}], optional claimUpdates [{claimId, statement, situations, status, evidence}], predictions, predictionChecks, conflictsResolved.
 
 CURRENT SOUL:
 ${input.soul}
@@ -212,7 +215,11 @@ END TENSIONS
 
 NEVER ASK:
 ${input.neverAsk || "(none)"}
-END NEVER`;
+END NEVER
+
+CLAIMS:
+${input.claims || "(none)"}
+END CLAIMS`;
 }
 
 export function researchPrompt(soul: string, topic: string): string {

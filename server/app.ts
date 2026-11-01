@@ -83,6 +83,7 @@ import type { Settings } from "../src/types.js";
 import { mountDiagnostics } from "./diag.js";
 import { recordServerError } from "./error-log.js";
 import { scheduleFeedbackDrain } from "../src/feedback.js";
+import { extractTrace, latestMindNote, listClaims, listLooseTraces, listReactions, listTraceForConversation, markSeen, refreshMindNote, scoreAnsweredAsk, seenAt } from "../src/picture.js";
 import { closeDeliveredTasks } from "../src/tasks.js";
 import { clearSession, hashToken, readSession, writeSession } from "./session.js";
 
@@ -212,6 +213,67 @@ export function createApp(db: Db) {
     const settings = await getSettings(db, c.get("userId"));
     const result = await runDump(db, aiFor(settings), c.get("userId"), { text: body.text, conversationId: body.conversationId });
     return c.json(result);
+  });
+
+  app.post("/api/dump/stream", async (c) => {
+    const body = z.object({ text: z.string().min(1), conversationId: z.string().nullable().optional() }).parse(await c.req.json());
+    const userId = c.get("userId");
+    const settings = await getSettings(db, userId);
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        const send = (event: string, data: unknown) => {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        };
+        try {
+          const result = await runDump(db, aiFor(settings), userId, {
+            text: body.text,
+            conversationId: body.conversationId,
+            onEvent: (event) => send(event.type, event),
+          });
+          send("done", result);
+        } catch (error) {
+          send("error", { error: error instanceof Error ? error.message : "The dump did not land." });
+        } finally {
+          controller.close();
+        }
+      },
+    });
+    return new Response(stream, {
+      headers: { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" },
+    });
+  });
+
+  app.get("/api/conversations/:id/traces", async (c) => c.json(await listTraceForConversation(db, c.get("userId"), c.req.param("id"))));
+
+  app.get("/api/picture", async (c) => {
+    const userId = c.get("userId");
+    const [claims, reactions, mind, seen, asks] = await Promise.all([
+      listClaims(db, userId),
+      listReactions(db, userId),
+      latestMindNote(db, userId),
+      seenAt(db, userId, "picture"),
+      listInfoRequests(db, userId),
+    ]);
+    return c.json({
+      claims,
+      reactions,
+      mind,
+      seen,
+      asks: asks.filter((ask) => ask.status === "open" || ask.status === "postponed"),
+    });
+  });
+
+  app.get("/api/seen", async (c) => {
+    const surface = c.req.query("surface") ?? "";
+    if (!surface) return c.json({ error: "Name a surface." }, 400);
+    return c.json({ seen: await seenAt(db, c.get("userId"), surface) });
+  });
+
+  app.post("/api/seen", async (c) => {
+    const body = z.object({ surface: z.string().min(1) }).parse(await c.req.json());
+    await markSeen(db, c.get("userId"), body.surface);
+    return c.json({ ok: true });
   });
 
   app.post("/api/voice", async (c) => {
@@ -365,8 +427,8 @@ export function createApp(db: Db) {
 
   app.get("/api/discovery", async (c) => {
     const userId = c.get("userId");
-    const [cards, sources] = await Promise.all([listDiscovery(db, userId), listSources(db, userId)]);
-    return c.json({ cards, sources });
+    const [cards, sources, traces] = await Promise.all([listDiscovery(db, userId), listSources(db, userId), listLooseTraces(db, userId)]);
+    return c.json({ cards, sources, traces });
   });
 
   app.post("/api/discovery/:id/follow", async (c) => {
@@ -387,6 +449,31 @@ export function createApp(db: Db) {
     return c.json(await runResearch(db, aiFor(settings), c.get("userId"), body.topic));
   });
 
+  app.post("/api/research/stream", async (c) => {
+    const body = z.object({ topic: z.string().min(1) }).parse(await c.req.json());
+    const userId = c.get("userId");
+    const settings = await getSettings(db, userId);
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        const send = (event: string, data: unknown) => {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        };
+        try {
+          const result = await runResearch(db, aiFor(settings), userId, body.topic, (event) => send(event.type, event));
+          send("done", result);
+        } catch (error) {
+          send("error", { error: error instanceof Error ? error.message : "Research failed." });
+        } finally {
+          controller.close();
+        }
+      },
+    });
+    return new Response(stream, {
+      headers: { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" },
+    });
+  });
+
   app.get("/api/brief", async (c) => c.json(await listBriefs(db, c.get("userId"))));
 
   app.post("/api/brief", async (c) => {
@@ -404,7 +491,20 @@ export function createApp(db: Db) {
     const userId = c.get("userId");
     if (body.action === "answer") {
       await updateInfoRequest(db, userId, c.req.param("id"), { status: "answered", answer: body.answer ?? "" });
-      if (body.answer?.trim()) await insertFeedback(db, userId, body.answer.trim(), "info-request");
+      if (body.answer?.trim()) {
+        await insertFeedback(db, userId, body.answer.trim(), "info-request");
+        const settings = await getSettings(db, userId);
+        try {
+          await scoreAnsweredAsk(db, aiFor(settings), userId, c.req.param("id"), body.answer.trim());
+        } catch (error) {
+          await logAction(db, userId, {
+            what: "prediction score missed",
+            why: error instanceof Error ? error.message : "Scoring the ask failed.",
+            source: "reflection",
+            payload: { askId: c.req.param("id") },
+          });
+        }
+      }
     } else if (body.action === "postpone") {
       const until = new Date(Date.now() + 3 * 86400000).toISOString();
       await updateInfoRequest(db, userId, c.req.param("id"), { status: "postponed", postponeUntil: until });
@@ -613,8 +713,13 @@ export function createApp(db: Db) {
 
   app.get("/api/tasks", async (c) => {
     const userId = c.get("userId");
-    const [tasks, carried] = await Promise.all([listTasks(db, userId, "open"), listOpenCarried(db, userId)]);
-    return c.json({ tasks, actions: carried.filter((item) => item.kind === "action") });
+    const ledger = c.req.query("ledger") === "1";
+    const [tasks, carried, seen] = await Promise.all([
+      listTasks(db, userId, ledger ? undefined : "open"),
+      listOpenCarried(db, userId),
+      seenAt(db, userId, "todos"),
+    ]);
+    return c.json({ tasks, actions: carried.filter((item) => item.kind === "action"), seen });
   });
 
   app.post("/api/tasks/:id", async (c) => {
@@ -649,7 +754,20 @@ export function createApp(db: Db) {
     const closed = await closeDeliveredTasks(db, userId, { title: name, text: `${typeof body.text === "string" ? body.text : ""}\n${bodyText}` }, `Uploaded ${name}.`);
     let thread = conversationId;
     if (!thread || !(await getConversation(db, userId, thread))) thread = await createConversation(db, userId, name);
-    await addMessage(db, thread, "user", `Uploaded ${name}${typeof body.text === "string" && body.text.trim() ? `\n${body.text.trim()}` : ""}`);
+    const messageText = [`Uploaded ${name}`, typeof body.text === "string" ? body.text.trim() : "", bodyText].filter(Boolean).join("\n\n").slice(0, 8000);
+    const messageId = await addMessage(db, thread, "user", messageText);
+    const settings = await getSettings(db, userId);
+    try {
+      await extractTrace(db, aiFor(settings), userId, messageText, messageId);
+      await refreshMindNote(db, aiFor(settings), userId, `Uploaded file:\n${messageText.slice(0, 800)}`);
+    } catch (error) {
+      await logAction(db, userId, {
+        what: "filing failed",
+        why: error instanceof Error ? error.message : "The upload was kept, and the trace did not finish.",
+        source: "filing",
+        payload: { conversationId: thread },
+      });
+    }
     const closedLine = closed.length ? ` That closes: ${closed.map((task) => task.title).join("; ")}.` : "";
     await addMessage(db, thread, "assistant", `Filed ${name}.${closedLine}`);
     return c.json({ note, closed, conversationId: thread });

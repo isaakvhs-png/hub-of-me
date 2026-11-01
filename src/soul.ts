@@ -88,6 +88,41 @@ export async function changeSoul(
   return saved;
 }
 
+export function sectionBody(content: string, heading: string): string {
+  const lines = content.split("\n");
+  const start = lines.findIndex((line) => new RegExp(`^##\\s+${escapeRegExp(heading)}\\s*$`).test(line));
+  if (start < 0) return "";
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (/^##\s+/.test(lines[index])) {
+      end = index;
+      break;
+    }
+  }
+  return lines.slice(start + 1, end).join("\n").trim();
+}
+
+const CURIOSITY = "Curiosity is a core value. Understand him before steering him. What is not yet understood is something to explore, not a gap to paper over.";
+
+/** One soul edit for installs that predate curiosity. No-op once the word is already there. */
+export async function ensureCuriosity(db: Db): Promise<number> {
+  const users = await listUsers(db);
+  let edited = 0;
+  for (const user of users) {
+    const soul = await getSoul(db, user.id);
+    if (!soul || /curiosity/i.test(soul.content)) continue;
+    const existing = sectionBody(soul.content, "Values and long-term direction");
+    const body = existing ? `${existing}\n\n${CURIOSITY}` : CURIOSITY;
+    await changeSoul(db, user.id, {
+      content: mergeSoulSections(soul.content, [{ heading: "Values and long-term direction", body }]),
+      reason: "Curiosity is a core value of how this system understands him.",
+      via: "repair",
+    });
+    edited += 1;
+  }
+  return edited;
+}
+
 /** If the current soul is missing required sections, append a new version with version 1's text. */
 export async function restoreCorruptedSouls(db: Db): Promise<number> {
   const users = await listUsers(db);

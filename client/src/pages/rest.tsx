@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
+import { isFresh, loadSeen } from "@/lib/seen";
 import { ToDoList } from "@/pages/todos";
 import { eur, when } from "@/lib/utils";
 
@@ -63,11 +64,16 @@ export function BriefPage() {
 }
 
 export function AsksPage() {
-  const [asks, setAsks] = useState<{ id: string; question: string; why: string; status: string; answer: string | null; subject?: string; context?: string; debateId?: string | null }[]>([]);
+  const [asks, setAsks] = useState<{ id: string; question: string; why: string; status: string; answer: string | null; subject?: string; context?: string; debateId?: string | null; rank?: number | null; createdAt?: string }[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [seen, setSeen] = useState<string | null>(null);
   const [error, setError] = useState("");
   async function reload() { setAsks(await api("/api/asks")); }
-  useEffect(() => { reload().catch((err) => setError(err.message)); }, []);
+  useEffect(() => {
+    Promise.all([reload(), loadSeen("asks")])
+      .then(([, stamp]) => setSeen(stamp))
+      .catch((err) => setError(err instanceof Error ? err.message : "Could not open asks."));
+  }, []);
   async function act(id: string, action: string, answer?: string) {
     setError("");
     try {
@@ -83,9 +89,9 @@ export function AsksPage() {
       {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
       <div className="mt-6 space-y-4">
         {open.length === 0 ? <p className="text-sm text-muted-foreground">Nothing waiting. That is allowed.</p> : null}
-        {open.map((ask) => (
-          <Card key={ask.id} className="p-4">
-            <div className="text-xs uppercase tracking-wide text-muted-foreground">{ask.subject || "Ask"}</div>
+        {open.map((ask, index) => (
+          <Card key={ask.id} className={`p-4 ${isFresh(seen, ask.createdAt) ? "border-primary" : ""}`}>
+            <div className="text-xs uppercase tracking-wide text-muted-foreground">{ask.rank != null ? `${ask.rank + 1}. ` : `${index + 1}. `}{ask.subject || "Ask"}{isFresh(seen, ask.createdAt) ? " · new · from a debate" : ""}</div>
             <div className="mt-1 font-serif text-2xl">{ask.question}</div>
             {ask.context ? <p className="mt-2 text-sm">{ask.context}</p> : null}
             <p className="mt-2 text-sm text-muted-foreground">{ask.why}</p>
@@ -117,7 +123,12 @@ interface DebateView {
 
 export function DebatesPage() {
   const [rows, setRows] = useState<DebateRow[]>([]);
-  useEffect(() => { api<DebateRow[]>("/api/debates").then(setRows).catch(() => setRows([])); }, []);
+  const [seen, setSeen] = useState<string | null>(null);
+  useEffect(() => {
+    Promise.all([api<DebateRow[]>("/api/debates"), loadSeen("debates")])
+      .then(([next, stamp]) => { setRows(next); setSeen(stamp); })
+      .catch(() => setRows([]));
+  }, []);
   return (
     <div>
       <h1 className="font-serif text-4xl italic">Debates</h1>
@@ -125,9 +136,9 @@ export function DebatesPage() {
       <div className="mt-6 space-y-3">
         {rows.length === 0 ? <p className="text-sm text-muted-foreground">No debate yet. A dump that bears on the soul will start one.</p> : null}
         {rows.map((row) => (
-          <Link key={row.id} to={`/debates/${row.id}`} className="block rounded-xl border border-border p-4 hover:border-primary">
+          <Link key={row.id} to={`/debates/${row.id}`} className={`block rounded-xl border p-4 hover:border-primary ${isFresh(seen, row.createdAt) ? "border-primary" : "border-border"}`}>
             <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-              {row.status} {row.mockEra || row.judgeModel?.startsWith("mock") ? <span>mock</span> : null} {row.closeCall ? <span className="text-primary">close call</span> : null}
+              {row.status} {row.mockEra || row.judgeModel?.startsWith("mock") ? <span>mock</span> : null} {row.closeCall ? <span className="text-primary">close call</span> : null} {isFresh(seen, row.createdAt) ? <span className="text-primary">new · from a debate</span> : null}
             </div>
             <div className="mt-1 text-lg">{row.question}</div>
             {row.commitment ? <div className="mt-2 text-sm text-primary">{row.commitment}</div> : null}
@@ -310,12 +321,17 @@ export function SoulPage() {
   const [content, setContent] = useState("");
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
+  const [seen, setSeen] = useState<string | null>(null);
   async function reload() {
     const next = await api<NonNullable<typeof data>>("/api/soul");
     setData(next);
     setContent(next.current?.content ?? "");
   }
-  useEffect(() => { reload().catch((err) => setError(err.message)); }, []);
+  useEffect(() => {
+    Promise.all([reload(), loadSeen("soul")])
+      .then(([, stamp]) => setSeen(stamp))
+      .catch((err) => setError(err instanceof Error ? err.message : "Could not open the soul."));
+  }, []);
   if (!data?.current) return <p className="text-sm text-muted-foreground">{error || "Opening the soul…"}</p>;
   return (
     <div className="grid gap-8 lg:grid-cols-[1.4fr_0.8fr]">
@@ -332,13 +348,14 @@ export function SoulPage() {
         {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
         <ul className="mt-6 space-y-2">
           {data.versions.map((version) => (
-            <li key={version.version} className="text-sm text-muted-foreground">v{version.version} · {version.createdByRole} · {when(version.createdAt)} · {version.reason}</li>
+            <li key={version.version} className={`text-sm ${isFresh(seen, version.createdAt) ? "text-primary" : "text-muted-foreground"}`}>v{version.version} · {version.createdByRole} · {when(version.createdAt)} · {version.reason}{isFresh(seen, version.createdAt) ? " · new · from reflection" : ""}</li>
           ))}
         </ul>
       </div>
       <div className="space-y-6">
         <div>
           <h2 className="font-serif text-2xl">Picture of you</h2>
+          <p className="mt-1 text-xs text-muted-foreground"><Link className="text-primary" to="/picture">Claims, evidence, and open questions</Link></p>
           {data.picture.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">Blank until reflection has your words.</p> : null}
           {data.picture.map((line) => <p key={line.id} className="mt-3 text-sm">{line.statement}</p>)}
         </div>
