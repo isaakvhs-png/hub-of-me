@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Mic, Square } from "lucide-react";
+import { Mic, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { TraceDetail, TraceView, type TraceSpan } from "@/components/trace";
 import { api } from "@/lib/api";
 import { readSse } from "@/lib/sse";
+import { appendAttachments, removeAttachment } from "../../../src/attachments";
 
 interface Message { id: string; role: string; content: string }
 interface Conversation { id: string; title: string }
@@ -38,7 +39,8 @@ export function ChatPage() {
   const speech = useRef<{ stop: () => void } | null>(null);
   const chunks = useRef<Blob[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [dragging, setDragging] = useState(false);
   const conversationId = params.get("c");
 
   async function loadLists() {
@@ -79,26 +81,26 @@ export function ChatPage() {
 
   async function send(body: string, audio?: Blob) {
     const trimmed = body.trim();
-    if (!trimmed && !audio && !file) return;
+    if (!trimmed && !audio && files.length === 0) return;
     setBusy(true);
     setError("");
     try {
       let result: DumpResult;
-      if (file && !audio) {
+      if (files.length && !audio) {
         const form = new FormData();
-        form.set("file", file);
+        for (const item of files) form.append("file", item);
         if (trimmed) form.set("text", trimmed);
         if (conversationId) form.set("conversationId", conversationId);
-        const uploaded = await api<{ note: DumpResult["notes"][number]; closed: { title: string }[]; conversationId: string }>("/api/dump/file", { method: "POST", body: form });
+        const uploaded = await api<{ notes?: DumpResult["notes"]; note?: DumpResult["notes"][number]; closed: { title: string }[]; conversationId: string; errors?: string[] }>("/api/dump/file", { method: "POST", body: form });
         if (uploaded.conversationId !== conversationId) skipLoad.current = true;
         setParams({ c: uploaded.conversationId });
         await loadThread(uploaded.conversationId, true);
-        setFiled([uploaded.note]);
+        setFiled(uploaded.notes ?? (uploaded.note ? [uploaded.note] : []));
         setText("");
-        setFile(null);
+        setFiles([]);
         if (fileRef.current) fileRef.current.value = "";
         await loadLists();
-        if (uploaded.closed.length) setError("");
+        if (uploaded.errors?.length) setError(uploaded.errors.join(" "));
         return;
       }
       if (audio) {
@@ -256,19 +258,51 @@ export function ChatPage() {
           <div ref={bottom} />
         </div>
         {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
-        <form className="mt-4 flex items-end gap-2" onSubmit={(event) => { event.preventDefault(); void send(text); }}>
+        <form
+          className={`mt-4 flex items-end gap-2 rounded-md ${dragging ? "ring-2 ring-primary" : ""}`}
+          onSubmit={(event) => { event.preventDefault(); void send(text); }}
+          onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
+          onDragOver={(event) => { event.preventDefault(); }}
+          onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDragging(false);
+            const chosen = Array.from(event.dataTransfer.files);
+            setFiles((current) => appendAttachments(current, chosen));
+          }}
+        >
           <div className="flex-1">
-            <Textarea value={text} onChange={(event) => setText(event.target.value)} placeholder="Dump it here, or attach a summary" className="min-h-[88px]" />
-            <div className="mt-2 flex items-center gap-2">
-              <input ref={fileRef} type="file" accept=".pdf,.docx,.txt,.md,.png,.jpg,.jpeg,.webp,.gif,application/pdf,image/*" className="text-xs text-muted-foreground" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
-              {file ? <span className="text-xs text-primary">{file.name}</span> : null}
+            <Textarea value={text} onChange={(event) => setText(event.target.value)} placeholder="Dump it here, or drop files" className="min-h-[88px]" />
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <input
+                ref={fileRef}
+                id="dump-files"
+                type="file"
+                multiple
+                accept=".pdf,.docx,.txt,.md,.png,.jpg,.jpeg,.webp,.gif,application/pdf,image/*"
+                className="sr-only"
+                onChange={(event) => {
+                  const chosen = Array.from(event.target.files ?? []);
+                  setFiles((current) => appendAttachments(current, chosen));
+                  event.target.value = "";
+                }}
+              />
+              <Button type="button" variant="outline" size="sm" onClick={() => fileRef.current?.click()}>Attach</Button>
+              {files.map((item, index) => (
+                <span key={`${item.name}-${item.lastModified}-${index}`} className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-1 text-xs text-primary">
+                  {item.name}
+                  <button type="button" className="text-muted-foreground hover:text-foreground" aria-label={`Remove ${item.name}`} onClick={() => setFiles((current) => removeAttachment(current, index))}>
+                    <X size={12} />
+                  </button>
+                </span>
+              ))}
             </div>
           </div>
           <div className="flex flex-col gap-2">
             <Button type="button" variant={recording ? "default" : "outline"} size="icon" onClick={() => void toggleRecord()} aria-label={recording ? "Stop recording" : "Record"}>
               {recording ? <Square size={16} /> : <Mic size={16} />}
             </Button>
-            <Button type="submit" disabled={busy || (!text.trim() && !file)}>Send</Button>
+            <Button type="submit" disabled={busy || (!text.trim() && files.length === 0)}>Send</Button>
           </div>
         </form>
         {recording ? <p className="mt-2 font-mono text-xs text-primary">Listening{live ? `: ${live}` : "…"}</p> : null}

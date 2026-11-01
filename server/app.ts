@@ -85,6 +85,7 @@ import { recordServerError } from "./error-log.js";
 import { scheduleFeedbackDrain } from "../src/feedback.js";
 import { extractTrace, latestMindNote, listClaims, listLooseTraces, listReactions, listTraceForConversation, markSeen, refreshMindNote, scoreAnsweredAsk, seenAt } from "../src/picture.js";
 import { closeDeliveredTasks } from "../src/tasks.js";
+import { fieldText, filesFromField } from "../src/attachments.js";
 import { clearSession, hashToken, readSession, writeSession } from "./session.js";
 
 const sharedMock = new MockProvider();
@@ -731,46 +732,60 @@ export function createApp(db: Db) {
 
   app.post("/api/dump/file", async (c) => {
     const userId = c.get("userId");
-    const body = await c.req.parseBody();
-    const file = body.file;
-    if (!file || typeof file !== "object" || !("arrayBuffer" in file)) return c.json({ error: "Attach a file." }, 400);
-    const name = file.name || "upload";
-    const bytes = Buffer.from(await file.arrayBuffer());
-    const extracted = await textFromUpload(name, bytes);
-    const bodyText = extracted.text || `No text could be read from ${name}. The file name is kept so a matching to-do can close.`;
-    const conversationId = typeof body.conversationId === "string" ? body.conversationId : null;
-    const note = await insertNote(db, userId, {
-      folderId: await ensureFolderPath(db, userId, "Inbox"),
-      type: "file",
-      title: name,
-      body: bodyText.slice(0, 8000),
-      status: "unexplored",
-      forNowExpiresAt: null,
-      mockEra: (await getSettings(db, userId)).provider === "mock",
-      reason: "Handed over from the dump.",
-      causingMessageId: null,
-      source: "dump",
-    });
-    const closed = await closeDeliveredTasks(db, userId, { title: name, text: `${typeof body.text === "string" ? body.text : ""}\n${bodyText}` }, `Uploaded ${name}.`);
-    let thread = conversationId;
-    if (!thread || !(await getConversation(db, userId, thread))) thread = await createConversation(db, userId, name);
-    const messageText = [`Uploaded ${name}`, typeof body.text === "string" ? body.text.trim() : "", bodyText].filter(Boolean).join("\n\n").slice(0, 8000);
-    const messageId = await addMessage(db, thread, "user", messageText);
+    const body = await c.req.parseBody({ all: true });
+    const files = filesFromField(body.file);
+    if (!files.length) return c.json({ error: "Attach a file." }, 400);
+    const typed = fieldText(body.text).trim();
+    let thread = fieldText(body.conversationId) || null;
     const settings = await getSettings(db, userId);
-    try {
-      await extractTrace(db, aiFor(settings), userId, messageText, messageId);
-      await refreshMindNote(db, aiFor(settings), userId, `Uploaded file:\n${messageText.slice(0, 800)}`);
-    } catch (error) {
-      await logAction(db, userId, {
-        what: "filing failed",
-        why: error instanceof Error ? error.message : "The upload was kept, and the trace did not finish.",
-        source: "filing",
-        payload: { conversationId: thread },
-      });
+    const notes: Awaited<ReturnType<typeof insertNote>>[] = [];
+    const closed: Awaited<ReturnType<typeof closeDeliveredTasks>> = [];
+    const errors: string[] = [];
+    for (const file of files) {
+      try {
+        const name = file.name || "upload";
+        const bytes = Buffer.from(await file.arrayBuffer());
+        const extracted = await textFromUpload(name, bytes);
+        const bodyText = extracted.text || `No text could be read from ${name}. The file name is kept so a matching to-do can close.`;
+        const note = await insertNote(db, userId, {
+          folderId: await ensureFolderPath(db, userId, "Inbox"),
+          type: "file",
+          title: name,
+          body: bodyText.slice(0, 8000),
+          status: "unexplored",
+          forNowExpiresAt: null,
+          mockEra: settings.provider === "mock",
+          reason: "Handed over from the dump.",
+          causingMessageId: null,
+          source: "dump",
+        });
+        notes.push(note);
+        const matched = await closeDeliveredTasks(db, userId, { title: name, text: `${typed}\n${bodyText}` }, `Uploaded ${name}.`);
+        closed.push(...matched);
+        if (!thread || !(await getConversation(db, userId, thread))) thread = await createConversation(db, userId, name);
+        const messageText = [`Uploaded ${name}`, typed, bodyText].filter(Boolean).join("\n\n").slice(0, 8000);
+        const messageId = await addMessage(db, thread, "user", messageText);
+        try {
+          await extractTrace(db, aiFor(settings), userId, messageText, messageId);
+          await refreshMindNote(db, aiFor(settings), userId, `Uploaded file:\n${messageText.slice(0, 800)}`);
+        } catch (error) {
+          await logAction(db, userId, {
+            what: "filing failed",
+            why: error instanceof Error ? error.message : "The upload was kept, and the trace did not finish.",
+            source: "filing",
+            payload: { conversationId: thread },
+          });
+        }
+        const closedLine = matched.length ? ` That closes: ${matched.map((task) => task.title).join("; ")}.` : "";
+        await addMessage(db, thread, "assistant", `Filed ${name}.${closedLine}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "A file did not land.";
+        errors.push(message);
+        await logAction(db, userId, { what: "filing failed", why: message, source: "filing", payload: { name: file.name } });
+      }
     }
-    const closedLine = closed.length ? ` That closes: ${closed.map((task) => task.title).join("; ")}.` : "";
-    await addMessage(db, thread, "assistant", `Filed ${name}.${closedLine}`);
-    return c.json({ note, closed, conversationId: thread });
+    if (!notes.length || !thread) return c.json({ error: errors[0] || "Attach a file." }, 400);
+    return c.json({ notes, note: notes[0], closed, conversationId: thread, errors });
   });
 
   app.post("/api/sources", async (c) => {
