@@ -29,7 +29,15 @@ function requestBody(req: AiRequest & { model: string }, forceTool: boolean): Re
     model: req.model,
     max_tokens: req.maxTokens ?? 2000,
     system: req.system,
-    messages: req.messages.map((message) => ({ role: message.role, content: message.content })),
+    messages: req.messages.map((message, index) => ({
+      role: message.role,
+      content: index === req.messages.length - 1 && req.images?.length
+        ? [
+            { type: "text", text: message.content },
+            ...req.images.map((image) => ({ type: "image", source: { type: "base64", media_type: image.mediaType, data: image.base64 } })),
+          ]
+        : message.content,
+    })),
   };
   if (!req.structured) return body;
   body.tools = [

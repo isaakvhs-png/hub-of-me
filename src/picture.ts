@@ -17,6 +17,7 @@ export interface TraceEvent {
   destination: string;
   label: string;
   targetId: string | null;
+  seen?: boolean;
 }
 
 const TRACE_PROMPT = `TASK: trace
@@ -156,6 +157,7 @@ function mapTrace(row: Record<string, unknown>): TraceEvent {
     destination: String(row.destination),
     label: String(row.label),
     targetId: row.target_id == null ? null : String(row.target_id),
+    seen: row.seen_at != null,
   };
 }
 
@@ -247,7 +249,7 @@ export async function saveClaims(db: Db, userId: string, drafts: ClaimDraft[], m
 }
 
 export async function listClaims(db: Db, userId: string): Promise<{ id: string; statement: string; situations: string; status: string; evidence: { quote: string; source: string }[]; updatedAt: string }[]> {
-  const claims = await db.query(`SELECT * FROM claims WHERE user_id = $1 ORDER BY updated_at DESC`, [userId]);
+  const claims = await db.query(`SELECT * FROM claims WHERE user_id = $1 AND archived_at IS NULL ORDER BY updated_at DESC`, [userId]);
   const evidence = await db.query(
     `SELECT e.* FROM claim_evidence e JOIN claims c ON c.id = e.claim_id WHERE c.user_id = $1 ORDER BY e.created_at`,
     [userId],
@@ -277,7 +279,7 @@ export async function listReactions(db: Db, userId: string): Promise<{ id: strin
 }
 
 export async function latestMindNote(db: Db, userId: string): Promise<{ id: string; content: string; createdAt: string } | null> {
-  const result = await db.query(`SELECT * FROM mind_notes WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`, [userId]);
+  const result = await db.query(`SELECT * FROM mind_notes WHERE user_id = $1 AND archived_at IS NULL ORDER BY created_at DESC LIMIT 1`, [userId]);
   const row = result.rows[0];
   if (!row) return null;
   return { id: String(row.id), content: String(row.content), createdAt: iso(row.created_at) };

@@ -44,6 +44,8 @@ export class MockProvider {
 
   private canned(req: AiRequest): string {
     const blob = `${req.system}\n${req.messages.map((m) => m.content).join("\n")}`;
+    if (req.system.includes("TASK: agent")) return agentTurn(blob);
+    if (req.system.includes("TASK: vision")) return "A page of writing, readable enough to keep.";
     if (req.role === "critic") {
       if (this.criticRejects > 0) {
         this.criticRejects -= 1;
@@ -220,6 +222,36 @@ function commit(blob: string): string {
     predictions: ["The next dump returns to this same thread if it stays unexplored."],
     predictionChecks: [],
     conflictsResolved: [],
+  });
+}
+
+function agentTurn(blob: string): string {
+  const results = blob.split("TOOL RESULTS:")[1] ?? "";
+  if (blob.includes("GREETING DUE")) {
+    return JSON.stringify({
+      say: "I barely know you yet. I keep a notebook, a picture of how you think, and a quiet ledger, and I change only by reflecting on what you actually say. I can read my own records, look things up, or argue with myself, but only when I decide to. Tell me what is taking up the room.",
+      mind: "He is still mostly unknown. His world is quiet because little has been said. I am curious, and I am not steering.",
+      state: { thinking: "How little I know", curious: "What is taking up the room", busy: "Waiting", waiting: "His first real account" },
+    });
+  }
+  if (blob.includes("CHECK IN")) return JSON.stringify({ say: "" });
+  const attached = section(blob, "ATTACHMENTS");
+  const names = attached.split("\n").map((line) => line.trim()).filter((line) => line && line !== "(none)" && !results.includes(`READ file: ${line}`));
+  if (names.length) {
+    return JSON.stringify({ think: { what: `Read ${names[0]}`, why: "He handed it over.", tool: "read_file", input: { name: names[0] } } });
+  }
+  const dump = section(blob, "DUMP");
+  const phrase = dump.split(/[.!\n]/).map((part) => part.trim()).find((part) => part.length > 8) ?? "";
+  if (phrase && !dump.includes("(nothing new)") && !results.includes("Marked")) {
+    return JSON.stringify({
+      think: { what: "Mark what he brought", why: "So I can see where it goes.", tool: "mark", input: { phrase, destination: "world", label: "Noting what he brought" } },
+    });
+  }
+  return JSON.stringify({
+    say: "I am treating this as something to understand, not a finished decision.",
+    mind: "He is still mostly unknown. His world is quiet because little has been said. I am curious, and I am not steering.",
+    state: { thinking: "What he just said", curious: "What I still don't know", busy: "Listening", waiting: "Whatever he says next" },
+    topics: phrase ? [{ label: "What he brought", phrase }] : [],
   });
 }
 

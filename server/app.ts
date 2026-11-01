@@ -14,6 +14,8 @@ import { textFromUpload } from "../src/ingest.js";
 import { assertGmailReadOnly, assertGrantedScopes, gmailAuthUrl, gmailModule } from "../src/modules/gmail.js";
 import { hashPassword, verifyPassword } from "../src/password.js";
 import { archiveNote, runDump, undoNote } from "../src/pipeline/dump.js";
+import { greetIfNeeded, runAgentTurn, type PendingFile } from "../src/agent/turn.js";
+import { TOOLS } from "../src/agent/registry.js";
 import { runReflection } from "../src/pipeline/debate.js";
 import { runNightly, runResearch, writeBrief } from "../src/pipeline/jobs.js";
 import {
@@ -212,7 +214,7 @@ export function createApp(db: Db) {
   app.post("/api/dump", async (c) => {
     const body = z.object({ text: z.string().min(1), conversationId: z.string().nullable().optional() }).parse(await c.req.json());
     const settings = await getSettings(db, c.get("userId"));
-    const result = await runDump(db, aiFor(settings), c.get("userId"), { text: body.text, conversationId: body.conversationId });
+    const result = await runAgentTurn(db, aiFor(settings), c.get("userId"), { text: body.text, conversationId: body.conversationId });
     return c.json(result);
   });
 
@@ -227,7 +229,7 @@ export function createApp(db: Db) {
           controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
         };
         try {
-          const result = await runDump(db, aiFor(settings), userId, {
+          const result = await runAgentTurn(db, aiFor(settings), userId, {
             text: body.text,
             conversationId: body.conversationId,
             onEvent: (event) => send(event.type, event),
@@ -246,6 +248,49 @@ export function createApp(db: Db) {
   });
 
   app.get("/api/conversations/:id/traces", async (c) => c.json(await listTraceForConversation(db, c.get("userId"), c.req.param("id"))));
+
+  app.post("/api/traces/seen", async (c) => {
+    const body = z.object({ ids: z.array(z.string().min(1)) }).parse(await c.req.json());
+    for (const traceId of body.ids) {
+      await db.query(`UPDATE trace_events SET seen_at = now() WHERE user_id = $1 AND id = $2`, [c.get("userId"), traceId]);
+    }
+    return c.json({ ok: true });
+  });
+
+  app.post("/api/arrive", async (c) => {
+    const userId = c.get("userId");
+    const settings = await getSettings(db, userId);
+    await greetIfNeeded(db, aiFor(settings), userId);
+    return c.json({ ok: true });
+  });
+
+  app.get("/api/mind", async (c) => {
+    const userId = c.get("userId");
+    const [mind, state] = await Promise.all([
+      latestMindNote(db, userId),
+      db.query(`SELECT * FROM inner_state WHERE user_id = $1`, [userId]),
+    ]);
+    const row = state.rows[0];
+    return c.json({
+      mind,
+      state: row
+        ? { thinking: String(row.thinking ?? ""), curious: String(row.curious ?? ""), busy: String(row.busy ?? ""), waiting: String(row.waiting ?? "") }
+        : null,
+    });
+  });
+
+  app.get("/api/tools", async (c) => {
+    const userId = c.get("userId");
+    const [counts, wishes] = await Promise.all([
+      db.query(`SELECT tool, COUNT(*) AS n FROM thinking_sessions WHERE user_id = $1 AND tool IS NOT NULL GROUP BY tool`, [userId]),
+      db.query(`SELECT name, reason, created_at FROM tool_wishes WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
+    ]);
+    const used = new Map(counts.rows.map((row) => [String(row.tool), Number(row.n)]));
+    return c.json({
+      tools: TOOLS.map((tool) => ({ ...tool, uses: used.get(tool.name) ?? 0 })),
+      wishes: wishes.rows.map((row) => ({ name: String(row.name), reason: String(row.reason), createdAt: String(row.created_at) })),
+    });
+  });
 
   app.get("/api/picture", async (c) => {
     const userId = c.get("userId");
@@ -735,57 +780,15 @@ export function createApp(db: Db) {
     const body = await c.req.parseBody({ all: true });
     const files = filesFromField(body.file);
     if (!files.length) return c.json({ error: "Attach a file." }, 400);
-    const typed = fieldText(body.text).trim();
-    let thread = fieldText(body.conversationId) || null;
+    const pending: PendingFile[] = [];
+    for (const file of files) pending.push({ name: file.name, bytes: Buffer.from(await file.arrayBuffer()) });
     const settings = await getSettings(db, userId);
-    const notes: Awaited<ReturnType<typeof insertNote>>[] = [];
-    const closed: Awaited<ReturnType<typeof closeDeliveredTasks>> = [];
-    const errors: string[] = [];
-    for (const file of files) {
-      try {
-        const name = file.name || "upload";
-        const bytes = Buffer.from(await file.arrayBuffer());
-        const extracted = await textFromUpload(name, bytes);
-        const bodyText = extracted.text || `No text could be read from ${name}. The file name is kept so a matching to-do can close.`;
-        const note = await insertNote(db, userId, {
-          folderId: await ensureFolderPath(db, userId, "Inbox"),
-          type: "file",
-          title: name,
-          body: bodyText.slice(0, 8000),
-          status: "unexplored",
-          forNowExpiresAt: null,
-          mockEra: settings.provider === "mock",
-          reason: "Handed over from the dump.",
-          causingMessageId: null,
-          source: "dump",
-        });
-        notes.push(note);
-        const matched = await closeDeliveredTasks(db, userId, { title: name, text: `${typed}\n${bodyText}` }, `Uploaded ${name}.`);
-        closed.push(...matched);
-        if (!thread || !(await getConversation(db, userId, thread))) thread = await createConversation(db, userId, name);
-        const messageText = [`Uploaded ${name}`, typed, bodyText].filter(Boolean).join("\n\n").slice(0, 8000);
-        const messageId = await addMessage(db, thread, "user", messageText);
-        try {
-          await extractTrace(db, aiFor(settings), userId, messageText, messageId);
-          await refreshMindNote(db, aiFor(settings), userId, `Uploaded file:\n${messageText.slice(0, 800)}`);
-        } catch (error) {
-          await logAction(db, userId, {
-            what: "filing failed",
-            why: error instanceof Error ? error.message : "The upload was kept, and the trace did not finish.",
-            source: "filing",
-            payload: { conversationId: thread },
-          });
-        }
-        const closedLine = matched.length ? ` That closes: ${matched.map((task) => task.title).join("; ")}.` : "";
-        await addMessage(db, thread, "assistant", `Filed ${name}.${closedLine}`);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "A file did not land.";
-        errors.push(message);
-        await logAction(db, userId, { what: "filing failed", why: message, source: "filing", payload: { name: file.name } });
-      }
-    }
-    if (!notes.length || !thread) return c.json({ error: errors[0] || "Attach a file." }, 400);
-    return c.json({ notes, note: notes[0], closed, conversationId: thread, errors });
+    const result = await runAgentTurn(db, aiFor(settings), userId, {
+      text: fieldText(body.text).trim(),
+      files: pending,
+      conversationId: fieldText(body.conversationId) || null,
+    });
+    return c.json({ notes: result.notes, note: result.notes[0] ?? null, closed: result.closed, conversationId: result.conversationId, errors: [] });
   });
 
   app.post("/api/sources", async (c) => {

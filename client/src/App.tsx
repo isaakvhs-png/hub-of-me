@@ -10,6 +10,7 @@ import { LoginPage } from "@/pages/login";
 import { AsksPage, BriefPage, DebatePage, DebatesPage, HealthPage, SettingsPage, SoulPage, WhyPage } from "@/pages/rest";
 import { ToDoPage } from "@/pages/todos";
 import { PicturePage } from "@/pages/picture";
+import { NotebookPage } from "@/pages/notebook";
 
 export function App() {
   const [user, setUser] = useState<{ name: string } | null | undefined>(undefined);
@@ -36,6 +37,7 @@ export function App() {
         <Route path="/debates/:id" element={<DebatePage />} />
         <Route path="/soul" element={<SoulPage />} />
         <Route path="/why" element={<WhyPage />} />
+        <Route path="/notebook" element={<NotebookPage />} />
         <Route path="/health" element={<HealthPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<ChatPage />} />

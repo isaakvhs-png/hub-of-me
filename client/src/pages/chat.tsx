@@ -47,7 +47,18 @@ export function ChatPage() {
     setConversations(await api<Conversation[]>("/api/conversations"));
   }
 
-  useEffect(() => { loadLists().catch((err) => setError(err.message)); }, []);
+  const [mind, setMind] = useState("");
+  const [topicsOn, setTopicsOn] = useState<string[]>([]);
+  useEffect(() => {
+    api("/api/arrive", { method: "POST", body: "{}" })
+      .then(async () => {
+        const list = await api<Conversation[]>("/api/conversations");
+        setConversations(list);
+        if (!params.get("c") && list[0]) setParams({ c: list[0].id }, { replace: true });
+      })
+      .catch((err) => setError(err.message));
+    api<{ mind: { content: string } | null }>("/api/mind").then((data) => setMind(data.mind?.content ?? "")).catch(() => undefined);
+  }, []);
 
   async function loadThread(id: string, flash = false) {
     const [nextMessages, nextTraces] = await Promise.all([
@@ -55,7 +66,10 @@ export function ChatPage() {
       api<TraceSpan[]>(`/api/conversations/${id}/traces`),
     ]);
     setMessages(nextMessages);
-    setTraces(nextTraces.map((span) => ({ ...span, flash })));
+    const replay = nextTraces.filter((span) => flash || span.seen === false);
+    setTraces(nextTraces.map((span) => ({ ...span, flash: flash || span.seen === false })));
+    if (replay.length) api("/api/traces/seen", { method: "POST", body: JSON.stringify({ ids: replay.map((span) => span.id) }) }).catch(() => undefined);
+    api<{ mind: { content: string } | null }>("/api/mind").then((data) => setMind(data.mind?.content ?? "")).catch(() => undefined);
   }
 
   useEffect(() => {
@@ -202,9 +216,9 @@ export function ChatPage() {
   }
 
   return (
-    <div className="mx-auto grid max-w-5xl gap-6 lg:grid-cols-[220px_1fr]">
+    <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[200px_1fr_240px]">
       <aside className="hidden lg:block">
-        <button className="text-xs uppercase tracking-wide text-muted-foreground" onClick={() => setParams({})}>New dump</button>
+        <button className="text-xs uppercase tracking-wide text-muted-foreground" onClick={() => setParams({})}>New chat</button>
         <div className="mt-3 space-y-1">
           {conversations.length === 0 ? <p className="text-sm text-muted-foreground">No threads yet.</p> : null}
           {conversations.map((item) => (
@@ -215,11 +229,13 @@ export function ChatPage() {
         </div>
       </aside>
       <section className="flex min-h-[70vh] flex-col">
-        <h1 className="font-serif text-4xl italic">Dump</h1>
+        <h1 className="font-serif text-4xl italic">Chat</h1>
         <div className="mt-6 flex-1 space-y-6">
-          {messages.length === 0 ? <p className="max-w-xl text-muted-foreground">Say the thing that is taking up the room. It will be filed as a note, and one message will not rewrite the soul.</p> : null}
+          {messages.length === 0 ? <p className="max-w-xl text-muted-foreground">Say what is taking up the room. It can answer from the notebook, or decide to think first.</p> : null}
           {messages.map((message) => {
-            const spans = traces.filter((span) => span.messageId === message.id && span.start >= 0);
+            const allSpans = traces.filter((span) => span.messageId === message.id && span.start >= 0);
+            const spans = allSpans.filter((span) => span.destination !== "topic" || topicsOn.includes(span.id));
+            const topics = allSpans.filter((span) => span.destination === "topic");
             const lines = traces.filter((span) => span.messageId === message.id && span.start < 0);
             return (
               <article key={message.id} className={message.role === "assistant" ? "border-l-2 border-primary pl-4" : ""}>
@@ -232,6 +248,15 @@ export function ChatPage() {
                     {line.targetId ? <Link to={`/debates/${line.targetId}`}>{line.label}</Link> : line.label}
                   </p>
                 ))}
+                {message.role === "user" ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {topics.map((topic) => (
+                      <button key={topic.id} type="button" className={`rounded-full border px-2 py-1 text-xs ${topicsOn.includes(topic.id) ? "border-primary text-primary" : "border-border text-muted-foreground"}`} onClick={() => setTopicsOn((current) => current.includes(topic.id) ? current.filter((id) => id !== topic.id) : [...current, topic.id])}>
+                        {topic.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </article>
             );
           })}
@@ -307,6 +332,15 @@ export function ChatPage() {
         </form>
         {recording ? <p className="mt-2 font-mono text-xs text-primary">Listening{live ? `: ${live}` : "…"}</p> : null}
       </section>
+      <aside className="lg:sticky lg:top-6 lg:self-start">
+        <div className="rounded-xl border border-border p-4">
+          <div className="text-xs uppercase tracking-wide text-muted-foreground">State of mind</div>
+          <p className="mt-2 text-sm leading-relaxed">{mind || "Quiet for now."}</p>
+        </div>
+        {messages.some((message) => message.role === "assistant") ? (
+          <p className="mt-3 text-xs text-muted-foreground">An answer can name the notebook entries it used. The traces on your lines are those draws.</p>
+        ) : null}
+      </aside>
     </div>
   );
 }

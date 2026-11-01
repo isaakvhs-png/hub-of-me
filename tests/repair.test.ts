@@ -151,8 +151,8 @@ describe("repairs from the live diagnostics", () => {
   it("merges soul sections and restores version 1 without dropping history", async () => {
     const merged = mergeSoulSections(SEED_SOUL, [{ heading: "Last reflection", body: "This matters most now, because the dump is open, at the cost of a new thread." }]);
     expect(missingSoulSections(merged)).toEqual([]);
-    expect(merged).toMatch(/How this system thinks/);
-    expect(merged).toMatch(/Personality/);
+    expect(merged).toMatch(/## Purpose/);
+    expect(merged).toMatch(/## Values/);
     expect(merged).toMatch(/This matters most now/);
 
     const { db, user } = await fresh();

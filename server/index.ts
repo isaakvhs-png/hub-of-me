@@ -12,6 +12,8 @@ import { scheduleFeedbackDrain } from "../src/feedback.js";
 import { getSettings, settleStuckDebates } from "../src/repo.js";
 import { applyEnvProvider, ensureUser } from "../src/seed.js";
 import { ensureCuriosity, restoreCorruptedSouls } from "../src/soul.js";
+import { freshStart } from "../src/fresh.js";
+import { greetIfNeeded } from "../src/agent/turn.js";
 import { zonedParts } from "../src/time.js";
 import { createApp } from "./app.js";
 
@@ -22,7 +24,19 @@ await ensureUser(db);
 await applyEnvProvider(db);
 await settleStuckDebates(db);
 await restoreCorruptedSouls(db);
+const fresh = await freshStart(db);
+if (fresh) console.log(`Fresh start archived the previous center for ${fresh} account(s). Reason: Fresh start before core redesign.`);
 await ensureCuriosity(db);
+const everyone = await db.query<{ id: string }>(`SELECT id FROM users`);
+for (const row of everyone.rows) {
+  try {
+    const settings = await getSettings(db, row.id);
+    const ai = new Router(settings, { mock: settings.provider === "mock" ? new MockProvider() : undefined });
+    await greetIfNeeded(db, ai, row.id);
+  } catch (error) {
+    console.error("greeting failed", error);
+  }
+}
 await db.query(`UPDATE debate_feedback SET status = 'pending' WHERE status = 'running'`);
 const queuedFeedback = await db.query<{ user_id: string }>(`SELECT DISTINCT user_id FROM debate_feedback WHERE status = 'pending'`);
 for (const row of queuedFeedback.rows) {

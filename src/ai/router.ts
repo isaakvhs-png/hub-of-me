@@ -1,3 +1,4 @@
+import { isQuotaError } from "./effort.js";
 import { outputLimit } from "./limits.js";
 import { UnpricedModelError, UsageMissingError } from "../errors.js";
 import { isPriced } from "../prices.js";
@@ -79,7 +80,9 @@ export function providerReport(settingsProvider: ProviderName): ProviderReport {
   return { active, why, envAiProvider: env.raw, envNormalized: env.normalized, settingsProvider, keys };
 }
 
-export function resolveRoleModel(settings: Settings, req: Pick<AiRequest, "role" | "debaterIndex">): ResolvedModel {
+export function resolveRoleModel(settings: Settings, req: Pick<AiRequest, "role" | "debaterIndex" | "model">): ResolvedModel {
+  if (settings.provider !== "mock" && req.model?.startsWith("gemini-")) return { provider: "gemini", model: req.model };
+  if (settings.provider !== "mock" && req.model?.startsWith("claude-")) return { provider: "anthropic", model: req.model };
   if (settings.provider === "mock") {
     if (req.role === "judge") return { provider: "mock", model: "mock-judge" };
     if (req.role === "debater") return { provider: "mock", model: `mock-debater-${req.debaterIndex ?? 0}` };
@@ -120,7 +123,7 @@ export class Router {
   ) {}
 
   async complete(req: AiRequest): Promise<AiResult> {
-    const resolved = resolveRoleModel(this.settings, req);
+    let resolved = resolveRoleModel(this.settings, req);
     if (!isPriced(resolved.model, this.settings.priceOverrides)) {
       throw new UnpricedModelError(`No list price for ${resolved.model}. Add it before calling. Tokens are not estimated.`);
     }
@@ -149,10 +152,22 @@ export class Router {
     } else if (resolved.provider === "gemini") {
       const apiKey = process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim();
       if (!apiKey) throw new Error("GEMINI_API_KEY is not set.");
-      const result = await geminiComplete(withModel, apiKey, this.deps.fetchImpl);
-      text = result.text;
-      usage = result.usage;
-      stopReason = result.stopReason;
+      try {
+        const result = await geminiComplete(withModel, apiKey, this.deps.fetchImpl);
+        text = result.text;
+        usage = result.usage;
+        stopReason = result.stopReason;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        const anthropicKey = process.env.ANTHROPIC_API_KEY?.trim();
+        if (!isQuotaError(message) || !anthropicKey) throw error;
+        const fallback = req.effort === "deep" ? "claude-sonnet-5-5" : "claude-haiku-5-5";
+        const result = await anthropicComplete({ ...withModel, model: fallback }, anthropicKey, this.deps.fetchImpl);
+        text = result.text;
+        usage = result.usage;
+        stopReason = result.stopReason;
+        resolved = { provider: "anthropic", model: fallback };
+      }
     } else {
       throw new Error(`Unknown provider ${resolved.provider}`);
     }

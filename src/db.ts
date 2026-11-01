@@ -161,6 +161,12 @@ export async function migrate(db: Db): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )`,
     `ALTER TABLE info_requests ADD COLUMN IF NOT EXISTS rank INTEGER`,
+    `ALTER TABLE conversations ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`,
+    `ALTER TABLE debates ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`,
+    `ALTER TABLE claims ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`,
+    `ALTER TABLE mind_notes ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`,
+    `ALTER TABLE soul_versions ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`,
+    `ALTER TABLE trace_events ADD COLUMN IF NOT EXISTS seen_at TIMESTAMPTZ`,
     `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS why_now TEXT`,
     `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS surfaced BOOLEAN NOT NULL DEFAULT false`,
     `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS fade_reason TEXT`,

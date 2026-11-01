@@ -3,15 +3,16 @@ import type { Db } from "./db.js";
 import { getSoul, insertSoulVersion, listSoulVersions, listUsers, logAction } from "./repo.js";
 import type { SoulVersion } from "./types.js";
 
-const ALLOWED = new Set(["reflection", "user", "seed", "repair"]);
+const ALLOWED = new Set(["reflection", "user", "seed", "repair", "fresh"]);
 
-export const REQUIRED_SOUL_HEADINGS = [
-  "How this system thinks",
-  "Values and long-term direction",
-  "Goals",
-  "Current strategy",
-  "Personality",
-] as const;
+export const REQUIRED_SOUL_HEADINGS = ["Purpose", "Values", "Boundaries"] as const;
+
+/** A hint for reflection when character is turning into instructions. Not a veto by itself. */
+export function ruleListHint(content: string): string | null {
+  const lines = content.split("\n").map((line) => line.trim()).filter((line) => /^(?:[-*]|\d+\.)?\s*(always|never|do not|don't|must|you should)\b/i.test(line));
+  if (lines.length < 6) return null;
+  return "Character is starting to read as a list of rules. Consolidate it into a few principles, each traceable to a real moment.";
+}
 
 export function soulHeadings(content: string): string[] {
   return [...content.matchAll(/^##\s+(.+?)\s*$/gm)].map((match) => match[1].trim());
@@ -111,10 +112,11 @@ export async function ensureCuriosity(db: Db): Promise<number> {
   for (const user of users) {
     const soul = await getSoul(db, user.id);
     if (!soul || /curiosity/i.test(soul.content)) continue;
-    const existing = sectionBody(soul.content, "Values and long-term direction");
+    const heading = sectionBody(soul.content, "Values") ? "Values" : sectionBody(soul.content, "Values and long-term direction") ? "Values and long-term direction" : "Values";
+    const existing = sectionBody(soul.content, heading);
     const body = existing ? `${existing}\n\n${CURIOSITY}` : CURIOSITY;
     await changeSoul(db, user.id, {
-      content: mergeSoulSections(soul.content, [{ heading: "Values and long-term direction", body }]),
+      content: mergeSoulSections(soul.content, [{ heading, body }]),
       reason: "Curiosity is a core value of how this system understands him.",
       via: "repair",
     });

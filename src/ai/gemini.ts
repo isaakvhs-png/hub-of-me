@@ -23,9 +23,12 @@ export async function geminiComplete(
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: req.system }] },
-      contents: req.messages.map((message) => ({
+      contents: req.messages.map((message, index) => ({
         role: message.role === "assistant" ? "model" : "user",
-        parts: [{ text: message.content }],
+        parts: [
+          { text: message.content },
+          ...(index === req.messages.length - 1 ? (req.images ?? []).map((image) => ({ inlineData: { mimeType: image.mediaType, data: image.base64 } })) : []),
+        ],
       })),
       generationConfig: { maxOutputTokens: req.maxTokens ?? 2000 },
     }),

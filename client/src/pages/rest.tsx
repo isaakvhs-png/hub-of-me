@@ -396,6 +396,8 @@ interface Health {
   byDay: { key: string; calls: number; inputTokens: number; outputTokens: number; costEurCents: number }[];
   byConversation: { key: string; calls: number; inputTokens: number; outputTokens: number; costEurCents: number }[];
   byJob: { key: string; calls: number; inputTokens: number; outputTokens: number; costEurCents: number }[];
+  byModel?: { key: string; calls: number; inputTokens: number; outputTokens: number; costEurCents: number }[];
+  freeQuota?: { model: string; perDay: number; perMinute: number; usedToday: number }[];
   drift: { flagged: boolean; detail: string };
   winsByModel: Record<string, number>;
 }
@@ -417,6 +419,15 @@ export function HealthPage() {
         <Ledger title="By day" rows={health.byDay} />
         <Ledger title="By conversation" rows={health.byConversation} />
         <Ledger title="By job" rows={health.byJob} />
+        <Ledger title="By model" rows={health.byModel ?? []} />
+      </div>
+      <div className="mt-6">
+        <h2 className="font-serif text-2xl">Free quota</h2>
+        <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+          {(health.freeQuota ?? []).map((quota) => (
+            <p key={quota.model}>{quota.model}: {quota.usedToday} of {quota.perDay} today, {quota.perMinute} per minute. {quota.perDay === 0 ? "Not used." : ""}</p>
+          ))}
+        </div>
       </div>
       <div className="mt-6 text-sm text-muted-foreground">
         Wins by model: {Object.entries(health.winsByModel).map(([model, count]) => `${model} ${count}`).join(" · ") || "none yet"}

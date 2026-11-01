@@ -446,6 +446,41 @@ CREATE TABLE IF NOT EXISTS visits (
   PRIMARY KEY (user_id, surface)
 );
 
+CREATE TABLE IF NOT EXISTS fresh_starts (
+  user_id TEXT PRIMARY KEY REFERENCES users(id),
+  reason TEXT NOT NULL,
+  greeted_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS thinking_sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  what TEXT NOT NULL,
+  why TEXT NOT NULL,
+  tool TEXT,
+  result TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS tool_wishes (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  name TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS inner_state (
+  user_id TEXT PRIMARY KEY REFERENCES users(id),
+  thinking TEXT NOT NULL DEFAULT '',
+  curious TEXT NOT NULL DEFAULT '',
+  busy TEXT NOT NULL DEFAULT '',
+  waiting TEXT NOT NULL DEFAULT '',
+  checked_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE INDEX IF NOT EXISTS notes_user_idx ON notes (user_id, updated_at);
 CREATE INDEX IF NOT EXISTS usage_user_idx ON usage_records (user_id, created_at);
 CREATE INDEX IF NOT EXISTS action_user_idx ON action_log (user_id, created_at);

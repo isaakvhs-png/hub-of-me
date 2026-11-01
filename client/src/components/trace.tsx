@@ -11,6 +11,7 @@ export interface TraceSpan {
   label: string;
   targetId: string | null;
   flash?: boolean;
+  seen?: boolean;
 }
 
 const COLORS: Record<string, string> = {
@@ -104,16 +105,22 @@ export function TraceView({ text, spans, onOpen }: { text: string; spans: TraceS
           if (!covering.length) return <span key={`${start}-${end}`}>{piece}</span>;
           const shadows = covering.map((span, layer) => `inset 0 -${2 + layer * 3}px 0 ${traceColor(span.destination)}`).join(", ");
           return (
-            <button
-              key={`${start}-${end}`}
-              type="button"
-              data-anchor={covering.map((span) => span.id).join(" ")}
-              className="bg-transparent p-0 text-inherit"
-              style={{ boxShadow: shadows }}
-              onClick={() => onOpen(covering[0])}
-            >
-              {piece}
-            </button>
+            <span key={`${start}-${end}`} className="trace-anchor relative inline" data-anchor={covering.map((span) => span.id).join(" ")}>
+              <button type="button" className="bg-transparent p-0 text-inherit" style={{ boxShadow: shadows }} onClick={() => onOpen(covering[0])}>
+                {piece}
+              </button>
+              {covering.filter((span) => span.destination !== "topic").map((span, layer) => (
+                <span
+                  key={span.id}
+                  className={`trace-pop absolute z-20 mt-1 w-max max-w-[220px] rounded-md border bg-card px-2 py-1 text-left text-xs ${span.flash ? "" : "pointer-events-none opacity-0"}`}
+                  style={{ borderColor: traceColor(span.destination), left: layer * 8, top: "100%" }}
+                >
+                  <span className="mb-1 block h-2 w-px" style={{ background: traceColor(span.destination) }} />
+                  <span className="uppercase tracking-wide text-muted-foreground">{span.destination}</span>
+                  <span className="block">{span.label}</span>
+                </span>
+              ))}
+            </span>
           );
         })}
       </div>
@@ -124,7 +131,7 @@ export function TraceView({ text, spans, onOpen }: { text: string; spans: TraceS
               key={span.id}
               type="button"
               data-box={span.id}
-              className={`rounded-md border px-2 py-1 text-left text-xs ${span.flash ? "trace-flash" : ""}`}
+              className={`trace-pop rounded-md border px-2 py-1 text-left text-xs ${span.flash ? "" : "opacity-0"}`}
               style={{ borderColor: traceColor(span.destination) }}
               onClick={() => onOpen(span)}
             >

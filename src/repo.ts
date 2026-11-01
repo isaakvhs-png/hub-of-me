@@ -455,7 +455,7 @@ export async function createConversation(db: Db, userId: string, title: string, 
 }
 
 export async function listConversations(db: Db, userId: string): Promise<Row[]> {
-  const result = await db.query(`SELECT * FROM conversations WHERE user_id = $1 ORDER BY created_at DESC`, [userId]);
+  const result = await db.query(`SELECT * FROM conversations WHERE user_id = $1 AND archived_at IS NULL ORDER BY created_at DESC`, [userId]);
   return result.rows.map((row) => ({
     id: String(row.id),
     title: String(row.title),

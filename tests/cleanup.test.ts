@@ -37,11 +37,11 @@ describe("versioning and cleanup", () => {
     expect(restored.body).toBe("Original.");
     expect(restored.currentVersion).toBe(3);
     expect(await listNoteVersions(db, note.id)).toHaveLength(3);
-    const edited = SEED_SOUL.replace("Judgment, not instructions.", "Judgment, not instructions. Edited.");
+    const edited = SEED_SOUL.replace("Understand him, then help him live the life he wants.", "Understand him, then help him live the life he wants. Edited.");
     await changeSoul(db, user.id, { content: edited, reason: "A commitment.", via: "reflection" });
     const undone = await undoSoul(db, user.id);
     expect(undone.version).toBe(3);
-    expect(undone.content).toMatch(/How this system thinks/);
+    expect(undone.content).toMatch(/## Purpose/);
     expect(undone.content).not.toMatch(/Edited/);
     await expect(changeSoul(db, user.id, { content: "## Last reflection\nOnly this.\n", reason: "A wipe.", via: "reflection" })).rejects.toThrow(/required sections/);
     expect((await getSoul(db, user.id))?.version).toBe(3);

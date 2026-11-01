@@ -29,6 +29,9 @@
   40% { opacity: 0.25; }
 }
 .trace-flash { animation: trace-flash 0.7s ease-in-out 3; }
+.trace-pop { animation: trace-flash 0.7s ease-in-out 3, trace-hide 0.2s ease 2.1s forwards; }
+@keyframes trace-hide { to { opacity: 0; pointer-events: none; } }
+.trace-anchor:hover .trace-pop, .trace-anchor:focus-within .trace-pop { animation: none; opacity: 1; pointer-events: auto; }
 
 html, body, #root { min-height: 100%; }
 

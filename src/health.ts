@@ -1,4 +1,5 @@
 import type { Db } from "./db.js";
+import { FREE_QUOTA } from "./ai/effort.js";
 import { getBudget, getSettings, listDebates, listUsage, listUserDebateFeedback, spendSince } from "./repo.js";
 import { startOfMonth } from "./time.js";
 
@@ -59,6 +60,13 @@ export async function healthReport(db: Db, userId: string) {
       usage.map((row) => ({ key: row.conversationId ?? "(no conversation)", inputTokens: row.inputTokens, outputTokens: row.outputTokens, costEurCents: row.costEurCents })),
     ),
     byJob: group(usage.map((row) => ({ key: row.jobKind ?? row.role, inputTokens: row.inputTokens, outputTokens: row.outputTokens, costEurCents: row.costEurCents }))),
+    byModel: group(usage.map((row) => ({ key: `${row.provider} ${row.model}`, inputTokens: row.inputTokens, outputTokens: row.outputTokens, costEurCents: row.costEurCents }))),
+    freeQuota: FREE_QUOTA.map((quota) => ({
+      model: quota.model,
+      perDay: quota.perDay,
+      perMinute: quota.perMinute,
+      usedToday: usage.filter((row) => row.provider === "gemini" && row.model === quota.model && Date.now() - new Date(row.createdAt).getTime() < 24 * 60 * 60 * 1000).length,
+    })),
     drift: judgeDrift(debates.map((debate) => {
       const texts = feedback.filter((item) => item.debateId === String(debate.id)).map((item) => item.body);
       const combined = texts.join("\n") || (debate.userFeedback as string | null);

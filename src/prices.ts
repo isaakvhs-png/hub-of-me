@@ -37,6 +37,7 @@ export const LIST_PRICES: Record<string, Price> = {
     cacheWritePerMTokUsd: 2.5,
     cacheReadPerMTokUsd: 0.1,
   },
+  "gemini-2.5-flash-lite": { inputPerMTokUsd: 0, outputPerMTokUsd: 0 },
   "gemini-2.5-flash": { inputPerMTokUsd: 0.3, outputPerMTokUsd: 2.5 },
   "gemini-2.5-pro": {
     inputPerMTokUsd: 1.25,

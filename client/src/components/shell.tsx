@@ -1,26 +1,14 @@
 import { useEffect, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { Calendar, Folder, Layers, MessageSquare, MoreHorizontal } from "lucide-react";
+import { Activity, MessageSquare, MoreHorizontal, NotebookPen, Settings } from "lucide-react";
 import { api } from "@/lib/api";
 import { cn, eur } from "@/lib/utils";
 
 const primary = [
-  { to: "/", label: "Dump", icon: MessageSquare, end: true },
-  { to: "/library", label: "Library", icon: Folder, end: false },
-  { to: "/calendar", label: "Calendar", icon: Calendar, end: false },
-  { to: "/discovery", label: "Deck", icon: Layers, end: false },
-];
-
-const more = [
-  { to: "/todos", label: "To-do" },
-  { to: "/brief", label: "Brief" },
-  { to: "/asks", label: "Asks" },
-  { to: "/debates", label: "Debates" },
-  { to: "/picture", label: "Picture" },
-  { to: "/soul", label: "Soul" },
-  { to: "/why", label: "Why" },
-  { to: "/health", label: "Health" },
-  { to: "/settings", label: "Settings" },
+  { to: "/", label: "Chat", icon: MessageSquare, end: true },
+  { to: "/notebook", label: "Notebook", icon: NotebookPen, end: false },
+  { to: "/health", label: "Health", icon: Activity, end: false },
+  { to: "/settings", label: "Settings", icon: Settings, end: false },
 ];
 
 export function Shell({ name, onLogout, children }: { name: string; onLogout: () => void; children: React.ReactNode }) {
@@ -53,13 +41,6 @@ export function Shell({ name, onLogout, children }: { name: string; onLogout: ()
               {item.label}
             </NavLink>
           ))}
-          <div className="my-3 h-px bg-border" />
-          {more.map((item) => (
-            <NavLink key={item.to} to={item.to} className={({ isActive }) => linkClass(isActive)}>
-              {item.label}
-              {item.to === "/why" && summary ? <span className="ml-auto font-mono text-xs text-muted-foreground">{summary.tensions}</span> : null}
-            </NavLink>
-          ))}
         </nav>
         <div className="mt-auto px-2 text-xs text-muted-foreground">
           <div className="font-mono text-primary">{summary ? eur(summary.leftEurCents) : "…"} left</div>
@@ -77,12 +58,6 @@ export function Shell({ name, onLogout, children }: { name: string; onLogout: ()
         {open ? (
           <div className="border-b border-border px-4 py-3 md:hidden">
             <div className="flex flex-wrap gap-2">
-              {more.map((item) => (
-                <NavLink key={item.to} to={item.to} onClick={() => setOpen(false)} className="rounded-full border border-border px-3 py-1 text-sm">
-                  {item.label}
-                  {item.to === "/why" && summary ? ` ${summary.tensions}` : ""}
-                </NavLink>
-              ))}
               <button className="text-sm text-muted-foreground" onClick={logout}>Sign out</button>
             </div>
           </div>
