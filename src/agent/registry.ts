@@ -21,7 +21,7 @@ export const TOOLS: ToolSpec[] = [
   { name: "read_records", effort: "light", description: "Read your own records: thinking, actions, and soul changes since the fresh start. Use this before explaining what you did or why. Do not guess." },
   { name: "search", effort: "light", description: "Search the public web and read what comes back, with sources. input: { query, why }. Never put his private details or anyone's contact details in a query." },
   { name: "ask", effort: "conversation", description: "Hold a question for him, shown as a card he can answer, postpone, or refuse. input: { subject, question, context, why, expect }." },
-  { name: "reflect", effort: "deep", description: "Step back and think something through, alone, in your own words. What you conclude can change your soul, your picture of him, and what you want to ask. input: { about }." },
+  { name: "reflect", effort: "deep", description: "Step back and think something through, alone, in your own words. What you conclude can change your soul, your understanding of him (portrait and map), your intentions, and what you want to ask. input: { about }." },
   { name: "debate", effort: "deep", description: "Have a question argued from several sides by different models, one of them uncomfortable, and judged by another. Slower and more costly. input: { cause }." },
   { name: "wake_me", effort: "light", description: "Decide when you next want to wake up and think on your own while he is away, and why. input: { in_minutes, why }. Nothing wakes you otherwise, except his messages and a fallback alarm about once a day." },
   { name: "wish", effort: "light", description: "Record a tool you wish you had, and why. input: { name, reason }." },

@@ -25,7 +25,7 @@ const reflectionSchema = z.object({
 
 /**
  * Quiet reflection: it steps back and thinks in its own words, with the model it chose, over everything it has in mind.
- * No sides, no judge, no required sentence. What it concludes can change its soul, its picture of him, and what it wants to ask.
+ * No sides, no judge, no required sentence. What it concludes can change its soul, its understanding of him, its intentions, and what it wants to ask.
  */
 export async function reflectQuietly(
   db: Db,
