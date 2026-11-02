@@ -157,7 +157,7 @@ export function ChatPage() {
           if (event === "error") throw new Error(typeof data.error === "string" ? data.error : "The dump did not land.");
           if (event === "done") donePayload = data as unknown as DumpResult;
         });
-        if (!donePayload) throw new Error("The dump did not finish.");
+        if (!donePayload) throw new Error("The connection dropped before the answer came back. Your message is saved, and it will answer it within a couple of minutes.");
         result = donePayload;
       }
       if (result.conversationId !== conversationId) skipLoad.current = true;

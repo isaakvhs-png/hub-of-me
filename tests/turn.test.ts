@@ -72,6 +72,7 @@ describe("its own choices", () => {
     let woke = 0;
     scriptAgent(mock, (system) => {
       if (system.includes("WAKE:")) { woke += 1; return { say: "" }; }
+      if (system.includes("You will wake at")) return { say: "I'll look into it later." };
       return { think: { what: "Plan", why: "Later", tool: "wake_me", input: { in_minutes: 30, why: "Check the Kyoto deadline" } } };
     });
     await runAgentTurn(db, ai, user.id, { text: "The Kyoto deadline is somewhere in December." });
@@ -82,5 +83,21 @@ describe("its own choices", () => {
     expect(woke).toBe(1);
     const after = (await db.query(`SELECT next_wake_at FROM inner_state WHERE user_id = $1`, [user.id])).rows[0];
     expect(after.next_wake_at).toBeNull();
+  });
+});
+
+describe("a message left without a reply", () => {
+  it("gets answered once, without saving his message twice", async () => {
+    const { db, user, ai, mock } = await fresh();
+    const { answerUnanswered } = await import("../src/agent/turn.js");
+    const { addMessage } = await import("../src/repo.js");
+    scriptAgent(mock, () => ({ say: "Sorry for the wait. Here is my read." }));
+    const conv = await createConversation(db, user.id, "Dump");
+    await addMessage(db, conv, "user", "My long opening dump.");
+    const later = new Date(Date.now() + 2 * 60_000);
+    expect(await answerUnanswered(db, ai, user.id, later)).toBe(true);
+    const msgs = await listMessages(db, conv);
+    expect(msgs.map((m: any) => m.role)).toEqual(["user", "assistant"]);
+    expect(await answerUnanswered(db, ai, user.id, later)).toBe(false);
   });
 });

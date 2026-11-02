@@ -229,6 +229,10 @@ export function createApp(db: Db) {
         const send = (event: string, data: unknown) => {
           controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
         };
+        // A quiet comment every 15 s keeps proxies from cutting a long turn as idle.
+        const ping = setInterval(() => {
+          try { controller.enqueue(encoder.encode(`: ping\n\n`)); } catch { clearInterval(ping); }
+        }, 15_000);
         try {
           const result = await runAgentTurn(db, aiFor(settings), userId, {
             text: body.text,
@@ -239,6 +243,7 @@ export function createApp(db: Db) {
         } catch (error) {
           send("error", { error: error instanceof Error ? error.message : "The dump did not land." });
         } finally {
+          clearInterval(ping);
           controller.close();
         }
       },

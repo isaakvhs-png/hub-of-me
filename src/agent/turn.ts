@@ -149,7 +149,48 @@ export async function runAgentTurn(
   db: Db,
   ai: Router,
   userId: string,
-  input: { text?: string; files?: PendingFile[]; conversationId?: string | null; cue?: string; onEvent?: (event: TurnEvent) => void | Promise<void> },
+  input: { text?: string; files?: PendingFile[]; conversationId?: string | null; cue?: string; answerMessageId?: string; onEvent?: (event: TurnEvent) => void | Promise<void> },
+): Promise<TurnResult> {
+  if (input.answerMessageId) {
+    // Answer a message he already sent (e.g. after a dropped connection) without saving it twice.
+    const held = (await db.query(`SELECT m.content, m.conversation_id FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE m.id = $1 AND c.user_id = $2`, [input.answerMessageId, userId])).rows[0];
+    if (!held) throw new Error("That message is not there.");
+    input = { ...input, text: String(held.content), conversationId: String(held.conversation_id) };
+  }
+  const answering = input.answerMessageId ?? null;
+  if (answering) inFlight.add(answering);
+  try {
+    return await turnBody(db, ai, userId, input, answering);
+  } finally {
+    if (answering) inFlight.delete(answering);
+  }
+}
+
+/** Messages being answered right now, so the unanswered-message check never answers one twice. */
+const inFlight = new Set<string>();
+let liveTurns = 0;
+
+async function turnBody(
+  db: Db,
+  ai: Router,
+  userId: string,
+  input: { text?: string; files?: PendingFile[]; conversationId?: string | null; cue?: string; answerMessageId?: string; onEvent?: (event: TurnEvent) => void | Promise<void> },
+  answering: string | null,
+): Promise<TurnResult> {
+  liveTurns += 1;
+  try {
+    return await turnInner(db, ai, userId, input, answering);
+  } finally {
+    liveTurns -= 1;
+  }
+}
+
+async function turnInner(
+  db: Db,
+  ai: Router,
+  userId: string,
+  input: { text?: string; files?: PendingFile[]; conversationId?: string | null; cue?: string; answerMessageId?: string; onEvent?: (event: TurnEvent) => void | Promise<void> },
+  answering: string | null,
 ): Promise<TurnResult> {
   const settings = await getSettings(db, userId);
   const who = await db.query(`SELECT name FROM users WHERE id = $1`, [userId]);
@@ -166,7 +207,8 @@ export async function runAgentTurn(
   const title = text.split("\n")[0] || files[0]?.name || "Hello";
   if (!conversationId && (text || files.length || input.cue === "GREETING DUE")) conversationId = await createConversation(db, userId, title);
   let userMessageId: string | null = null;
-  if (conversationId && text) userMessageId = await addMessage(db, conversationId, "user", text);
+  if (answering) userMessageId = answering;
+  else if (conversationId && text) userMessageId = await addMessage(db, conversationId, "user", text);
   const notes: Note[] = [];
   const closed: Task[] = [];
   const traces: TraceEvent[] = [];
@@ -549,6 +591,7 @@ const FALLBACK_HOURS = 24;
 
 /** Wake it if the time it chose has come (or the fallback has). Returns true when it woke. */
 export async function wakeIfDue(db: Db, ai: Router, userId: string, now = new Date()): Promise<boolean> {
+  if (await answerUnanswered(db, ai, userId, now)) return true;
   const row = (await db.query(`SELECT next_wake_at, wake_why, checked_at FROM inner_state WHERE user_id = $1`, [userId])).rows[0];
   const next = row?.next_wake_at ? new Date(String(row.next_wake_at)) : null;
   const checked = row?.checked_at ? new Date(String(row.checked_at)).getTime() : 0;
@@ -564,5 +607,29 @@ export async function wakeIfDue(db: Db, ai: Router, userId: string, now = new Da
   );
   await logAction(db, userId, { what: "woke up", why, source: "agent", payload: {} });
   await runAgentTurn(db, ai, userId, { cue: `WAKE: ${why}` });
+  return true;
+}
+
+/**
+ * A message of his with no reply after it (a dropped connection, a restart mid-turn) wakes it to answer.
+ * Only when no turn is running in this process, the message is over 90 s old (not still being answered) and under a day.
+ */
+export async function answerUnanswered(db: Db, ai: Router, userId: string, now = new Date()): Promise<boolean> {
+  if (liveTurns > 0) return false;
+  const last = (
+    await db.query(
+      `SELECT m.id, m.role, m.created_at FROM messages m JOIN conversations c ON c.id = m.conversation_id
+       WHERE c.user_id = $1 AND c.archived_at IS NULL ORDER BY m.created_at DESC LIMIT 1`,
+      [userId],
+    )
+  ).rows[0];
+  if (!last || String(last.role) !== "user") return false;
+  const age = now.getTime() - new Date(String(last.created_at)).getTime();
+  if (age < 90_000 || age > 24 * 3_600_000 || inFlight.has(String(last.id))) return false;
+  // One retry per message, ever: if it chose to say nothing, that stands, and it costs nothing more.
+  const tried = await db.query(`SELECT 1 FROM action_log WHERE user_id = $1 AND what = 'answered a message left without reply' AND payload->>'messageId' = $2 LIMIT 1`, [userId, String(last.id)]);
+  if (tried.rows[0]) return false;
+  await logAction(db, userId, { what: "answered a message left without reply", why: "His message had no answer, likely a dropped connection.", source: "agent", payload: { messageId: String(last.id) } });
+  await runAgentTurn(db, ai, userId, { answerMessageId: String(last.id) });
   return true;
 }
