@@ -34,6 +34,8 @@ export function ChatPage() {
   const [draftSpans, setDraftSpans] = useState<TraceSpan[]>([]);
   const [openTrace, setOpenTrace] = useState<TraceSpan | null>(null);
   const skipLoad = useRef(false);
+  /** True from the moment Send is pressed: blocks a second send before React has re-rendered the button as busy. */
+  const sending = useRef(false);
   const bottom = useRef<HTMLDivElement>(null);
   const media = useRef<MediaRecorder | null>(null);
   const speech = useRef<{ stop: () => void } | null>(null);
@@ -111,8 +113,12 @@ export function ChatPage() {
   async function send(body: string, audio?: Blob) {
     const trimmed = body.trim();
     if (!trimmed && !audio && files.length === 0) return;
+    if (sending.current) return;
+    sending.current = true;
     setBusy(true);
     setError("");
+    // The words leave the box at once: they show as the message being read, and a second press cannot send them twice.
+    if (!files.length) setText("");
     try {
       let result: DumpResult;
       if (files.length && !audio) {
@@ -142,12 +148,23 @@ export function ChatPage() {
         setDraft(trimmed);
         setDraftSpans([]);
         setWork(null);
-        const response = await fetch("/api/dump/stream", {
-          method: "POST",
-          credentials: "include",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ text: trimmed, conversationId }),
-        });
+        const unreachable = "It could not be reached, so nothing was sent. Your words are back in the box; try again in a moment.";
+        let response: Response;
+        try {
+          response = await fetch("/api/dump/stream", {
+            method: "POST",
+            credentials: "include",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ text: trimmed, conversationId }),
+          });
+        } catch {
+          setText(trimmed);
+          throw new Error(unreachable);
+        }
+        if (!response.ok) {
+          setText(trimmed);
+          throw new Error(unreachable);
+        }
         let donePayload: DumpResult | null = null;
         await readSse(response, (event, data) => {
           if (event === "span") setDraftSpans((prev) => [...prev, { ...(data as unknown as TraceSpan), flash: true }]);
@@ -177,6 +194,7 @@ export function ChatPage() {
       setDraft(null);
       setError(err instanceof Error ? err.message : "The dump did not land.");
     } finally {
+      sending.current = false;
       setBusy(false);
     }
   }
