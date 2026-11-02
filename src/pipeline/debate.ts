@@ -1,5 +1,4 @@
 import type { Db } from "../db.js";
-import { argumentRejection, judgeRejection, reflectionRejection } from "../hedge.js";
 import type { Router } from "../ai/router.js";
 import { debaterPool, freeDebaterIsWiser, resolveRoleModel } from "../ai/router.js";
 import { completeJson } from "../ai/tracked.js";
@@ -256,7 +255,7 @@ export async function runReflection(
           messages: [{ role: "user", content: "Argue your position." }],
         },
         argumentSchema,
-        { ...meta, reject: argumentRejection },
+        meta,
       );
       sides.push({ id: savedId, argument: argued.argument, model: resolved.model, uncomfortable: side.uncomfortable, position: side.position });
       await updateDebateSide(db, savedId, { argument: argued.argument, prediction: argued.prediction });
@@ -287,17 +286,7 @@ export async function runReflection(
         messages: [{ role: "user", content: "Pick a winner." }],
       },
       judgmentSchema,
-      {
-        ...meta,
-        reject: (text) => {
-          try {
-            const data = judgmentSchema.parse(extractJson(text));
-            return judgeRejection(`${data.why}\n${data.loserGotRight}`);
-          } catch {
-            return "hedged verdict";
-          }
-        },
-      },
+      meta,
     );
     const winner = labeled.find((item) => item.label === judgment.winner);
     if (!winner) throw new Error("Judge picked a label that was not in the debate.");
@@ -343,8 +332,6 @@ export async function runReflection(
         reject: (text) => {
           try {
             const data = reflectionOutcomeSchema.parse(extractJson(text));
-            const hedged = reflectionRejection(data.commitment);
-            if (hedged) return hedged;
             for (const section of data.soul?.sections ?? []) {
               const copied = copiedPhrase(`${section.heading}\n${section.body}`, verbatim);
               if (copied) return `The soul copied his words ("${copied}"). Write a general principle and keep the quote as evidence.`;

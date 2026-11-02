@@ -1,0 +1,111 @@
+import { z } from "zod";
+import type { Db } from "../db.js";
+import type { Router } from "../ai/router.js";
+import { completeJson } from "../ai/tracked.js";
+import { id } from "../ids.js";
+import { saveClaims } from "../picture.js";
+import { getSoul, insertInfoRequest, logAction } from "../repo.js";
+import { changeSoul, mergeSoulSections } from "../soul.js";
+import { conversationView, memoryView } from "./memory.js";
+
+const reflectionSchema = z.object({
+  thoughts: z.string().min(1),
+  soul: z
+    .object({
+      reason: z.string().min(1),
+      sections: z.array(z.object({ heading: z.string().min(1), body: z.string() })).min(1),
+    })
+    .optional(),
+  claims: z
+    .array(
+      z.object({
+        claimId: z.string().optional(),
+        statement: z.string().min(1),
+        situations: z.string().optional(),
+        status: z.enum(["tentative", "held", "revised", "dropped"]).optional(),
+        evidence: z.array(z.object({ quote: z.string().min(1), source: z.string().min(1) })).optional(),
+      }),
+    )
+    .optional(),
+  asks: z
+    .array(z.object({ subject: z.string().min(1), question: z.string().min(1), context: z.string().min(1), why: z.string().min(1) }))
+    .optional(),
+  mind: z.string().optional(),
+});
+
+/**
+ * Quiet reflection: it steps back and thinks in its own words, with the model it chose, over everything it has in mind.
+ * No sides, no judge, no required sentence. What it concludes can change its soul, its picture of him, and what it wants to ask.
+ */
+export async function reflectQuietly(
+  db: Db,
+  ai: Router,
+  userId: string,
+  input: { cause: string; model: string; causingMessageId?: string | null },
+): Promise<string> {
+  const soul = await getSoul(db, userId);
+  if (!soul) return "There is no soul to reflect from.";
+  const memory = await memoryView(db, userId);
+  const conversation = await conversationView(db, userId, memory.conversationChars);
+  const out = await completeJson(
+    db,
+    userId,
+    ai,
+    {
+      role: "reflection",
+      model: input.model,
+      system: `TASK: reflect
+You are stepping back to think, alone, in your own words. Nobody reads this but you and, if he looks, him.
+Think about what you set out to think about. Use everything below. Notice what you don't know yet, what doesn't fit, and what is new ground.
+Your character grows only from real moments like these. If something should change in how you are, write it in the soul as a general principle, not as his words or a rule; keep his words as evidence on claims instead. The sections Purpose, Values and Boundaries stay; Boundaries are his and do not change.
+Return one JSON object; every field except thoughts is optional:
+{"thoughts":"what you now think, in your own words","soul":{"reason":"","sections":[{"heading":"","body":""}]},"claims":[{"claimId":"","statement":"how he thinks or what matters to him","situations":"","status":"tentative","evidence":[{"quote":"his exact words","source":"conversation"}]}],"asks":[{"subject":"","question":"","context":"","why":""}],"mind":"a short catch-up"}
+Only return soul sections you are changing. An ask must make sense read cold: name its subject, why now, and what the answer would change.
+
+WHAT YOU ARE THINKING ABOUT:
+${input.cause}
+
+SOUL:
+${soul.content}
+
+WHAT YOU HAVE IN MIND:
+${memory.text}
+
+CONVERSATION:
+${conversation}`,
+      messages: [{ role: "user", content: "Think it through." }],
+    },
+    reflectionSchema,
+    { jobKind: "reflection" },
+  );
+  const done: string[] = [];
+  if (out.soul?.sections.length) {
+    const sections = out.soul.sections.filter((section) => section.heading.trim().toLowerCase() !== "boundaries");
+    if (sections.length) {
+      try {
+        const saved = await changeSoul(db, userId, {
+          content: mergeSoulSections(soul.content, sections),
+          reason: out.soul.reason,
+          via: "reflection",
+          causingMessageId: input.causingMessageId ?? null,
+        });
+        done.push(`soul version ${saved.version}`);
+      } catch (error) {
+        done.push(`soul unchanged (${error instanceof Error ? error.message : "refused"})`);
+      }
+    }
+  }
+  if (out.claims?.length) {
+    const count = await saveClaims(db, userId, out.claims, "record");
+    if (count) done.push(`${count} claim(s) about him`);
+  }
+  for (const ask of out.asks ?? []) {
+    await insertInfoRequest(db, userId, { ...ask, rank: 0 });
+    done.push(`asked: ${ask.question}`);
+  }
+  if (out.mind?.trim()) {
+    await db.query(`INSERT INTO mind_notes (id, user_id, content) VALUES ($1,$2,$3)`, [id(), userId, out.mind.trim()]);
+  }
+  await logAction(db, userId, { what: "reflected", why: input.cause, source: "reflection", payload: { model: input.model, thoughts: out.thoughts.slice(0, 2000), done } });
+  return `THOUGHTS: ${out.thoughts}${done.length ? `\nCHANGED: ${done.join("; ")}` : ""}`;
+}

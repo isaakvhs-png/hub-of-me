@@ -63,7 +63,12 @@ export type TokenCounts = {
   outputTokens: number;
   cacheWriteTokens?: number;
   cacheReadTokens?: number;
+  /** Server-side web searches the provider ran in this call. */
+  webSearches?: number;
 };
+
+/** Anthropic's web search: $10 per 1,000 searches, on top of tokens. */
+export const WEB_SEARCH_USD_CENTS = 1;
 
 export function priceFor(model: string, overrides?: Record<string, Price>): Price | null {
   return overrides?.[model] ?? LIST_PRICES[model] ?? null;
@@ -90,7 +95,7 @@ export function costUsdCents(model: string, usage: TokenCounts, overrides?: Reco
     (usage.outputTokens / 1_000_000) * outputRate +
     (cacheWrite / 1_000_000) * (price.cacheWritePerMTokUsd ?? 0) +
     (cacheRead / 1_000_000) * (price.cacheReadPerMTokUsd ?? 0);
-  return usd * 100;
+  return usd * 100 + (usage.webSearches ?? 0) * WEB_SEARCH_USD_CENTS;
 }
 
 export function toEurCents(usdCents: number, usdToEur: number): number {

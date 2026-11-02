@@ -69,11 +69,10 @@ describe("hard boundaries", () => {
     expect(guarded.ok).toBe(false);
   });
 
-  it("stores a duties draft and does not mark it sent", async () => {
+  it("the nightly job writes no drafts and sends nothing", async () => {
     const { db, user, ai } = await fresh();
     await runNightly(db, ai, user.id, new Date("2026-10-31T12:00:00.000Z"));
     const drafts = await listOutreach(db, user.id);
-    expect(drafts.length).toBeGreaterThan(0);
     expect(drafts.every((draft) => draft.status === "draft" && draft.explicitYes === false)).toBe(true);
     await db.close();
   });

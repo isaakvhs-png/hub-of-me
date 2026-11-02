@@ -67,10 +67,9 @@ describe("versioning and cleanup", () => {
     expect((await getNote(db, user.id, note.id))?.status).toBe("archived");
     expect(await countNotes(db, user.id)).toBe(1);
     await runNightly(db, ai, user.id, new Date("2026-10-31T03:00:00.000Z"));
+    // The nightly job is bookkeeping only now: no fixed script writes his calendar.
     const events = await listEvents(db, user.id, "2026-10-01T00:00:00.000Z", "2026-12-01T00:00:00.000Z");
-    expect(events.length).toBeGreaterThan(0);
-    expect(events[0].source).toBe("duties");
-    expect(events[0].why).toBeTruthy();
+    expect(events.length).toBe(0);
     expect(await countNotes(db, user.id)).toBe(1);
     await db.close();
   });

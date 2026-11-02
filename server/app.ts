@@ -37,6 +37,7 @@ import {
   setUserPasswordHash,
   insertEvent,
   insertFeedback,
+  insertBrief,
   insertNote,
   insertSource,
   listActions,
@@ -530,8 +531,15 @@ export function createApp(db: Db) {
   app.get("/api/brief", async (c) => c.json(await listBriefs(db, c.get("userId"))));
 
   app.post("/api/brief", async (c) => {
-    const settings = await getSettings(db, c.get("userId"));
-    return c.json(await writeBrief(db, aiFor(settings), c.get("userId")));
+    // The brief is the entity itself saying what is worth his attention, not a separate writer.
+    const userId = c.get("userId");
+    const settings = await getSettings(db, userId);
+    const turn = await runAgentTurn(db, aiFor(settings), userId, {
+      cue: "BRIEF REQUESTED: he opened the brief and asked what is worth his attention now. Say it in your own words, as briefly or fully as it deserves.",
+    });
+    const content = turn.reply || "Nothing is worth your attention right now.";
+    const briefId = await insertBrief(db, userId, content, "You asked for a brief.");
+    return c.json({ id: briefId, content });
   });
 
   app.get("/api/asks", async (c) => c.json(await listInfoRequests(db, c.get("userId"))));
@@ -546,17 +554,16 @@ export function createApp(db: Db) {
       await updateInfoRequest(db, userId, c.req.param("id"), { status: "answered", answer: body.answer ?? "" });
       if (body.answer?.trim()) {
         await insertFeedback(db, userId, body.answer.trim(), "info-request");
+        // His answer goes to the entity in the conversation, so it takes it in itself (no separate scoring job).
+        const asked = (await db.query(`SELECT question FROM info_requests WHERE id = $1 AND user_id = $2`, [c.req.param("id"), userId])).rows[0];
         const settings = await getSettings(db, userId);
-        try {
-          await scoreAnsweredAsk(db, aiFor(settings), userId, c.req.param("id"), body.answer.trim());
-        } catch (error) {
-          await logAction(db, userId, {
-            what: "prediction score missed",
-            why: error instanceof Error ? error.message : "Scoring the ask failed.",
-            source: "reflection",
-            payload: { askId: c.req.param("id") },
-          });
-        }
+        const live = (await db.query(`SELECT id FROM conversations WHERE user_id = $1 AND archived_at IS NULL ORDER BY created_at DESC LIMIT 1`, [userId])).rows[0];
+        void runAgentTurn(db, aiFor(settings), userId, {
+          text: `(Answering your question "${String(asked?.question ?? "")}") ${body.answer.trim()}`,
+          conversationId: live ? String(live.id) : null,
+        }).catch(async (error) => {
+          await logAction(db, userId, { what: "answer not taken in", why: error instanceof Error ? error.message : "The turn failed.", source: "agent", payload: { askId: c.req.param("id") } });
+        });
       }
     } else if (body.action === "postpone") {
       const until = new Date(Date.now() + 3 * 86400000).toISOString();

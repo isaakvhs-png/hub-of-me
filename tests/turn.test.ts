@@ -9,7 +9,8 @@ function scriptAgent(mock: { complete: (req: any) => Promise<any> }, answer: (sy
   mock.complete = async (req: any) => {
     if (!String(req.system).includes("TASK: agent")) return original(req);
     const result = await original(req);
-    return { ...result, text: JSON.stringify(answer(String(req.system))) };
+    const blob = `${req.system}\n${(req.messages ?? []).map((m: any) => m.content).join("\n")}`;
+    return { ...result, text: JSON.stringify(answer(blob)) };
   };
 }
 
@@ -127,7 +128,7 @@ describe("steps", () => {
     const seen: string[] = [];
     const original = mock.complete.bind(mock);
     mock.complete = async (req: any) => {
-      if (String(req.system).includes("TASK: agent")) seen.push(String(req.system).match(/thinking with (\S+) right now/)?.[1] ?? "?");
+      if (String(req.system).includes("TASK: agent")) seen.push(String(req.messages?.[0]?.content ?? "").match(/thinking with (\S+) right now/)?.[1] ?? "?");
       return original(req);
     };
     scriptAgent(mock, (system) =>

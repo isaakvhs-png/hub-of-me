@@ -3,7 +3,7 @@ import { getSoul, logAction, listUsers } from "./repo.js";
 import { changeSoul } from "./soul.js";
 import { SEED_SOUL } from "./soul-seed.js";
 
-export const FRESH_REASON = "Fresh start for the playtest, round 2";
+export const FRESH_REASON = "Fresh start for the playtest, round 3";
 
 /** Archive the old center once. Rows stay. The account is not touched. */
 export async function freshStart(db: Db): Promise<number> {

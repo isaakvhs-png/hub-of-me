@@ -20,6 +20,10 @@ export interface AiRequest {
   /** How hard this call is. The router picks a model from it when the provider is not mock. */
   effort?: "light" | "conversation" | "deep";
   images?: { mediaType: string; base64: string }[];
+  /** Let the model search the web itself (Anthropic server-side search). Sources come back in the text. */
+  webSearch?: boolean;
+  /** Mark the system prompt as cacheable: repeated steps of one turn then read it at a fraction of the price. */
+  cacheSystem?: boolean;
 }
 
 export interface ProviderUsage {
@@ -27,6 +31,7 @@ export interface ProviderUsage {
   outputTokens: number;
   cacheWriteTokens?: number;
   cacheReadTokens?: number;
+  webSearches?: number;
 }
 
 export interface AiResult {

@@ -10,6 +10,7 @@ interface AnthropicBlock {
   text?: string;
   name?: string;
   input?: unknown;
+  content?: unknown;
 }
 
 interface AnthropicResponse {
@@ -20,6 +21,7 @@ interface AnthropicResponse {
     output_tokens?: number;
     cache_creation_input_tokens?: number;
     cache_read_input_tokens?: number;
+    server_tool_use?: { web_search_requests?: number };
   };
   error?: { message?: string };
 }
@@ -39,6 +41,11 @@ function requestBody(req: AiRequest & { model: string }, forceTool: boolean): Re
         : message.content,
     })),
   };
+  if (req.cacheSystem) body.system = [{ type: "text", text: req.system, cache_control: { type: "ephemeral" } }];
+  if (req.webSearch) {
+    body.tools = [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }];
+    return body;
+  }
   if (!req.structured) return body;
   body.tools = [
     {
@@ -52,7 +59,10 @@ function requestBody(req: AiRequest & { model: string }, forceTool: boolean): Re
     return body;
   }
   body.tool_choice = { type: "auto" };
-  body.system = req.system.includes("submit_result") ? req.system : `${req.system}\n\n${STRUCTURED_HINT}`;
+  if (!req.system.includes("submit_result")) {
+    const hinted = `${req.system}\n\n${STRUCTURED_HINT}`;
+    body.system = req.cacheSystem ? [{ type: "text", text: hinted, cache_control: { type: "ephemeral" } }] : hinted;
+  }
   return body;
 }
 
@@ -80,12 +90,26 @@ async function anthropicOnce(
     outputTokens: json.usage?.output_tokens,
     cacheWriteTokens: json.usage?.cache_creation_input_tokens ?? 0,
     cacheReadTokens: json.usage?.cache_read_input_tokens ?? 0,
+    webSearches: json.usage?.server_tool_use?.web_search_requests ?? 0,
   };
   if (!usageIsReal(usage)) {
     throw new UsageMissingError("Anthropic response had no token usage. Refusing to estimate.");
   }
   const blocks = json.content ?? [];
   const tool = blocks.find((block) => block.type === "tool_use" && block.name === "submit_result" && block.input && typeof block.input === "object");
+  if (req.webSearch) {
+    // The pages it found, then what it wrote about them: the sources are kept, not only the summary.
+    const found: { title: string; url: string }[] = [];
+    for (const block of blocks) {
+      if (block.type !== "web_search_tool_result" || !Array.isArray(block.content)) continue;
+      for (const item of block.content as { type?: string; url?: string; title?: string }[]) {
+        if (item.url && !found.some((entry) => entry.url === item.url)) found.push({ title: item.title ?? item.url, url: item.url });
+      }
+    }
+    const written = blocks.filter((block) => block.type === "text" && block.text).map((block) => block.text).join("").trim();
+    const text = `${written}\n\nSOURCES:\n${found.map((entry) => `${entry.title} — ${entry.url}`).join("\n") || "(none returned)"}`;
+    return { text, usage: usage as ProviderUsage, stopReason: json.stop_reason ?? null };
+  }
   const text = tool
     ? JSON.stringify(tool.input)
     : blocks

@@ -45,48 +45,16 @@ export async function expireForNow(db: Db, userId: string, now = new Date()): Pr
   return due.length;
 }
 
-export async function runNightly(db: Db, ai: Router, userId: string, now = new Date()): Promise<{ archived: number; events: number; drafts: number }> {
-  const jobId = await startJob(db, userId, "nightly", "Overnight cleanup and duties. Archive, never delete.");
-  const meta = { jobId, jobKind: "nightly" };
+/**
+ * Nightly bookkeeping only: plain code expires the for-now bin. Calendar entries, drafts and tidying are no longer a fixed
+ * 3 a.m. script; the entity does them itself, when it judges them worth doing, in conversation or when it wakes.
+ */
+export async function runNightly(db: Db, _ai: Router, userId: string, now = new Date()): Promise<{ archived: number; events: number; drafts: number }> {
+  const jobId = await startJob(db, userId, "nightly", "Expire the for-now bin. Archive, never delete.");
   try {
-    const archivedForNow = await expireForNow(db, userId, now);
-    const settings = await getSettings(db, userId);
-    const soul = await getSoul(db, userId);
-    const visible = await loadVisibleNotes(db, userId, settings);
-    const duties = await completeJson(
-      db,
-      userId,
-      ai,
-      {
-        role: "duties",
-        system: dutiesPrompt({ soul: soul?.content ?? "", notes: renderNotes(visible.notes), now: now.toISOString() }),
-        messages: [{ role: "user", content: "Look at what is open." }],
-      },
-      dutiesSchema,
-      meta,
-    );
-    let events = 0;
-    let drafts = 0;
-    for (const event of duties.events) {
-      const starts = new Date(event.startsAt);
-      const ends = new Date(event.endsAt);
-      if (Number.isNaN(starts.getTime()) || Number.isNaN(ends.getTime()) || ends <= starts) continue;
-      await insertEvent(db, userId, { title: event.title, startsAt: starts.toISOString(), endsAt: ends.toISOString(), why: event.why, source: "duties" });
-      events += 1;
-    }
-    for (const draft of duties.drafts) {
-      await insertOutreach(db, userId, { kind: "email", draft: `${draft.subject}\n\n${draft.body}`, recipient: draft.to });
-      drafts += 1;
-    }
-    let archived = archivedForNow;
-    for (const item of duties.archives) {
-      const note = await getNote(db, userId, item.noteId);
-      if (!note || note.status === "archived") continue;
-      await archiveNote(db, userId, note.id, item.why, "duties");
-      archived += 1;
-    }
-    await finishJob(db, jobId, "done", `Archived ${archived}. Calendar writes ${events}. Drafts stored ${drafts}. Nothing sent, nothing deleted.`);
-    return { archived, events, drafts };
+    const archived = await expireForNow(db, userId, now);
+    await finishJob(db, jobId, "done", `Expired ${archived} for-now note(s). Nothing deleted.`);
+    return { archived, events: 0, drafts: 0 };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Nightly job failed.";
     await finishJob(db, jobId, "failed", message);

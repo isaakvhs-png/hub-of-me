@@ -6,18 +6,23 @@ export interface ToolSpec {
   description: string;
 }
 
-/** What the entity may choose. Adding one does not change the soul. */
+/**
+ * What the entity can do. Each is an ability described plainly; none says when to use it, and none runs unless it names it.
+ * Adding one widens what it can do without changing who it is (check every new one against DESIGN.md).
+ */
 export const TOOLS: ToolSpec[] = [
-  { name: "notebook_read", effort: "light", description: "Read the notebook: soul, notes, the picture of him, open to-dos, and the mind note." },
-  { name: "notebook_write", effort: "light", description: "Save a note. input: { title, body, phrase, folder, kind }. phrase is his words, copied from the message. folder is a path you choose, like \"Kyoto/Thesis ideas\"; kind is what sort of note it is, in your own word. Make new folders and kinds whenever they fit." },
+  { name: "notebook_write", effort: "light", description: "Write a note. input: { title, summary, body, folder, kind, phrase, url }. summary is one line for your map. folder is a path you choose, like \"Kyoto/Thesis ideas\"; kind is what sort of note it is, in your own word. phrase: his words, copied from his message, if it came from there. url: the source, if it came from the web." },
+  { name: "notebook_change", effort: "light", description: "Change or archive one of your notes; the old version is kept and can be undone. input: { id, title, summary, body, folder, kind, archive_why }. Give only what changes; archive_why archives it." },
+  { name: "open_notes", effort: "light", description: "Choose which notes stay open in full in your memory window, when they no longer all fit. input: { open: [ids], close: [ids] }." },
   { name: "mark", effort: "light", description: "Point at a phrase in his message and show him where it is going. input: { phrase, destination, label }. destination is where it goes, in your own words. If it is \"picture\", it becomes a claim about him with his words as evidence; if it is \"ledger\", it is kept quietly as something to follow up." },
-  { name: "todos", effort: "light", description: "Read the ledger, quietly add an item, or fade one with a reason. input: { action, title, why, owner, taskId, reason }. action is list, remember, or fade." },
+  { name: "todos", effort: "light", description: "The ledger of things to follow up. input: { action, title, why, owner, taskId, reason }. action is remember, fade (with a reason), or done (with a reason)." },
+  { name: "calendar", effort: "light", description: "His calendar. input: { action, id, title, starts_at, ends_at, all_day, why }. action is add, move, or archive. Times are ISO with timezone." },
   { name: "read_file", effort: "light", description: "Read one attached file. Images and textless PDFs are read by sight. input: { name }." },
-  { name: "read_records", effort: "light", description: "Read your own records: thinking sessions, actions, and soul changes. Use this before explaining what you did or why. Do not guess." },
-  { name: "search", effort: "light", description: "Look something up on the public web. input: { topic }." },
-  { name: "ask", effort: "conversation", description: "Hold a question to raise when it fits. input: { subject, question, context, why, expect }." },
-  { name: "debate", effort: "deep", description: "Argue a question, including a side that can challenge the picture of him. input: { cause }." },
-  { name: "reflect", effort: "deep", description: "Reflect on a real moment so character can grow. Use this for a correction, not to add a rule. input: { cause }." },
+  { name: "read_records", effort: "light", description: "Read your own records: thinking, actions, and soul changes since the fresh start. Use this before explaining what you did or why. Do not guess." },
+  { name: "search", effort: "light", description: "Search the public web and read what comes back, with sources. input: { query, why }. Never put his private details or anyone's contact details in a query." },
+  { name: "ask", effort: "conversation", description: "Hold a question for him, shown as a card he can answer, postpone, or refuse. input: { subject, question, context, why, expect }." },
+  { name: "reflect", effort: "deep", description: "Step back and think something through, alone, in your own words. What you conclude can change your soul, your picture of him, and what you want to ask. input: { about }." },
+  { name: "debate", effort: "deep", description: "Have a question argued from several sides by different models, one of them uncomfortable, and judged by another. Slower and more costly. input: { cause }." },
   { name: "wake_me", effort: "light", description: "Decide when you next want to wake up and think on your own while he is away, and why. input: { in_minutes, why }. Nothing wakes you otherwise, except his messages and a fallback alarm about once a day." },
   { name: "wish", effort: "light", description: "Record a tool you wish you had, and why. input: { name, reason }." },
 ];

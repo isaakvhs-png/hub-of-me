@@ -7,8 +7,7 @@ import { completeJson, completeText } from "../ai/tracked.js";
 import { id } from "../ids.js";
 import { textFromUpload } from "../ingest.js";
 import { runReflection } from "../pipeline/debate.js";
-import { runResearch } from "../pipeline/jobs.js";
-import { latestMindNote, listClaims, recordReaction, type TraceEvent } from "../picture.js";
+import { recordReaction, type TraceEvent } from "../picture.js";
 import {
   addMessage,
   createConversation,
@@ -25,13 +24,17 @@ import {
   logAction,
   setTaskStatus,
 } from "../repo.js";
-import { ruleListHint } from "../soul.js";
 import { closeDeliveredTasks, rememberTasks } from "../tasks.js";
 import type { Task } from "../repo.js";
 import { locateSpans } from "../trace.js";
 import type { Note } from "../types.js";
 import { TOOLS, toolSpec } from "./registry.js";
-import { getBudget, spendSince } from "../repo.js";
+import { conversationView, memoryView, openNoteIds, setOpenNotes } from "./memory.js";
+import { reflectQuietly } from "./reflect.js";
+import { archiveEvent, getBudget, getNote, insertEvent, insertSource, reviseNote, spendSince } from "../repo.js";
+import { archiveNote } from "../pipeline/dump.js";
+import { loadVisibleNotes } from "../pipeline/context.js";
+import { containsContactDetail, guardSearchQuery } from "../privacy.js";
 import { startOfMonth } from "../time.js";
 
 const toolUse = z.object({
@@ -82,10 +85,11 @@ export interface TurnResult {
 
 type TurnEvent = { type: string; [key: string]: unknown };
 
-function prompt(input: { soul: string; notebook: string; cue: string; dump: string; files: string; log: string; name: string; budget: string; models: string; current: string }): string {
+/** What stays the same through one turn (instructions, soul, memory): sent as the cacheable system prompt. */
+function prompt(input: { soul: string; memory: string; name: string; budget: string; models: string }): string {
   const tools = TOOLS.map((tool) => `${tool.name}: ${tool.description}`).join("\n");
   return `TASK: agent
-You are his partner. His name is ${input.name}. The soul below is your purpose, values, and boundaries. Curiosity stays on. You decide whether to think, what about, and which tool. A tool runs only when you name it.
+You are his partner. His name is ${input.name}. The soul below is your purpose, values, and boundaries. Curiosity stays on. You decide whether to think, what about, which tools, and which model. A tool runs only when you name it.
 Do not invent past thinking. If he asks what you did or why, read your records first.
 Character grows by reflection on real moments. Do not turn a correction into a new rule.
 Return one JSON object. Every field is optional; leave out what you don't use.
@@ -97,7 +101,7 @@ phrase values must be copied from his message. If you have nothing to say on a c
 
 BUDGET: ${input.budget}
 
-MODELS (you are thinking with ${input.current} right now):
+MODELS:
 ${input.models}
 
 TOOLS:
@@ -106,8 +110,14 @@ ${tools}
 SOUL:
 ${input.soul}
 
-NOTEBOOK:
-${input.notebook}
+WHAT YOU HAVE IN MIND:
+${input.memory}`;
+}
+
+/** What changes from step to step: the conversation, the new message, and what its tools returned. */
+function stepMessage(input: { conversation: string; cue: string; dump: string; files: string; log: string; current: string; opening: string }): string {
+  return `CONVERSATION SO FAR:
+${input.conversation}
 
 ${input.cue}
 
@@ -121,24 +131,9 @@ END ATTACHMENTS
 
 TOOL RESULTS:
 ${input.log || "(none)"}
-END TOOL RESULTS`;
-}
+END TOOL RESULTS
 
-async function notebookBrief(db: Db, userId: string): Promise<string> {
-  const soul = await getSoul(db, userId);
-  const notes = (await listNotes(db, userId)).filter((note) => note.status !== "archived").slice(0, 8);
-  const claims = (await listClaims(db, userId)).slice(0, 6);
-  const tasks = (await listTasks(db, userId, "open")).slice(0, 6);
-  const mind = await latestMindNote(db, userId);
-  const hint = soul ? ruleListHint(soul.content) : null;
-  return [
-    hint ?? "",
-    `Soul:\n${soul?.content ?? "(none)"}`,
-    `Notes:\n${notes.map((note) => `${note.title}: ${note.body.slice(0, 160)}`).join("\n") || "(none)"}`,
-    `Picture:\n${claims.map((claim) => `${claim.status}: ${claim.statement}`).join("\n") || "(none)"}`,
-    `Open to-dos:\n${tasks.map((task) => `${task.id} ${task.title}`).join("\n") || "(none)"}`,
-    `Mind: ${mind?.content ?? "(none)"}`,
-  ].filter(Boolean).join("\n\n");
+You are thinking with ${input.current} right now. ${input.opening}`;
 }
 
 async function saveState(db: Db, userId: string, state: { thinking?: string; curious?: string; busy?: string; waiting?: string }): Promise<void> {
@@ -242,6 +237,8 @@ async function turnInner(
   for (let step = 0; step <= MAX_STEPS; step += 1) {
     const last = step === MAX_STEPS;
     const soul = await getSoul(db, userId);
+    const memory = await memoryView(db, userId);
+    const conversation = await conversationView(db, userId, memory.conversationChars, userMessageId);
     decision = (await completeJson(
       db,
       userId,
@@ -250,19 +247,28 @@ async function turnInner(
         role: "conversation",
         model: current,
         effort: "conversation",
+        cacheSystem: true,
         system: prompt({
           soul: soul?.content ?? "",
-          notebook: await notebookBrief(db, userId),
-          cue: input.cue ?? "",
-          dump: text,
-          files: files.map((file) => file.name).join("\n"),
+          memory: memory.text,
           name,
           budget,
           models: menu.map((item) => `${item.id}: ${item.about}`).join("\n"),
-          current,
-          log: last ? `${toolLog}\n(You have thought enough for this turn. Answer him now in say, with what you have; no tool.)` : toolLog,
         }),
-        messages: [{ role: "user", content: input.cue === "GREETING DUE" ? "He just arrived." : input.cue === "CHECK IN" ? "You may speak if something is worth saying." : input.cue?.startsWith("WAKE") ? "You woke up on your own. He is away. Think, use tools, or rest; speak only if it is worth his time when he is back." : "Your move." }],
+        messages: [
+          {
+            role: "user",
+            content: stepMessage({
+              conversation,
+              cue: input.cue ?? "",
+              dump: text,
+              files: files.map((file) => file.name).join("\n"),
+              current,
+              log: last ? `${toolLog}\n(You have thought enough for this turn. Answer him now in say, with what you have; no tool.)` : toolLog,
+              opening: input.cue === "GREETING DUE" ? "He just arrived." : input.cue === "CHECK IN" ? "You may speak if something is worth saying." : input.cue?.startsWith("WAKE") ? "You woke up on your own. He is away. Think, use tools, or rest; speak only if it is worth his time when he is back." : "Your move.",
+            }),
+          },
+        ],
       },
       stepSchema,
       { jobKind: "agent" },
@@ -292,6 +298,7 @@ async function turnInner(
         notes,
         closed,
         traces,
+        model: current,
         onEvent: input.onEvent,
       });
       if (!conversationId) {
@@ -360,13 +367,14 @@ async function useTool(
     notes: Note[];
     closed: Task[];
     traces: TraceEvent[];
+    model: string;
     onEvent?: (event: TurnEvent) => void | Promise<void>;
   },
 ): Promise<string> {
   const settings = await getSettings(db, userId);
   const str = (key: string) => (typeof ctx.input[key] === "string" ? String(ctx.input[key]) : "");
   try {
-    if (ctx.tool === "notebook_read") return await notebookBrief(db, userId);
+    if (ctx.tool === "notebook_read") return "Everything you have written is already in WHAT YOU HAVE IN MIND.";
     if (ctx.tool === "read_records") {
       // Its own records start at the last fresh start; what came before is his history, not its memory.
       const marker = (await db.query(`SELECT created_at FROM fresh_starts WHERE user_id = $1`, [userId])).rows[0]?.created_at;
@@ -405,8 +413,67 @@ async function useTool(
         mockEra: settings.provider === "mock",
       });
       ctx.notes.push(saved);
+      const summary = str("summary").trim().slice(0, 300);
+      if (summary) await db.query(`UPDATE notes SET summary = $3 WHERE id = $1 AND user_id = $2`, [saved.id, userId, summary]);
+      const url = str("url").trim();
+      if (url && /^https?:\/\//.test(url)) await insertSource(db, userId, { title, url, excerpt: summary || body.slice(0, 300), kind: "web", origin: "agent" });
       if (str("phrase")) await markPhrase(db, userId, ctx, str("phrase"), "memory", title);
       return `Saved note ${saved.id} in ${folder} as ${kind}: ${title}`;
+    }
+    if (ctx.tool === "notebook_change") {
+      const note = await getNote(db, userId, str("id"));
+      if (!note) return "There is no note with that id.";
+      if (str("archive_why")) {
+        await archiveNote(db, userId, note.id, str("archive_why"), "agent");
+        return `Archived ${note.id}: ${note.title}`;
+      }
+      const folder = str("folder").replace(/^\/+|\/+$/g, "");
+      const kind = str("kind").trim().toLowerCase().slice(0, 40);
+      const changed = await reviseNote(db, userId, note.id, {
+        folderId: folder ? await ensureFolderPath(db, userId, folder) : note.folderId,
+        type: kind || note.type,
+        title: str("title") || note.title,
+        body: str("body") || note.body,
+        status: note.status,
+        forNowExpiresAt: note.forNowExpiresAt,
+        reason: str("why") || "It revised its own note.",
+        causingMessageId: ctx.userMessageId,
+        source: "agent",
+      });
+      if (str("summary")) await db.query(`UPDATE notes SET summary = $3 WHERE id = $1 AND user_id = $2`, [note.id, userId, str("summary").slice(0, 300)]);
+      return `Changed ${changed.id} (version ${changed.currentVersion}): ${changed.title}`;
+    }
+    if (ctx.tool === "open_notes") {
+      const asList = (key: string) => (Array.isArray(ctx.input[key]) ? (ctx.input[key] as unknown[]).map(String) : []);
+      const now = await openNoteIds(db, userId);
+      const next = [...now.filter((noteId) => !asList("close").includes(noteId)), ...asList("open")];
+      await setOpenNotes(db, userId, next);
+      return `Open in full: ${next.length} notes. (While everything fits in your window, all notes are open anyway.)`;
+    }
+    if (ctx.tool === "calendar") {
+      const action = str("action");
+      if (action === "add") {
+        const starts = new Date(str("starts_at"));
+        const ends = new Date(str("ends_at") || str("starts_at"));
+        if (Number.isNaN(starts.getTime())) return "starts_at must be an ISO time with timezone.";
+        const end = Number.isNaN(ends.getTime()) || ends <= starts ? new Date(starts.getTime() + 60 * 60_000) : ends;
+        const eventId = await insertEvent(db, userId, { title: str("title") || "Untitled", startsAt: starts.toISOString(), endsAt: end.toISOString(), why: str("why"), source: "agent", allDay: ctx.input.all_day === true });
+        return `Added to his calendar [${eventId}]: ${str("title")} at ${starts.toISOString()}`;
+      }
+      if (action === "move" && str("id")) {
+        const starts = new Date(str("starts_at"));
+        const ends = new Date(str("ends_at"));
+        if (Number.isNaN(starts.getTime()) || Number.isNaN(ends.getTime()) || ends <= starts) return "move needs starts_at and ends_at as ISO times, end after start.";
+        const moved = await db.query(`UPDATE calendar_events SET starts_at = $3, ends_at = $4 WHERE id = $1 AND user_id = $2 AND archived_at IS NULL RETURNING title`, [str("id"), userId, starts.toISOString(), ends.toISOString()]);
+        if (!moved.rows[0]) return "No live calendar item with that id.";
+        await logAction(db, userId, { what: "calendar event moved", why: str("why") || "It moved it.", source: "agent", payload: { eventId: str("id") } });
+        return `Moved ${moved.rows[0].title} to ${starts.toISOString()}`;
+      }
+      if (action === "archive" && str("id")) {
+        await archiveEvent(db, userId, str("id"), str("why") || "It archived it.");
+        return `Archived calendar item ${str("id")}`;
+      }
+      return "action is add, move, or archive.";
     }
     if (ctx.tool === "mark") {
       const phrase = str("phrase");
@@ -424,6 +491,10 @@ async function useTool(
         });
         return `Held quietly: ${saved.map((task) => task.title).join(", ")}`;
       }
+      if (action === "done" && str("taskId")) {
+        const doneTask = await setTaskStatus(db, userId, str("taskId"), "done", str("reason") || "Done.");
+        return doneTask ? `Done: ${doneTask.title}` : "That item was not open.";
+      }
       if (action === "fade" && str("taskId")) {
         const faded = await setTaskStatus(db, userId, str("taskId"), "archived", str("reason") || "It no longer belongs in front of him.");
         return faded ? `Faded: ${faded.title}` : "That item was not open.";
@@ -438,10 +509,9 @@ async function useTool(
       return await readOneFile(db, ai, userId, file, ctx);
     }
     if (ctx.tool === "search") {
-      const topic = str("topic") || str("query");
-      if (!topic) return "A search needs a topic.";
-      const found = await runResearch(db, ai, userId, topic);
-      return found.blocked ? `Search refused: ${found.reason}` : `Search stored ${found.cardId ?? ""}`.trim();
+      const query = str("query") || str("topic");
+      if (!query) return "A search needs a query.";
+      return await webSearch(db, ai, userId, query, ctx.model);
     }
     if (ctx.tool === "ask") {
       const requestId = await insertInfoRequest(db, userId, {
@@ -454,14 +524,17 @@ async function useTool(
       if (str("expect")) await recordReaction(db, userId, { subjectKind: "ask", subjectId: requestId, prediction: str("expect") });
       return `Ask held: ${str("question") || str("subject")}`;
     }
-    if (ctx.tool === "debate" || ctx.tool === "reflect") {
+    if (ctx.tool === "reflect") {
+      return await reflectQuietly(db, ai, userId, { cause: str("about") || str("cause") || "What I have seen so far.", model: ctx.model, causingMessageId: ctx.userMessageId });
+    }
+    if (ctx.tool === "debate") {
       const outcome = await runReflection(db, ai, userId, {
         cause: str("cause") || "The entity chose to think this through.",
         conversationId: ctx.conversationId,
         causingMessageId: ctx.userMessageId,
       });
       if ("error" in outcome) return `Reflection stopped: ${outcome.error}`;
-      return `Reflection concluded: ${outcome.commitment}`;
+      return `Debate concluded: ${outcome.commitment}`;
     }
     if (ctx.tool === "wake_me") {
       const minutes = Number(ctx.input.in_minutes ?? ctx.input.minutes);
@@ -527,7 +600,7 @@ async function markPhrase(
   return event;
 }
 
-async function readOneFile(db: Db, ai: Router, userId: string, file: PendingFile, ctx: { conversationId: string | null; notes: Note[]; closed: Task[]; text: string }): Promise<string> {
+async function readOneFile(db: Db, ai: Router, userId: string, file: PendingFile, ctx: { conversationId: string | null; notes: Note[]; closed: Task[]; text: string; model: string }): Promise<string> {
   const settings = await getSettings(db, userId);
   let bodyText = "";
   try {
@@ -539,7 +612,7 @@ async function readOneFile(db: Db, ai: Router, userId: string, file: PendingFile
   }
   const visual = /\.(png|jpe?g|webp|gif|pdf)$/i.test(file.name);
   if (!bodyText && visual) {
-    const routed = await routeEffort(db, userId, settings, "light");
+    const routed = { model: ctx.model };
     const seen = await completeText(
       db,
       userId,
@@ -690,4 +763,39 @@ async function availableModels(db: Db, userId: string, settings: Settings): Prom
   if (gemini) list.push({ id: "gemini-2.5-pro", about: "Google's large model. About EUR 0.012 per step. A different mind from Claude; strong on long material." });
   if (!list.length) throw new Error("No AI model is available. Set ANTHROPIC_API_KEY or GEMINI_API_KEY.");
   return list;
+}
+
+/** A real web search, run by the model it is thinking with (Claude searches; Gemini hands the search to Claude Haiku). Every page found is kept as a source. */
+async function webSearch(db: Db, ai: Router, userId: string, query: string, model: string): Promise<string> {
+  const settings = await getSettings(db, userId);
+  const visible = await loadVisibleNotes(db, userId, settings);
+  const guard = guardSearchQuery(query, visible.blockedBodies);
+  if (!guard.ok) {
+    await logAction(db, userId, { what: "search refused", why: `The query carried a ${guard.reason}.`, source: "agent", payload: {} });
+    return `Search refused: the query carried a ${guard.reason}. Rephrase without private details.`;
+  }
+  if (settings.provider === "mock") return `MOCK SEARCH for "${guard.query}": no real web in test mode.`;
+  if (!process.env.ANTHROPIC_API_KEY?.trim()) return "Web search needs the Anthropic key, which is not set.";
+  const searcher = model.startsWith("claude-") ? model : "claude-haiku-5-5";
+  const text = await completeText(
+    db,
+    userId,
+    ai,
+    {
+      role: "research",
+      model: searcher,
+      webSearch: true,
+      system: "Search the web for what is asked. Then report what you found, plainly and briefly, with what each source says. Do not invent anything the pages do not say.",
+      messages: [{ role: "user", content: guard.query }],
+    },
+    { jobKind: "search" },
+  );
+  const sourcesPart = text.split("SOURCES:")[1] ?? "";
+  for (const line of sourcesPart.split("\n")) {
+    const match = line.match(/^(.*) — (https?:\/\/\S+)$/);
+    if (!match || containsContactDetail(line)) continue;
+    await insertSource(db, userId, { title: match[1].slice(0, 300), url: match[2], excerpt: guard.query, kind: "web", origin: "search" });
+  }
+  await logAction(db, userId, { what: "searched the web", why: guard.query, source: "agent", payload: { model: searcher } });
+  return `SEARCH RESULTS for "${guard.query}":\n${text}`;
 }

@@ -45,6 +45,7 @@ export class MockProvider {
   private canned(req: AiRequest): string {
     const blob = `${req.system}\n${req.messages.map((m) => m.content).join("\n")}`;
     if (req.system.includes("TASK: agent")) return agentTurn(blob);
+    if (req.system.includes("TASK: reflect")) return JSON.stringify({ thoughts: "I know very little yet; what he values is the open question.", claims: [{ statement: "He wants to understand before he commits", status: "tentative", evidence: [{ quote: "test", source: "conversation" }] }], mind: "Still mostly unknown." });
     if (req.system.includes("TASK: vision")) return "A page of writing, readable enough to keep.";
     if (req.role === "critic") {
       if (this.criticRejects > 0) {
