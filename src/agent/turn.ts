@@ -51,7 +51,48 @@ const toolUses = z.preprocess(
   },
   z.array(toolUse),
 );
-const stepSchema = z.object({
+/**
+ * Larger models sometimes wrap the form ({"object": {...}}), send a list as a JSON string, or give a structured
+ * object where a sentence was expected. That is a formatting slip, not a decision: read it as meant instead of rejecting it.
+ */
+function normalizeStep(value: unknown): unknown {
+  let out = value;
+  for (let depth = 0; depth < 3 && out && typeof out === "object" && !Array.isArray(out); depth += 1) {
+    const keys = Object.keys(out as Record<string, unknown>);
+    const inner = (out as Record<string, unknown>)[keys[0]];
+    if (keys.length === 1 && ["object", "result", "response", "output", "json", "answer"].includes(keys[0]) && inner && typeof inner === "object") out = inner;
+    else break;
+  }
+  if (!out || typeof out !== "object" || Array.isArray(out)) return out;
+  const step: Record<string, unknown> = { ...(out as Record<string, unknown>) };
+  const parseIfString = (key: string) => {
+    if (typeof step[key] !== "string") return;
+    const raw = String(step[key]).trim();
+    if (!raw.startsWith("[") && !raw.startsWith("{")) return;
+    try {
+      step[key] = JSON.parse(raw);
+    } catch {
+      /* leave it */
+    }
+  };
+  for (const key of ["think", "map", "state", "topics"]) parseIfString(key);
+  const asText = (v: unknown): string =>
+    typeof v === "string" ? v : v && typeof v === "object" ? Object.entries(v as Record<string, unknown>).map(([k, x]) => `${k}: ${typeof x === "string" ? x : JSON.stringify(x)}`).join("\n") : v == null ? "" : String(v);
+  for (const key of ["say", "taken_in", "mind", "next_model"]) if (step[key] != null && typeof step[key] !== "string") step[key] = asText(step[key]);
+  if (step.state && typeof step.state === "object" && !Array.isArray(step.state)) {
+    step.state = Object.fromEntries(Object.entries(step.state as Record<string, unknown>).map(([k, v]) => [k, asText(v)]));
+  } else if (step.state != null) delete step.state;
+  if (step.map != null && !Array.isArray(step.map)) delete step.map;
+  if (Array.isArray(step.map)) step.map = (step.map as unknown[]).filter((r) => r && typeof r === "object").map((r) => {
+    const region = r as Record<string, unknown>;
+    return { name: asText(region.name), known: asText(region.known), open: asText(region.open) };
+  });
+  if (step.topics != null && !Array.isArray(step.topics)) delete step.topics;
+  if (Array.isArray(step.topics)) step.topics = (step.topics as unknown[]).filter((t) => t && typeof t === "object" && (t as Record<string, unknown>).label && (t as Record<string, unknown>).phrase);
+  return step;
+}
+
+const stepSchema = z.preprocess(normalizeStep, z.object({
   say: z.string().optional(),
   think: toolUses.optional(),
   next_model: z.string().optional(),
@@ -67,7 +108,7 @@ const stepSchema = z.object({
     .optional(),
   mind: z.string().optional(),
   topics: z.array(z.object({ label: z.string().min(1), phrase: z.string().min(1) })).optional(),
-});
+}));
 
 export interface PendingFile {
   name: string;
@@ -180,6 +221,8 @@ export async function runAgentTurn(
     if (answering) inFlight.delete(answering);
   }
 }
+
+const PROCESS_STARTED = new Date().toISOString();
 
 /** Messages being answered right now, so the unanswered-message check never answers one twice. */
 const inFlight = new Set<string>();
@@ -750,7 +793,8 @@ export async function answerUnanswered(db: Db, ai: Router, userId: string, now =
   const age = now.getTime() - new Date(String(last.created_at)).getTime();
   if (age < 90_000 || age > 24 * 3_600_000 || inFlight.has(String(last.id))) return false;
   // One retry per message, ever: if it chose to say nothing, that stands, and it costs nothing more.
-  const tried = await db.query(`SELECT 1 FROM action_log WHERE user_id = $1 AND what = 'answered a message left without reply' AND payload->>'messageId' = $2 LIMIT 1`, [userId, String(last.id)]);
+  // Once per message per server start: a new deploy (often the fix for why it failed) gets one more try.
+  const tried = await db.query(`SELECT 1 FROM action_log WHERE user_id = $1 AND what = 'answered a message left without reply' AND payload->>'messageId' = $2 AND created_at >= $3 LIMIT 1`, [userId, String(last.id), PROCESS_STARTED]);
   if (tried.rows[0]) return false;
   await logAction(db, userId, { what: "answered a message left without reply", why: "His message had no answer, likely a dropped connection.", source: "agent", payload: { messageId: String(last.id) } });
   await runAgentTurn(db, ai, userId, { answerMessageId: String(last.id) });

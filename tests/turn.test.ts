@@ -140,3 +140,19 @@ describe("steps", () => {
     expect(row.start_model).toBe("mock-strong");
   });
 });
+
+describe("formatting slips", () => {
+  it("reads a wrapped answer, a list sent as text, and an object where a sentence was expected", async () => {
+    const { db, user, ai, mock } = await fresh();
+    let n = 0;
+    scriptAgent(mock, () => {
+      n += 1;
+      if (n === 1) return { think: JSON.stringify([{ tool: "notebook_write", input: { title: "Vision", body: "Consultancy", folder: "Isaak/Vision", kind: "profile" } }]), taken_in: { what: "His introduction", missing: "family, friends" } };
+      return { object: { say: "Here is my read." } };
+    });
+    const result = await runAgentTurn(db, ai, user.id, { text: "Long introduction about my life." });
+    expect(result.reply).toBe("Here is my read.");
+    expect(result.notes.map((note) => note.title)).toEqual(["Vision"]);
+    expect(n).toBe(2);
+  });
+});
