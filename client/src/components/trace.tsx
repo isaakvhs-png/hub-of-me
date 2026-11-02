@@ -24,14 +24,23 @@ const COLORS: Record<string, string> = {
   memory: "#9ad1d4",
 };
 
+/** Destinations are its own words, so any name gets a steady colour of its own. */
+const SPARE = ["#e8c547", "#7eb6ff", "#e07a5f", "#c4b5fd", "#f2a2c0", "#8fd19e", "#9ad1d4", "#f4a261", "#b8c0ff", "#a3d9a5"];
 export function traceColor(destination: string): string {
-  return COLORS[destination] ?? "#d0d0d0";
+  const key = destination.toLowerCase();
+  if (COLORS[key]) return COLORS[key];
+  if (/picture/.test(key)) return COLORS.picture;
+  if (/ledger|follow/.test(key)) return COLORS.followup;
+  let hash = 0;
+  for (const ch of key) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return SPARE[hash % SPARE.length];
 }
 
 export function traceHref(span: TraceSpan): string | null {
   if (span.destination === "debate" && span.targetId) return `/debates/${span.targetId}`;
-  if (span.destination === "picture") return "/picture";
-  if (span.destination === "followup") return "/todos";
+  const where = span.destination.toLowerCase();
+  if (/picture/.test(where)) return "/picture";
+  if (/ledger|follow/.test(where)) return "/todos";
   if (span.destination === "world") return "/discovery";
   if (span.destination === "soul" || span.destination === "behavior") return "/soul";
   return null;

@@ -48,3 +48,39 @@ describe("agent turn", () => {
     expect((await listDebates(db, user.id, true)).some((d: any) => d.id === "d-old")).toBe(true);
   });
 });
+
+describe("its own choices", () => {
+  it("files a note in the folder and kind it chooses", async () => {
+    const { db, user, ai, mock } = await fresh();
+    let first = true;
+    scriptAgent(mock, () => {
+      if (first) {
+        first = false;
+        return { think: { what: "Keep it", why: "Thesis idea", tool: "notebook_write", input: { title: "LiDAR and deer", body: "Link browsing to snowfall.", folder: "Kyoto/Thesis ideas", kind: "research idea" } } };
+      }
+      return { say: "Kept it under Kyoto." };
+    });
+    const result = await runAgentTurn(db, ai, user.id, { text: "LiDAR could show where deer browse after snow." });
+    expect(result.notes[0]?.type).toBe("research idea");
+    const folders = await db.query(`SELECT name FROM folders WHERE user_id = $1`, [user.id]);
+    expect(folders.rows.map((r: any) => r.name)).toEqual(expect.arrayContaining(["Kyoto", "Thesis ideas"]));
+  });
+
+  it("wakes when it chose to, and not before", async () => {
+    const { db, user, ai, mock } = await fresh();
+    const { wakeIfDue } = await import("../src/agent/turn.js");
+    let woke = 0;
+    scriptAgent(mock, (system) => {
+      if (system.includes("WAKE:")) { woke += 1; return { say: "" }; }
+      return { think: { what: "Plan", why: "Later", tool: "wake_me", input: { in_minutes: 30, why: "Check the Kyoto deadline" } } };
+    });
+    await runAgentTurn(db, ai, user.id, { text: "The Kyoto deadline is somewhere in December." });
+    const row = (await db.query(`SELECT next_wake_at, wake_why FROM inner_state WHERE user_id = $1`, [user.id])).rows[0];
+    expect(row.wake_why).toBe("Check the Kyoto deadline");
+    expect(await wakeIfDue(db, ai, user.id, new Date())).toBe(false);
+    expect(await wakeIfDue(db, ai, user.id, new Date(Date.now() + 31 * 60_000))).toBe(true);
+    expect(woke).toBe(1);
+    const after = (await db.query(`SELECT next_wake_at FROM inner_state WHERE user_id = $1`, [user.id])).rows[0];
+    expect(after.next_wake_at).toBeNull();
+  });
+});

@@ -1,5 +1,7 @@
 # Hub of Me
 
+A personal companion for one person, Isaak. Read [DESIGN.md](DESIGN.md) first: the philosophy there comes before any code.
+
 A personal reasoning system for one person. Judgment lives in the model. Code keeps the books: it validates, saves, versions, logs, queues, enforces the hard boundaries, and counts usage.
 
 The soul is a slow, versioned document (values, direction, goals, the current strategy, and how the system thinks). Every role reads it. Only reflection, or an explicit correction by you, changes it. One chat message cannot.
@@ -141,7 +143,7 @@ The app deploys from the GitHub repo [isaakvhs-png/hub-of-me](https://github.com
 | `SESSION_SECRET` | a long random string |
 | `USER_EMAIL` | your email |
 | `USER_PASSWORD` | a real password. On every start, when this and `USER_EMAIL` are both set, they replace the single account's email and password. Notes stay on that account. A password changed in Settings lasts only until the next start. |
-| `USER_NAME` | Peter. Applied on that same start when set; otherwise the stored name stays. |
+| `USER_NAME` | Isaak. Applied on that same start when set; otherwise the stored name stays (an old stored "Peter" is corrected to Isaak). |
 | `AI_PROVIDER` | `mock`, `anthropic`, or `gemini`. Trimmed and lowercased on every start, then written onto the Settings provider. A saved Settings choice applies until that next start. |
 | `ANTHROPIC_API_KEY` | the key, or leave empty |
 | `GEMINI_API_KEY` | optional |

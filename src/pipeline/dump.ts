@@ -51,7 +51,7 @@ export async function runDump(
   const soul = await getSoul(db, userId);
   if (!soul) throw new Error("Soul is missing.");
   const user = await db.query(`SELECT name FROM users WHERE id = $1`, [userId]);
-  const name = String(user.rows[0]?.name ?? "Peter");
+  const name = String(user.rows[0]?.name ?? "Isaak");
   let conversationId = input.conversationId ?? null;
   if (!conversationId || !(await getConversation(db, userId, conversationId))) {
     conversationId = await createConversation(db, userId, text.split("\n")[0] || "Dump");

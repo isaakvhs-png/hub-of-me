@@ -188,7 +188,7 @@ export function createApp(db: Db) {
       healthReport(db, userId),
     ]);
     return c.json({
-      name: user?.name ?? "Peter",
+      name: user?.name ?? "Isaak",
       unexplored: notes.filter((note) => note.status === "unexplored").length,
       tensions: conflicts.filter((item) => !item.resolvedAt).length,
       capEurCents: budget.monthlyCapEurCents,

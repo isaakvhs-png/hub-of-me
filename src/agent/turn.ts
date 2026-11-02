@@ -30,6 +30,8 @@ import type { Task } from "../repo.js";
 import { locateSpans } from "../trace.js";
 import type { Note } from "../types.js";
 import { TOOLS, toolSpec } from "./registry.js";
+import { getBudget, spendSince } from "../repo.js";
+import { startOfMonth } from "../time.js";
 
 const stepSchema = z.object({
   say: z.string().optional(),
@@ -71,14 +73,16 @@ export interface TurnResult {
 
 type TurnEvent = { type: string; [key: string]: unknown };
 
-function prompt(input: { soul: string; notebook: string; cue: string; dump: string; files: string; log: string }): string {
+function prompt(input: { soul: string; notebook: string; cue: string; dump: string; files: string; log: string; name: string; budget: string }): string {
   const tools = TOOLS.map((tool) => `${tool.name}: ${tool.description}`).join("\n");
   return `TASK: agent
-You are his partner. The soul below is your purpose, values, and boundaries. Curiosity stays on. You decide whether to think, what about, and which tool. A tool runs only when you name it.
+You are his partner. His name is ${input.name}. The soul below is your purpose, values, and boundaries. Curiosity stays on. You decide whether to think, what about, and which tool. A tool runs only when you name it.
 Do not invent past thinking. If he asks what you did or why, read your records first.
 Character grows by reflection on real moments. Do not turn a correction into a new rule.
 Return one JSON object: {"say":"","think":{"what":"","why":"","tool":"","input":{}},"state":{"thinking":"","curious":"","busy":"","waiting":""},"mind":"","topics":[{"label":"","phrase":""}]}
 say is what he should read, in your own words. think is one tool. phrase values must be copied from his message. If you have nothing to say on a check-in, return {"say":""}.
+
+BUDGET: ${input.budget}
 
 TOOLS:
 ${tools}
@@ -148,6 +152,9 @@ export async function runAgentTurn(
   input: { text?: string; files?: PendingFile[]; conversationId?: string | null; cue?: string; onEvent?: (event: TurnEvent) => void | Promise<void> },
 ): Promise<TurnResult> {
   const settings = await getSettings(db, userId);
+  const who = await db.query(`SELECT name FROM users WHERE id = $1`, [userId]);
+  const name = String(who.rows[0]?.name ?? "Isaak");
+  const budget = await budgetLine(db, userId);
   const text = input.text?.trim() ?? "";
   const files = input.files ?? [];
   let conversationId = input.conversationId ?? null;
@@ -188,9 +195,11 @@ export async function runAgentTurn(
           cue: input.cue ?? "",
           dump: text,
           files: files.map((file) => file.name).join("\n"),
+          name,
+          budget,
           log: last ? `${toolLog}\n(You have thought enough for this turn. Answer him now in say, with what you have; no tool.)` : toolLog,
         }),
-        messages: [{ role: "user", content: input.cue === "GREETING DUE" ? "He just arrived." : input.cue === "CHECK IN" ? "You may speak if something is worth saying." : "Your move." }],
+        messages: [{ role: "user", content: input.cue === "GREETING DUE" ? "He just arrived." : input.cue === "CHECK IN" ? "You may speak if something is worth saying." : input.cue?.startsWith("WAKE") ? "You woke up on your own. He is away. Think, use tools, or rest; speak only if it is worth his time when he is back." : "Your move." }],
       },
       stepSchema,
       { jobKind: "agent" },
@@ -245,6 +254,11 @@ export async function runAgentTurn(
   }
 
   if (reply) {
+    if (!conversationId && input.cue) {
+      // Something it says on its own belongs in the conversation he already has, not a new one.
+      const live = await db.query(`SELECT id FROM conversations WHERE user_id = $1 AND archived_at IS NULL ORDER BY created_at DESC LIMIT 1`, [userId]);
+      conversationId = live.rows[0] ? String(live.rows[0].id) : null;
+    }
     if (!conversationId) conversationId = await createConversation(db, userId, title);
     await addMessage(db, conversationId, "assistant", reply);
   }
@@ -290,9 +304,12 @@ async function useTool(
     if (ctx.tool === "notebook_write") {
       const title = str("title") || "Note";
       const body = str("body") || ctx.text || title;
+      // Folder and kind are its own choice; "Inbox" and "note" are only what is left when it names none.
+      const folder = str("folder").replace(/^\/+|\/+$/g, "") || "Inbox";
+      const kind = (str("kind") || str("type")).trim().toLowerCase().slice(0, 40) || "note";
       const saved = await insertNote(db, userId, {
-        folderId: await ensureFolderPath(db, userId, "Inbox"),
-        type: "idea",
+        folderId: await ensureFolderPath(db, userId, folder),
+        type: kind,
         title,
         body,
         status: "unexplored",
@@ -304,11 +321,11 @@ async function useTool(
       });
       ctx.notes.push(saved);
       if (str("phrase")) await markPhrase(db, userId, ctx, str("phrase"), "memory", title);
-      return `Saved note ${saved.id}: ${title}`;
+      return `Saved note ${saved.id} in ${folder} as ${kind}: ${title}`;
     }
     if (ctx.tool === "mark") {
       const phrase = str("phrase");
-      const destination = str("destination") || "world";
+      const destination = str("destination").trim() || "noted";
       const label = str("label") || "Noted";
       const span = await markPhrase(db, userId, ctx, phrase, destination, label);
       return span ? `Marked “${span.phrase}” as ${destination}: ${label}` : "That phrase is not in what he wrote.";
@@ -361,6 +378,20 @@ async function useTool(
       if ("error" in outcome) return `Reflection stopped: ${outcome.error}`;
       return `Reflection concluded: ${outcome.commitment}`;
     }
+    if (ctx.tool === "wake_me") {
+      const minutes = Number(ctx.input.in_minutes ?? ctx.input.minutes);
+      const why = str("why");
+      if (!Number.isFinite(minutes) || minutes <= 0) return "Say in how many minutes you want to wake, as a number.";
+      if (!why) return "Say why you want to wake then.";
+      const at = new Date(Date.now() + minutes * 60_000).toISOString();
+      await db.query(
+        `INSERT INTO inner_state (user_id, next_wake_at, wake_why) VALUES ($1, $2, $3)
+         ON CONFLICT (user_id) DO UPDATE SET next_wake_at = $2, wake_why = $3, updated_at = now()`,
+        [userId, at, why],
+      );
+      await logAction(db, userId, { what: "set its own wake-up", why, source: "agent", payload: { at } });
+      return `You will wake at ${at}: ${why}`;
+    }
     if (ctx.tool === "wish") {
       const name = str("name");
       const reason = str("reason");
@@ -388,12 +419,13 @@ async function markPhrase(
   if (!span || !ctx.userMessageId) return null;
   const eventId = id();
   let targetId: string | null = null;
-  if (destination === "picture") {
+  const where = destination.toLowerCase();
+  if (/picture/.test(where)) {
     targetId = id();
     await db.query(`INSERT INTO claims (id, user_id, statement, situations, status) VALUES ($1,$2,$3,$4,'tentative')`, [targetId, userId, label, ""]);
     await db.query(`INSERT INTO claim_evidence (id, claim_id, quote, source, source_id) VALUES ($1,$2,$3,'dump',$4)`, [id(), targetId, span.phrase, ctx.userMessageId]);
   }
-  if (destination === "followup") {
+  if (/ledger|follow/.test(where)) {
     const saved = await rememberTasks(db, userId, [{ title: label, why: "From what he just said.", owner: "peter", surfaced: true, whyNow: label }], {
       sourceKind: "agent",
       sourceId: ctx.userMessageId,
@@ -496,4 +528,33 @@ export async function greetIfNeeded(db: Db, ai: Router, userId: string): Promise
     `INSERT INTO inner_state (user_id, checked_at) VALUES ($1, now()) ON CONFLICT (user_id) DO UPDATE SET checked_at = now()`,
     [userId],
   );
+}
+
+async function budgetLine(db: Db, userId: string): Promise<string> {
+  const cap = (await getBudget(db, userId)).monthlyCapEurCents;
+  const spent = (await spendSince(db, userId, startOfMonth("Europe/Amsterdam").toISOString())).spentEurCents;
+  return `This month you have used EUR ${(spent / 100).toFixed(2)} of EUR ${(cap / 100).toFixed(2)}. Thinking while he is away is worth it when it helps him; the budget is yours to spend well.`;
+}
+
+/** Fallback alarm: if it set no wake-up, it still gets a chance to look around about once a day. */
+const FALLBACK_HOURS = 24;
+
+/** Wake it if the time it chose has come (or the fallback has). Returns true when it woke. */
+export async function wakeIfDue(db: Db, ai: Router, userId: string, now = new Date()): Promise<boolean> {
+  const row = (await db.query(`SELECT next_wake_at, wake_why, checked_at FROM inner_state WHERE user_id = $1`, [userId])).rows[0];
+  const next = row?.next_wake_at ? new Date(String(row.next_wake_at)) : null;
+  const checked = row?.checked_at ? new Date(String(row.checked_at)).getTime() : 0;
+  let why = "";
+  if (next && next.getTime() <= now.getTime()) why = String(row?.wake_why || "You chose to wake now.");
+  else if (!next && now.getTime() - checked >= FALLBACK_HOURS * 3_600_000) why = "No wake-up was set, so the fallback alarm woke you. Look around and decide what, if anything, is worth doing.";
+  if (!why) return false;
+  // Clear it first so a slow or failed run cannot fire twice; it sets a new one itself if it wants.
+  await db.query(
+    `INSERT INTO inner_state (user_id, next_wake_at, wake_why, checked_at) VALUES ($1, NULL, '', now())
+     ON CONFLICT (user_id) DO UPDATE SET next_wake_at = NULL, wake_why = '', checked_at = now()`,
+    [userId],
+  );
+  await logAction(db, userId, { what: "woke up", why, source: "agent", payload: {} });
+  await runAgentTurn(db, ai, userId, { cue: `WAKE: ${why}` });
+  return true;
 }

@@ -13,7 +13,7 @@ import { getSettings, settleStuckDebates } from "../src/repo.js";
 import { applyEnvProvider, ensureUser } from "../src/seed.js";
 import { ensureCuriosity, restoreCorruptedSouls } from "../src/soul.js";
 import { freshStart } from "../src/fresh.js";
-import { greetIfNeeded } from "../src/agent/turn.js";
+import { greetIfNeeded, wakeIfDue } from "../src/agent/turn.js";
 import { zonedParts } from "../src/time.js";
 import { createApp } from "./app.js";
 
@@ -99,11 +99,34 @@ async function runNightlyForEveryone(): Promise<void> {
   }
 }
 
+/* Its life between conversations: every minute, check whether it asked to wake (or the fallback alarm is due).
+   This only runs while the server is awake; on Render's free tier that needs an outside pinger (see DESIGN.md). */
+let waking = false;
+const wakeTimer = setInterval(() => {
+  if (waking) return;
+  waking = true;
+  void (async () => {
+    const users = await db.query<{ id: string }>(`SELECT id FROM users`);
+    for (const row of users.rows) {
+      try {
+        const settings = await getSettings(db, row.id);
+        const ai = new Router(settings, { mock: settings.provider === "mock" ? new MockProvider() : undefined });
+        await wakeIfDue(db, ai, row.id);
+      } catch (error) {
+        console.error("wake failed", error);
+      }
+    }
+  })().finally(() => {
+    waking = false;
+  });
+}, 60_000);
+
 serve({ fetch: app.fetch, port }, () => {
   console.log(`Hub of Me API on http://127.0.0.1:${port}`);
 });
 
 process.on("SIGTERM", () => {
   clearInterval(timer);
+  clearInterval(wakeTimer);
   void db.close();
 });

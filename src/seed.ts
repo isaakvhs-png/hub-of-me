@@ -26,7 +26,8 @@ export async function ensureUser(
       const current = users[0];
       return updateUserAccount(db, current.id, {
         email: envEmail,
-        name: envName ?? current.name,
+        // "Peter" was a wrong default from early builds; the person is Isaak.
+        name: envName ?? (current.name === "Peter" ? "Isaak" : current.name),
         passwordHash: await hashPassword(envPassword),
       });
     }
@@ -35,7 +36,7 @@ export async function ensureUser(
   const existing = await getUserByEmail(db, email);
   if (existing) return existing;
   const password = opts?.password ?? envPassword ?? "hub-of-me";
-  const name = opts?.name ?? envName ?? "Peter";
+  const name = opts?.name ?? envName ?? "Isaak";
   const provider = opts?.provider ?? readEnvProvider().normalized ?? "mock";
   const user = await insertUser(db, { email, name, passwordHash: await hashPassword(password) });
   const usdToEur = Number(process.env.USD_TO_EUR ?? DEFAULT_USD_TO_EUR);

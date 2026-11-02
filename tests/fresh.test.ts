@@ -60,3 +60,17 @@ describe("fresh start", () => {
     await db.close();
   });
 });
+describe("a second fresh start", () => {
+  it("runs again when the reason changes, and archives without deleting", async () => {
+    const { db, user } = await fresh();
+    const { freshStart, FRESH_REASON } = await import("../src/fresh.js");
+    await db.query(`INSERT INTO fresh_starts (user_id, reason, greeted_at) VALUES ($1, 'Fresh start before core redesign', now())`, [user.id]);
+    await db.query(`INSERT INTO notes (id, user_id, type, title, body, status, current_version) VALUES ('n-live', $1, 'idea', 'Live', 'Kept.', 'unexplored', 1)`, [user.id]);
+    expect(await freshStart(db)).toBe(1);
+    const marker = (await db.query(`SELECT reason, greeted_at FROM fresh_starts WHERE user_id = $1`, [user.id])).rows[0];
+    expect(marker.reason).toBe(FRESH_REASON);
+    expect(marker.greeted_at).toBeNull();
+    const note = (await db.query(`SELECT status FROM notes WHERE id = 'n-live'`)).rows[0];
+    expect(note.status).toBe("archived");
+  });
+});

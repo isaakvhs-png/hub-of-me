@@ -234,7 +234,7 @@ function agentTurn(blob: string): string {
       state: { thinking: "How little I know", curious: "What is taking up the room", busy: "Waiting", waiting: "His first real account" },
     });
   }
-  if (blob.includes("CHECK IN")) return JSON.stringify({ say: "" });
+  if (blob.includes("CHECK IN") || blob.includes("WAKE:")) return JSON.stringify({ say: "" });
   const attached = section(blob, "ATTACHMENTS");
   const names = attached.split("\n").map((line) => line.trim()).filter((line) => line && line !== "(none)" && !results.includes(`READ file: ${line}`));
   if (names.length) {
