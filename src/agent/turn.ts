@@ -31,6 +31,7 @@ import type { Note } from "../types.js";
 import { TOOLS, toolSpec } from "./registry.js";
 import { conversationView, memoryView, openNoteIds, saveInner, saveMap, setOpenNotes } from "./memory.js";
 import { reflectQuietly } from "./reflect.js";
+import { bodySense, lookAtMyself } from "./self.js";
 import { archiveEvent, getBudget, getNote, insertEvent, insertSource, reviseNote, spendSince } from "../repo.js";
 import { archiveNote } from "../pipeline/dump.js";
 import { loadVisibleNotes } from "../pipeline/context.js";
@@ -172,8 +173,11 @@ ${input.memory}`;
 }
 
 /** What changes from step to step: the conversation, the new message, and what its tools returned. */
-function stepMessage(input: { conversation: string; cue: string; dump: string; files: string; log: string; current: string; opening: string }): string {
-  return `CONVERSATION SO FAR:
+function stepMessage(input: { conversation: string; cue: string; dump: string; files: string; log: string; current: string; opening: string; body: string }): string {
+  return `YOUR BODY, AS IT IS NOW:
+${input.body}
+
+CONVERSATION SO FAR:
 ${input.conversation}
 
 ${input.cue}
@@ -326,6 +330,7 @@ async function turnInner(
               dump: text,
               files: files.map((file) => file.name).join("\n"),
               current,
+              body: await bodySense(db, userId),
               log: last ? `${toolLog}\n(You have thought enough for this turn. Answer him now in say, with what you have; no tool.)` : toolLog,
               opening: takingIn
                 ? "TAKING IN. Before you answer him, take in what he just sent. What is it? What does it tell you about him? Where does it sit on your map of his life, and what does it leave out? Keep what is worth keeping, and rewrite your portrait, map and intentions if they changed. Write what you took in under taken_in. Do not answer him yet: say is ignored in this step."
@@ -454,6 +459,7 @@ async function useTool(
   const str = (key: string) => (typeof ctx.input[key] === "string" ? String(ctx.input[key]) : "");
   try {
     if (ctx.tool === "notebook_read") return "Everything you have written is already in WHAT YOU HAVE IN MIND.";
+    if (ctx.tool === "look_at_myself") return await lookAtMyself(db, userId, { file: str("file") || undefined });
     if (ctx.tool === "read_records") {
       // Its own records start at the last fresh start; what came before is his history, not its memory.
       const marker = (await db.query(`SELECT created_at FROM fresh_starts WHERE user_id = $1`, [userId])).rows[0]?.created_at;

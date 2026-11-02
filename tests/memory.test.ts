@@ -120,3 +120,26 @@ describe("nature", () => {
     expect(tasks.rows.length).toBe(1);
   });
 });
+
+describe("knowing itself", () => {
+  it("sees its own body every step and can look at itself, including its own files", async () => {
+    const { db, user, ai, mock } = await fresh();
+    const { lookAtMyself } = await import("../src/agent/self.js");
+    let blob = "";
+    scriptAgent(mock, (b) => { blob = b; return { say: "Hello." }; });
+    await runAgentTurn(db, ai, user.id, { text: "Hi there, who are you?" });
+    expect(blob).toContain("YOUR BODY, AS IT IS NOW:");
+    expect(blob).toContain("Last looked: never");
+    const full = await lookAtMyself(db, user.id, {});
+    expect(full).toContain("HOW YOU WORK:");
+    expect(full).toContain("Every step is a fresh run of a language model.");
+    expect(full).toContain("src/agent/turn.ts");
+    expect(await lookAtMyself(db, user.id, { file: "DESIGN.md" })).toContain("Build someone, not something");
+    expect(await lookAtMyself(db, user.id, { file: ".env" })).toContain("You cannot read");
+    expect(await lookAtMyself(db, user.id, { file: "../../etc/passwd" })).toContain("You cannot read");
+    let after = "";
+    scriptAgent(mock, (b) => { after = b; return { say: "Ok." }; });
+    await runAgentTurn(db, ai, user.id, { text: "Again." });
+    expect(after).not.toContain("Last looked: never");
+  });
+});

@@ -18,6 +18,7 @@ export const TOOLS: ToolSpec[] = [
   { name: "todos", effort: "light", description: "The ledger of things to follow up. input: { action, title, why, owner, taskId, reason, phrase }. action is remember, fade (with a reason), or done (with a reason)." },
   { name: "calendar", effort: "light", description: "His calendar. input: { action, id, title, starts_at, ends_at, all_day, why, phrase }. action is add, move, or archive. Times are ISO with timezone." },
   { name: "read_file", effort: "light", description: "Read one attached file. Images and textless PDFs are read by sight. input: { name }." },
+  { name: "look_at_myself", effort: "light", description: "Look at yourself: how you work (the machinery, written by your builders), every part of you in detail, your recent history (what you took in, intended and said), and the list of your own design and code files. input: { file } to read one of those files instead." },
   { name: "read_records", effort: "light", description: "Read your own records: thinking, actions, and soul changes since the fresh start. Use this before explaining what you did or why. Do not guess." },
   { name: "search", effort: "light", description: "Search the public web and read what comes back, with sources. input: { query, why }. Never put his private details or anyone's contact details in a query." },
   { name: "ask", effort: "conversation", description: "Hold a question for him, shown as a card he can answer, postpone, or refuse. input: { subject, question, context, why, expect }." },

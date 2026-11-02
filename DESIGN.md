@@ -80,6 +80,13 @@ Four layers. Only the first is "the product"; the rest exist for it.
 
 **Connections (plug-ins).** "Module" means only plumbing: a connection to Google Calendar, Gmail, the web, an import. Plugging one in gives both Isaak and the entity a room or a pair of hands. It never adds a purpose, a rule or anything to the soul.
 
+## 4b. Knowing itself
+
+It cannot assess itself without knowing how it works, so it gets two things, both facts, no story about who it is:
+- **A sense of its own body**, generated every step from what exists: its age (time since the fresh start, number of messages), its soul's sections, its understanding (portrait and map versions), its intentions, its memory, its senses (what it can and cannot perceive), its hands (tools), how Isaak sees it (the pages), its rhythm and budget, and when it last looked at itself.
+- **look_at_myself**: the full picture on request: `src/agent/HOW_YOU_WORK.md` (its machinery, written by the builders), every part in detail, its recent history (what it took in, intended and said), and read access to its own design and code (DESIGN.md, src, server, client/src; never secrets or data).
+Every builder updates `HOW_YOU_WORK.md` whenever the mechanics change (see AGENTS.md).
+
 ## 5. Memory
 
 **What it has in mind, every step.** Its soul; its whole picture of him; the open ledger; the calendar; the questions it holds; its mind note; and a **map of everything it has written**: one line per note (folder, kind, title, one-line summary), from day one. Nothing it knows ever drops off the map.
