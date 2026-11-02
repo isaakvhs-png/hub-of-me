@@ -291,11 +291,19 @@ async function useTool(
   try {
     if (ctx.tool === "notebook_read") return await notebookBrief(db, userId);
     if (ctx.tool === "read_records") {
-      const [actions, sessions, versions] = await Promise.all([
-        listActions(db, userId, 12),
-        db.query(`SELECT what, why, tool, created_at FROM thinking_sessions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 12`, [userId]),
+      // Its own records start at the last fresh start; what came before is his history, not its memory.
+      const marker = (await db.query(`SELECT created_at FROM fresh_starts WHERE user_id = $1`, [userId])).rows[0]?.created_at;
+      // A minute of slack: the fresh seed soul is written just before the marker.
+      const since = marker ? new Date(String(marker)).getTime() - 60_000 : 0;
+      const after = (at: unknown) => !since || new Date(String(at)).getTime() >= since;
+      const [allActions, allSessions, allVersions] = await Promise.all([
+        listActions(db, userId, 200),
+        db.query(`SELECT what, why, tool, created_at FROM thinking_sessions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 200`, [userId]),
         listSoulVersions(db, userId),
       ]);
+      const actions = allActions.filter((item) => after(item.createdAt)).slice(0, 12);
+      const sessions = { rows: allSessions.rows.filter((row) => after(row.created_at)).slice(0, 12) };
+      const versions = allVersions.filter((version) => after(version.createdAt));
       const thoughts = sessions.rows.map((row) => `${row.tool ?? "thought"}: ${row.what} — ${row.why}`).join("\n") || "(no thinking sessions)";
       const soul = versions.slice(0, 6).map((version) => `v${version.version} ${version.reason}`).join("\n");
       const log = actions.map((item) => `${item.what} — ${item.why}`).join("\n");
