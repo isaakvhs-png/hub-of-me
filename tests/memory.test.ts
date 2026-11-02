@@ -57,3 +57,30 @@ describe("memory", () => {
     expect(claims.rows.map((r: any) => r.statement)).toContain("He wants to understand before he commits");
   });
 });
+
+describe("taking in before answering", () => {
+  it("takes a message in first, draws its own map, and answers only in the next beat", async () => {
+    const { db, user, ai, mock } = await fresh();
+    const blobs: string[] = [];
+    scriptAgent(mock, (blob) => {
+      blobs.push(blob);
+      if (blob.includes("TAKING IN.")) {
+        return {
+          say: "This should not be his answer.",
+          taken_in: "Mostly his studies and the Kyoto thesis; nothing about family, friends or training yet.",
+          map: [
+            { name: "Studies and work", known: "Biology MSc, Kyoto thesis idea", open: "what he wants from work" },
+            { name: "Family", known: "", open: "everything" },
+          ],
+        };
+      }
+      return { say: "Thanks. This covers your studies; I know nothing yet about your family. Tell me?" };
+    });
+    const result = await runAgentTurn(db, ai, user.id, { text: "Here is my study history and the Kyoto plan." });
+    expect(result.reply).toBe("Thanks. This covers your studies; I know nothing yet about your family. Tell me?");
+    expect(blobs[1]).toContain("WHAT YOU TOOK IN: Mostly his studies");
+    expect(blobs[1]).toContain("- Family: known: nothing yet | not yet seen: everything");
+    const view = await memoryView(db, user.id);
+    expect(view.text).toContain("- Studies and work: known: Biology MSc, Kyoto thesis idea");
+  });
+});

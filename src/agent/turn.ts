@@ -29,7 +29,7 @@ import type { Task } from "../repo.js";
 import { locateSpans } from "../trace.js";
 import type { Note } from "../types.js";
 import { TOOLS, toolSpec } from "./registry.js";
-import { conversationView, memoryView, openNoteIds, setOpenNotes } from "./memory.js";
+import { conversationView, memoryView, openNoteIds, saveMap, setOpenNotes } from "./memory.js";
 import { reflectQuietly } from "./reflect.js";
 import { archiveEvent, getBudget, getNote, insertEvent, insertSource, reviseNote, spendSince } from "../repo.js";
 import { archiveNote } from "../pipeline/dump.js";
@@ -55,6 +55,8 @@ const stepSchema = z.object({
   say: z.string().optional(),
   think: toolUses.optional(),
   next_model: z.string().optional(),
+  taken_in: z.string().optional(),
+  map: z.array(z.object({ name: z.string(), known: z.string().optional(), open: z.string().optional() })).optional(),
   state: z
     .object({
       thinking: z.string().optional(),
@@ -96,6 +98,8 @@ Return one JSON object. Every field is optional; leave out what you don't use.
 - say: what he reads, in your own words. Including say ends this turn; any tools in the same object still run.
 - think: a list of tool uses to do now, as many as you need: [{"what":"","why":"","tool":"","input":{}}]. Without say, you get their results and another step.
 - next_model: which model should do your next step, and start your next turn. Pick from MODELS for what the moment needs.
+- map: your whole map of his life, redrawn: [{"name":"","known":"","open":""}]. Give it whenever your picture of the territory changes.
+- taken_in: when you are taking something in, what it is, what it tells you about him, where it sits on your map, and what it leaves out.
 - state: {"thinking":"","curious":"","busy":"","waiting":""}; mind: a short catch-up in your own words; topics: [{"label":"","phrase":""}].
 phrase values must be copied from his message. If you have nothing to say on a check-in or wake-up, return {"say":""}.
 
@@ -234,6 +238,8 @@ async function turnInner(
   // It starts on the model it chose last; before it has ever chosen, on the everyday conversation model.
   let current = menu.find((item) => item.id === chosen)?.id ?? menu.find((item) => item.everyday)?.id ?? menu[0].id;
   let decision: z.output<typeof stepSchema> = {};
+  // Two beats: when he has sent something, it first takes it in (no answer yet), then answers.
+  let takingIn = Boolean(text || files.length);
   for (let step = 0; step <= MAX_STEPS; step += 1) {
     const last = step === MAX_STEPS;
     const soul = await getSoul(db, userId);
@@ -265,7 +271,9 @@ async function turnInner(
               files: files.map((file) => file.name).join("\n"),
               current,
               log: last ? `${toolLog}\n(You have thought enough for this turn. Answer him now in say, with what you have; no tool.)` : toolLog,
-              opening: input.cue === "GREETING DUE" ? "He just arrived." : input.cue === "CHECK IN" ? "You may speak if something is worth saying." : input.cue?.startsWith("WAKE") ? "You woke up on your own. He is away. Think, use tools, or rest; speak only if it is worth his time when he is back." : "Your move.",
+              opening: takingIn
+                ? "TAKING IN. Before you answer him, take in what he just sent. What is it? What does it tell you about him? Where does it sit on your map of his life, and what does it leave out? Keep what is worth keeping, with your tools, and redraw your map if it changed. Write what you took in under taken_in. Do not answer him yet: say is ignored in this step."
+                : input.cue === "GREETING DUE" ? "He just arrived." : input.cue === "CHECK IN" ? "You may speak if something is worth saying." : input.cue?.startsWith("WAKE") ? "You woke up on your own. He is away. Think, use tools, or rest; speak only if it is worth his time when he is back." : "Your move.",
             }),
           },
         ],
@@ -274,6 +282,16 @@ async function turnInner(
       { jobKind: "agent" },
     )) as z.output<typeof stepSchema>;
     if (decision.state) await saveState(db, userId, decision.state);
+    if (decision.map?.length) {
+      const drawn = await saveMap(db, userId, decision.map, takingIn ? "Taking in what he sent." : "It redrew its map.");
+      if (drawn) toolLog += `\nmap: redrawn with ${drawn} regions.`;
+    }
+    if (takingIn) {
+      if (decision.taken_in?.trim()) {
+        toolLog += `\nWHAT YOU TOOK IN: ${decision.taken_in.trim()}`;
+        await rememberSession(db, userId, "Took in what he sent", decision.taken_in.trim().slice(0, 500), null, decision.taken_in.trim());
+      }
+    }
     const wanted = decision.next_model?.trim();
     if (wanted && wanted !== current) {
       const pick = menu.find((item) => item.id === wanted);
@@ -309,6 +327,11 @@ async function turnInner(
       if (!spec) toolLog += "\n(that tool is not one you have)";
       await rememberSession(db, userId, what, why, use.tool, result);
       await input.onEvent?.({ type: "work", status: "done", label: what, targetId: null });
+    }
+    if (takingIn) {
+      // Taking in is its own beat: whatever it said there is not the answer.
+      takingIn = false;
+      if (!last) continue;
     }
     // Speaking ends the turn. Without say, it gets the tool results and another step.
     if (!decision.say?.trim() && uses.length && !last) continue;
@@ -757,8 +780,9 @@ async function availableModels(db: Db, userId: string, settings: Settings): Prom
     if (left > 0) list.push({ id: "gemini-2.5-flash-lite", about: `Google's smallest model. Free (about ${left} calls left today). Quick and shallow.` });
   }
   if (anthropic) {
-    list.push({ id: "claude-haiku-5-5", about: "Claude's small model. About EUR 0.001 per step. Fast; takes things at face value.", everyday: true });
-    list.push({ id: "claude-sonnet-5-5", about: "Claude's mid-size model. About EUR 0.015 per step, roughly 15 times Haiku. Slower; reads between the lines, holds many threads, weighs a life." });
+    list.push({ id: "claude-haiku-5-5", about: "Claude's small model. About EUR 0.001 per step. Fast; takes things at face value." });
+    // Sonnet is where a turn starts until it chooses otherwise: stepping down is easy to judge, stepping up needs knowing what you are missing.
+    list.push({ id: "claude-sonnet-5-5", about: "Claude's mid-size model. About EUR 0.015 per step, roughly 15 times Haiku. Slower; reads between the lines, holds many threads, weighs a life.", everyday: true });
   }
   if (gemini) list.push({ id: "gemini-2.5-pro", about: "Google's large model. About EUR 0.012 per step. A different mind from Claude; strong on long material." });
   if (!list.length) throw new Error("No AI model is available. Set ANTHROPIC_API_KEY or GEMINI_API_KEY.");

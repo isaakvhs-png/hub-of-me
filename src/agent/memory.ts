@@ -1,6 +1,6 @@
 import type { Db } from "../db.js";
 import { latestMindNote, listClaims } from "../picture.js";
-import { listFolders, listNotes, listTasks } from "../repo.js";
+import { listFolders, listNotes, listTasks, logAction } from "../repo.js";
 import type { Note } from "../types.js";
 
 /**
@@ -49,7 +49,7 @@ function fullNote(note: Note, path: string, summary: string): string {
 
 /** What it has in mind each step: its picture of him, the ledger, the mind note, the whole map, and the notes open in full. */
 export async function memoryView(db: Db, userId: string): Promise<{ text: string; conversationChars: number }> {
-  const [notes, folders, claims, tasks, mind, summaries, open, asks, events] = await Promise.all([
+  const [notes, folders, claims, tasks, mind, summaries, open, asks, events, mapRow] = await Promise.all([
     listNotes(db, userId),
     listFolders(db, userId),
     listClaims(db, userId),
@@ -62,6 +62,7 @@ export async function memoryView(db: Db, userId: string): Promise<{ text: string
       `SELECT id, title, starts_at, ends_at, why FROM calendar_events WHERE user_id = $1 AND archived_at IS NULL AND ends_at > now() - interval '2 days' AND starts_at < now() + interval '60 days' ORDER BY starts_at`,
       [userId],
     ),
+    db.query(`SELECT life_map FROM inner_state WHERE user_id = $1`, [userId]),
   ]);
   const live = notes.filter((note) => note.status !== "archived");
   const paths = folderPaths(folders.map((folder) => ({ id: folder.id, parentId: folder.parentId, name: folder.name })));
@@ -69,6 +70,7 @@ export async function memoryView(db: Db, userId: string): Promise<{ text: string
   const pathOf = (note: Note) => (note.folderId ? paths.get(note.folderId) ?? "" : "") || "(no folder)";
 
   const always = [
+    `YOUR MAP OF HIS LIFE (your own drawing of the territory of his life: what you know of each part, and what you have not seen yet. Redraw it whenever you learn something; add a region when something fits nowhere):\n${renderMap(String(mapRow.rows[0]?.life_map ?? ""))}`,
     `PICTURE OF HIM (${claims.length} claims):\n${claims.map((claim) => `[${claim.id}] ${claim.status}: ${claim.statement}${claim.evidence.length ? ` (his words: ${claim.evidence.map((item) => `"${item.quote}"`).join("; ")})` : ""}`).join("\n") || "(nothing yet)"}`,
     `LEDGER (open):\n${tasks.map((task) => `[${task.id}] ${task.surfaced ? "now" : "quiet"} · ${task.title} — ${task.whyNow || task.why}`).join("\n") || "(empty)"}`,
     `CALENDAR (2 days back to 60 days ahead):\n${events.rows.map((row) => `[${row.id}] ${new Date(String(row.starts_at)).toISOString()} → ${new Date(String(row.ends_at)).toISOString()} · ${row.title}${row.why ? ` — ${row.why}` : ""}`).join("\n") || "(empty)"}`,
@@ -119,4 +121,35 @@ export async function conversationView(db: Db, userId: string, maxChars: number,
     used += line.length + 1;
   }
   return picked.reverse().join("\n\n") || "(this is the start of your conversation)";
+}
+
+export interface MapRegion {
+  name: string;
+  known?: string;
+  open?: string;
+}
+
+export function renderMap(raw: string): string {
+  try {
+    const regions = JSON.parse(raw || "[]") as MapRegion[];
+    if (!Array.isArray(regions) || !regions.length) return "(you have not drawn one yet)";
+    return regions.map((region) => `- ${region.name}: known: ${region.known?.trim() || "nothing yet"} | not yet seen: ${region.open?.trim() || "?"}`).join("\n");
+  } catch {
+    return "(you have not drawn one yet)";
+  }
+}
+
+/** It redraws its own map; the whole map is replaced, and the old one is kept in the action log. */
+export async function saveMap(db: Db, userId: string, regions: MapRegion[], why: string): Promise<number> {
+  const clean = regions
+    .filter((region) => region && typeof region.name === "string" && region.name.trim())
+    .map((region) => ({ name: region.name.trim().slice(0, 80), known: String(region.known ?? "").slice(0, 600), open: String(region.open ?? "").slice(0, 600) }));
+  if (!clean.length) return 0;
+  const before = (await db.query(`SELECT life_map FROM inner_state WHERE user_id = $1`, [userId])).rows[0]?.life_map ?? "";
+  await db.query(
+    `INSERT INTO inner_state (user_id, life_map) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET life_map = $2, updated_at = now()`,
+    [userId, JSON.stringify(clean)],
+  );
+  await logAction(db, userId, { what: "redrew its map of his life", why: why || "It learned something.", source: "agent", payload: { before: String(before), after: clean } });
+  return clean.length;
 }

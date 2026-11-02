@@ -60,13 +60,17 @@ Code enforces these in `src/boundaries.ts`. The seed soul states them in words.
 
 Four layers. Only the first is "the product"; the rest exist for it.
 
-**The entity.** One being, one conversation. Each turn it reads its soul, a short brief of its notebook and the conversation, then decides: speak, use a tool, or both, or stay quiet. Code keeps the books (validate, save, version, log, enforce boundaries, count cost); judgment stays in the model.
+**The entity.** One being, one conversation. Code keeps the books (validate, save, version, log, enforce boundaries, count cost); judgment stays in the model.
+
+**Two beats when he sends something.** A language model answers whatever is in front of it, word by word; what it writes first shapes the rest. So it does not answer in one go. First it *takes in* what he sent: what it is, what it tells it about him, where it sits on its map of his life, what it leaves out; it keeps what is worth keeping and redraws the map. Only then does it answer, with what it took in in front of it. Same entity, same soul, same voice: not a filing machine around it. (This brings back the one good idea of spec v2's pipeline, understanding before answering, without the machine.)
+
+**Conditions, not behaviours.** We don't tell it how to behave; we shape what it sees and when it gets to think. Its map of his life is the main example: seeing which parts are still blank is what makes it curious about them, without a rule saying "ask about family".
 
 **Rooms (shared spaces in the hub).** Chat, Notebook (picture of him, soul, notes, ledger, debates and thinking, change history, tools), Calendar, and later Mail and a feed. Rooms belong to Isaak as much as to the entity: he can put things in and look things up himself. The entity works in the same rooms. Nothing is only reachable through the AI.
 
 **Hands (tools).** Plain-language abilities in `src/agent/registry.ts`: write and change notes, choose what stays open, mark phrases, the ledger, the calendar, read files, read its own records, search the web, ask him, reflect, debate, set its own wake-up, wish for a tool. The entity picks them, as many per step as it wants. No tool fires on its own.
 
-**Its mind (models).** Each step it can choose which model thinks the next step, from a plain menu of what is available and what each costs (Gemini Flash-Lite free, Claude Haiku, Claude Sonnet, Gemini Pro). It starts each turn on the model it last chose. There is no routing by kind of job inside the conversation.
+**Its mind (models).** Each step it can choose which model thinks the next step, from a plain menu of what is available and what each costs (Gemini Flash-Lite free, Claude Haiku, Claude Sonnet, Gemini Pro). It starts each turn on the model it last chose; until it has chosen, that is Sonnet (stepping down is easy to judge; stepping up needs knowing what you are missing). There is no routing by kind of job inside the conversation.
 
 **Its life (thinking while he is away).** It does not think continuously; no model can within budget. Instead, at the end of a wake-up it decides itself when to wake next and why, and what woke it is given back to it then. A new message from him also wakes it. The only fixed parts are the budget and a fallback alarm in case it forgets to set one. The rhythm is its own judgment.
 
@@ -75,6 +79,8 @@ Four layers. Only the first is "the product"; the rest exist for it.
 ## 5. Memory
 
 **What it has in mind, every step.** Its soul; its whole picture of him; the open ledger; the calendar; the questions it holds; its mind note; and a **map of everything it has written**: one line per note (folder, kind, title, one-line summary), from day one. Nothing it knows ever drops off the map.
+
+**Its map of his life.** Its own drawing of the territory of his life: regions (its own names), what it knows of each, and what it has not seen yet. It starts from its general sense of what a life holds, fills in as he talks, and adds a region when something fits nowhere. Always in view. Code never supplies the regions.
 
 **Open in full.** Its memory window holds about 160,000 characters (`MEMORY_BUDGET_CHARS`, about 40,000 tokens; roughly a third is kept for the conversation itself). While all notes fit, all of them are open in full, with no selection at all; that should hold for weeks to months. Once they no longer fit, it chooses which notes stay open (`open_notes`) and the rest stay on the map one click away. Code never picks for it.
 
