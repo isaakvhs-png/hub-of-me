@@ -64,7 +64,9 @@ Four layers. Only the first is "the product"; the rest exist for it.
 
 **Rooms (shared spaces in the hub).** Chat, Notebook (picture of him, soul, notes, ledger, debates and thinking, change history, tools), Calendar, and later Mail and a feed. Rooms belong to Isaak as much as to the entity: he can put things in and look things up himself. The entity works in the same rooms. Nothing is only reachable through the AI.
 
-**Hands (tools).** Plain-language abilities in `src/agent/registry.ts`. The entity picks them. No tool fires on its own.
+**Hands (tools).** Plain-language abilities in `src/agent/registry.ts`. The entity picks them, as many per step as it wants. No tool fires on its own.
+
+**Its mind (models).** Each step it can choose which model thinks the next step, from a plain menu of what is available and what each costs (Gemini Flash-Lite free, Claude Haiku, Claude Sonnet, Gemini Pro). It starts each turn on the model it last chose. There is no routing by kind of job inside the conversation.
 
 **Its life (thinking while he is away).** It does not think continuously; no model can within budget. Instead, at the end of a wake-up it decides itself when to wake next and why, and what woke it is given back to it then. A new message from him also wakes it. The only fixed parts are the budget and a fallback alarm in case it forgets to set one. The rhythm is its own judgment.
 
@@ -104,9 +106,21 @@ Four layers. Only the first is "the product"; the rest exist for it.
 
 Built: the one-entity loop, seed soul, notebook, picture, ledger, debates/reflection as tools, research, the live trace view, health and cost, diagnostics, PDF/Word in, Word out, an in-app calendar.
 
-Fixed on 2 Nov: the first reply was lost (the entity used tools for 8 steps and its words were dropped); messages could land in archived conversations; archived debates still listed; connector lines didn't fade.
+Fixed on 2 Nov: every step was sent back once because its form always had an empty tool box, so it redrafted its answer eight times; the first reply was lost (the entity used tools for 8 steps and its words were dropped); messages could land in archived conversations; archived debates still listed; connector lines didn't fade.
 
 Leftovers from the pipeline era, removed on 2 Nov: a fixed list of seven destinations for marked phrases; every note forced into "Inbox" as an "idea"; "Peter" as the default name.
+
+## 10. Leftovers from the pipeline era (audit, 2 Nov)
+
+Removed on 2 Nov: voice messages ran through the old filing pipeline instead of the entity; a fixed check-in every 20 hours; a boot step that wrote a curiosity sentence into the soul; routing by job kind inside the conversation; one tool per step.
+
+Still there, to decide with Isaak (biggest first):
+1. **Reflection is one fixed machine.** Both "reflect" and "debate" run the same pipeline: plan, two or more debaters (one forced to be uncomfortable), an anonymous judge, then a commitment that must literally read "this matters most now, because X, at the cost of Y", checked by a regex (`src/hedge.ts`). Models are fixed per role. The soul only changes through this. Proposal: "reflect" becomes quiet thinking in its own words with the model it chooses; a debate becomes one way it can choose to think, not the only way; drop the wording regex.
+2. **It cannot search its own notebook.** Each step it sees the 8 newest notes, 6 claims and 6 to-dos; `notebook_read` returns the same brief. Once there are more notes it is blind to most of what it knows. Proposal: a search tool over notes, claims, conversations and sources.
+3. **A fixed 3 a.m. "duties" job** (calendar entries, drafts, archiving) with its own prompt. Proposal: fold into its own wake-ups; keep only plain bookkeeping (expiring the for-now bin) in code.
+4. **Background jobs keep fixed models and prompts**: trace extraction, mind note (with a fixed "covers him / his world / itself" check), research, brief writer, vision. Proposal: the entity does these itself when it chooses, or they use its chosen model.
+5. **v2 bookkeeping inside reflection**: predictions, preference rules, carried lessons, feedback samples, "never ask" lists. Keep what reflection actually uses; review after the playtest.
+6. **Pages from v2** (Library, Discovery, Brief, To-dos, Picture, Asks, Debates, Soul, Why) sit behind Notebook. Fine as rooms, but check each still shows something real.
 
 Next:
 1. **Playtest the core** after a fresh start: Isaak re-feeds his opening dump and the Shinichi meeting summary, then uses it daily for about a week. Watch whether it asks before advising, keeps what matters, grows its character in its own words, takes a stance, and what a day costs.

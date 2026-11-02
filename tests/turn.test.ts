@@ -101,3 +101,41 @@ describe("a message left without a reply", () => {
     expect(await answerUnanswered(db, ai, user.id, later)).toBe(false);
   });
 });
+
+describe("steps", () => {
+  it("runs several tools in one step and treats a blank tool as none", async () => {
+    const { db, user, ai, mock } = await fresh();
+    let calls = 0;
+    scriptAgent(mock, (system) => {
+      calls += 1;
+      if (system.includes("Saved note")) return { say: "Got both.", think: { what: "", why: "", tool: "", input: {} } };
+      return {
+        think: [
+          { what: "Keep A", why: "a", tool: "notebook_write", input: { title: "Born 2001 in Amsterdam", body: "Born 12 July 2001.", folder: "About him", kind: "fact" } },
+          { what: "Keep B", why: "b", tool: "notebook_write", input: { title: "Lives by principles", body: "Has principles he will share later.", folder: "About him", kind: "value" } },
+        ],
+      };
+    });
+    const result = await runAgentTurn(db, ai, user.id, { text: "I was born in 2001 and I live by principles." });
+    expect(result.notes.length).toBe(2);
+    expect(result.reply).toBe("Got both.");
+    expect(calls).toBe(2);
+  });
+
+  it("switches to the model it asks for, and starts there next time", async () => {
+    const { db, user, ai, mock } = await fresh();
+    const seen: string[] = [];
+    const original = mock.complete.bind(mock);
+    mock.complete = async (req: any) => {
+      if (String(req.system).includes("TASK: agent")) seen.push(String(req.system).match(/thinking with (\S+) right now/)?.[1] ?? "?");
+      return original(req);
+    };
+    scriptAgent(mock, (system) =>
+      system.includes("thinking with mock-strong") ? { say: "Thought it through." } : { next_model: "mock-strong", think: { what: "Read", why: "Heavy", tool: "notebook_read", input: {} } },
+    );
+    await runAgentTurn(db, ai, user.id, { text: "A long story about my life." });
+    expect(seen).toEqual(["mock-cheap", "mock-strong"]);
+    const row = (await db.query(`SELECT start_model FROM inner_state WHERE user_id = $1`, [user.id])).rows[0];
+    expect(row.start_model).toBe("mock-strong");
+  });
+});

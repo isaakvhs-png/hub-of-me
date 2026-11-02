@@ -171,6 +171,7 @@ export async function migrate(db: Db): Promise<void> {
     `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS why_now TEXT`,
     `ALTER TABLE inner_state ADD COLUMN IF NOT EXISTS next_wake_at TIMESTAMPTZ`,
     `ALTER TABLE inner_state ADD COLUMN IF NOT EXISTS wake_why TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE inner_state ADD COLUMN IF NOT EXISTS start_model TEXT NOT NULL DEFAULT ''`,
     `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS surfaced BOOLEAN NOT NULL DEFAULT false`,
     `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS fade_reason TEXT`,
     `INSERT INTO debate_feedback (id, user_id, debate_id, body, status, created_at)

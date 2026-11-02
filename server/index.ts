@@ -11,7 +11,7 @@ import { runNightly } from "../src/pipeline/jobs.js";
 import { scheduleFeedbackDrain } from "../src/feedback.js";
 import { getSettings, settleStuckDebates } from "../src/repo.js";
 import { applyEnvProvider, ensureUser } from "../src/seed.js";
-import { ensureCuriosity, restoreCorruptedSouls } from "../src/soul.js";
+import { restoreCorruptedSouls } from "../src/soul.js";
 import { freshStart } from "../src/fresh.js";
 import { greetIfNeeded, wakeIfDue } from "../src/agent/turn.js";
 import { zonedParts } from "../src/time.js";
@@ -29,7 +29,6 @@ await db.query(
 );
 const fresh = await freshStart(db);
 if (fresh) console.log(`Fresh start archived the previous center for ${fresh} account(s). Reason: Fresh start before core redesign.`);
-await ensureCuriosity(db);
 const everyone = await db.query<{ id: string }>(`SELECT id FROM users`);
 for (const row of everyone.rows) {
   try {

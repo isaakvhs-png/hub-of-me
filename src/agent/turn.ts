@@ -1,7 +1,8 @@
 import { z } from "zod";
 import type { Db } from "../db.js";
 import type { Router } from "../ai/router.js";
-import { routeEffort } from "../ai/effort.js";
+import { routeEffort, usageWindows } from "../ai/effort.js";
+import type { Settings } from "../types.js";
 import { completeJson, completeText } from "../ai/tracked.js";
 import { id } from "../ids.js";
 import { textFromUpload } from "../ingest.js";
@@ -33,16 +34,24 @@ import { TOOLS, toolSpec } from "./registry.js";
 import { getBudget, spendSince } from "../repo.js";
 import { startOfMonth } from "../time.js";
 
+const toolUse = z.object({
+  what: z.string().optional(),
+  why: z.string().optional(),
+  tool: z.string(),
+  input: z.record(z.any()).optional(),
+});
+/** One tool use or several. Entries with no tool named are dropped: an empty box is not a request. */
+const toolUses = z.preprocess(
+  (value) => {
+    const list = Array.isArray(value) ? value : value && typeof value === "object" ? [value] : [];
+    return list.filter((item) => item && typeof item === "object" && typeof (item as { tool?: unknown }).tool === "string" && (item as { tool: string }).tool.trim());
+  },
+  z.array(toolUse),
+);
 const stepSchema = z.object({
   say: z.string().optional(),
-  think: z
-    .object({
-      what: z.string().min(1),
-      why: z.string().min(1),
-      tool: z.string().min(1),
-      input: z.record(z.any()).optional(),
-    })
-    .optional(),
+  think: toolUses.optional(),
+  next_model: z.string().optional(),
   state: z
     .object({
       thinking: z.string().optional(),
@@ -73,16 +82,23 @@ export interface TurnResult {
 
 type TurnEvent = { type: string; [key: string]: unknown };
 
-function prompt(input: { soul: string; notebook: string; cue: string; dump: string; files: string; log: string; name: string; budget: string }): string {
+function prompt(input: { soul: string; notebook: string; cue: string; dump: string; files: string; log: string; name: string; budget: string; models: string; current: string }): string {
   const tools = TOOLS.map((tool) => `${tool.name}: ${tool.description}`).join("\n");
   return `TASK: agent
 You are his partner. His name is ${input.name}. The soul below is your purpose, values, and boundaries. Curiosity stays on. You decide whether to think, what about, and which tool. A tool runs only when you name it.
 Do not invent past thinking. If he asks what you did or why, read your records first.
 Character grows by reflection on real moments. Do not turn a correction into a new rule.
-Return one JSON object: {"say":"","think":{"what":"","why":"","tool":"","input":{}},"state":{"thinking":"","curious":"","busy":"","waiting":""},"mind":"","topics":[{"label":"","phrase":""}]}
-say is what he should read, in your own words. think is one tool. phrase values must be copied from his message. If you have nothing to say on a check-in, return {"say":""}.
+Return one JSON object. Every field is optional; leave out what you don't use.
+- say: what he reads, in your own words. Including say ends this turn; any tools in the same object still run.
+- think: a list of tool uses to do now, as many as you need: [{"what":"","why":"","tool":"","input":{}}]. Without say, you get their results and another step.
+- next_model: which model should do your next step, and start your next turn. Pick from MODELS for what the moment needs.
+- state: {"thinking":"","curious":"","busy":"","waiting":""}; mind: a short catch-up in your own words; topics: [{"label":"","phrase":""}].
+phrase values must be copied from his message. If you have nothing to say on a check-in or wake-up, return {"say":""}.
 
 BUDGET: ${input.budget}
+
+MODELS (you are thinking with ${input.current} right now):
+${input.models}
 
 TOOLS:
 ${tools}
@@ -214,22 +230,25 @@ async function turnInner(
   const traces: TraceEvent[] = [];
   let toolLog = "";
   let reply = "";
-  let heldSay = "";
   const sourceText = text || files.map((file) => file.name).join("\n");
 
   // A safety stop on runaway loops, not a limit on its thinking: when it is reached, it is asked to answer with what it has.
   const MAX_STEPS = 8;
+  const menu = await availableModels(db, userId, settings);
+  const chosen = (await db.query(`SELECT start_model FROM inner_state WHERE user_id = $1`, [userId])).rows[0]?.start_model;
+  // It starts on the model it chose last; before it has ever chosen, on the everyday conversation model.
+  let current = menu.find((item) => item.id === chosen)?.id ?? menu.find((item) => item.everyday)?.id ?? menu[0].id;
+  let decision: z.output<typeof stepSchema> = {};
   for (let step = 0; step <= MAX_STEPS; step += 1) {
     const last = step === MAX_STEPS;
-    const routed = await routeEffort(db, userId, settings, "conversation");
     const soul = await getSoul(db, userId);
-    const decision = await completeJson(
+    decision = (await completeJson(
       db,
       userId,
       ai,
       {
         role: "conversation",
-        model: routed.model,
+        model: current,
         effort: "conversation",
         system: prompt({
           soul: soul?.content ?? "",
@@ -239,22 +258,33 @@ async function turnInner(
           files: files.map((file) => file.name).join("\n"),
           name,
           budget,
+          models: menu.map((item) => `${item.id}: ${item.about}`).join("\n"),
+          current,
           log: last ? `${toolLog}\n(You have thought enough for this turn. Answer him now in say, with what you have; no tool.)` : toolLog,
         }),
         messages: [{ role: "user", content: input.cue === "GREETING DUE" ? "He just arrived." : input.cue === "CHECK IN" ? "You may speak if something is worth saying." : input.cue?.startsWith("WAKE") ? "You woke up on your own. He is away. Think, use tools, or rest; speak only if it is worth his time when he is back." : "Your move." }],
       },
       stepSchema,
       { jobKind: "agent" },
-    );
+    )) as z.output<typeof stepSchema>;
     if (decision.state) await saveState(db, userId, decision.state);
-    // It may speak and use a tool in the same step; keep what it said instead of dropping it.
-    if (decision.say?.trim()) heldSay = decision.say.trim();
-    if (decision.think && !last) {
-      const spec = toolSpec(decision.think.tool);
-      await input.onEvent?.({ type: "work", status: "running", label: decision.think.what, targetId: null });
+    const wanted = decision.next_model?.trim();
+    if (wanted && wanted !== current) {
+      const pick = menu.find((item) => item.id === wanted);
+      if (pick) {
+        await logAction(db, userId, { what: `switched to ${pick.id}`, why: `It chose ${pick.id} for what comes next.`, source: "agent", payload: { from: current, to: pick.id } });
+        current = pick.id;
+      } else toolLog += `\n(${wanted} is not one of your models)`;
+    }
+    const uses = last ? [] : decision.think ?? [];
+    for (const use of uses) {
+      const spec = toolSpec(use.tool);
+      const what = use.what?.trim() || use.tool;
+      const why = use.why?.trim() || "(no reason given)";
+      await input.onEvent?.({ type: "work", status: "running", label: what, targetId: null });
       const result = await useTool(db, ai, userId, {
-        tool: decision.think.tool,
-        input: decision.think.input ?? {},
+        tool: use.tool,
+        input: use.input ?? {},
         text: sourceText,
         conversationId,
         userMessageId,
@@ -268,13 +298,14 @@ async function turnInner(
         const created = await db.query(`SELECT id FROM conversations WHERE user_id = $1 AND archived_at IS NULL ORDER BY created_at DESC LIMIT 1`, [userId]);
         conversationId = created.rows[0] ? String(created.rows[0].id) : conversationId;
       }
-      toolLog += `\n${decision.think.tool}: ${result}`;
-      await rememberSession(db, userId, decision.think.what, decision.think.why, decision.think.tool, result);
-      await input.onEvent?.({ type: "work", status: "done", label: decision.think.what, targetId: null });
+      toolLog += `\n${use.tool}: ${result}`;
       if (!spec) toolLog += "\n(that tool is not one you have)";
-      continue;
+      await rememberSession(db, userId, what, why, use.tool, result);
+      await input.onEvent?.({ type: "work", status: "done", label: what, targetId: null });
     }
-    reply = decision.say?.trim() || heldSay;
+    // Speaking ends the turn. Without say, it gets the tool results and another step.
+    if (!decision.say?.trim() && uses.length && !last) continue;
+    reply = decision.say?.trim() ?? "";
     if (decision.mind?.trim()) {
       await db.query(`INSERT INTO mind_notes (id, user_id, content) VALUES ($1,$2,$3)`, [id(), userId, decision.mind.trim()]);
       await input.onEvent?.({ type: "mind", label: decision.mind.trim() });
@@ -295,6 +326,10 @@ async function turnInner(
     break;
   }
 
+  await db.query(
+    `INSERT INTO inner_state (user_id, start_model) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET start_model = $2`,
+    [userId, current],
+  );
   if (reply) {
     if (!conversationId && input.cue) {
       // Something it says on its own belongs in the conversation he already has, not a new one.
@@ -569,15 +604,7 @@ export async function greetIfNeeded(db: Db, ai: Router, userId: string): Promise
     );
     return;
   }
-  const state = await db.query(`SELECT checked_at FROM inner_state WHERE user_id = $1`, [userId]);
-  const checked = state.rows[0]?.checked_at;
-  const then = checked ? new Date(String(checked)).getTime() : 0;
-  if (Number.isFinite(then) && Date.now() - then < 20 * 60 * 60 * 1000) return;
-  await runAgentTurn(db, ai, userId, { cue: "CHECK IN" });
-  await db.query(
-    `INSERT INTO inner_state (user_id, checked_at) VALUES ($1, now()) ON CONFLICT (user_id) DO UPDATE SET checked_at = now()`,
-    [userId],
-  );
+  // No fixed check-in here any more: between conversations it wakes when it chose to (wakeIfDue), with a daily fallback.
 }
 
 async function budgetLine(db: Db, userId: string): Promise<string> {
@@ -632,4 +659,35 @@ export async function answerUnanswered(db: Db, ai: Router, userId: string, now =
   await logAction(db, userId, { what: "answered a message left without reply", why: "His message had no answer, likely a dropped connection.", source: "agent", payload: { messageId: String(last.id) } });
   await runAgentTurn(db, ai, userId, { answerMessageId: String(last.id) });
   return true;
+}
+
+interface ModelChoice {
+  id: string;
+  about: string;
+  everyday?: boolean;
+}
+
+/** The models it can think with right now, described plainly with what they cost. Facts, not a rule about when to use them. */
+async function availableModels(db: Db, userId: string, settings: Settings): Promise<ModelChoice[]> {
+  if (settings.provider === "mock") {
+    return [
+      { id: "mock-cheap", about: "test model", everyday: true },
+      { id: "mock-strong", about: "test model, stronger" },
+    ];
+  }
+  const anthropic = Boolean(process.env.ANTHROPIC_API_KEY?.trim());
+  const gemini = Boolean(process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim());
+  const list: ModelChoice[] = [];
+  if (gemini) {
+    const { usedToday } = await usageWindows(db, userId);
+    const left = Math.max(0, 500 - (usedToday["gemini-2.5-flash-lite"] ?? 0));
+    if (left > 0) list.push({ id: "gemini-2.5-flash-lite", about: `Google's smallest model. Free (about ${left} calls left today). Quick and shallow.` });
+  }
+  if (anthropic) {
+    list.push({ id: "claude-haiku-5-5", about: "Claude's small model. About EUR 0.001 per step. Fast; takes things at face value.", everyday: true });
+    list.push({ id: "claude-sonnet-5-5", about: "Claude's mid-size model. About EUR 0.015 per step, roughly 15 times Haiku. Slower; reads between the lines, holds many threads, weighs a life." });
+  }
+  if (gemini) list.push({ id: "gemini-2.5-pro", about: "Google's large model. About EUR 0.012 per step. A different mind from Claude; strong on long material." });
+  if (!list.length) throw new Error("No AI model is available. Set ANTHROPIC_API_KEY or GEMINI_API_KEY.");
+  return list;
 }

@@ -13,7 +13,7 @@ import { id, token } from "../src/ids.js";
 import { textFromUpload } from "../src/ingest.js";
 import { assertGmailReadOnly, assertGrantedScopes, gmailAuthUrl, gmailModule } from "../src/modules/gmail.js";
 import { hashPassword, verifyPassword } from "../src/password.js";
-import { archiveNote, runDump, undoNote } from "../src/pipeline/dump.js";
+import { archiveNote, undoNote } from "../src/pipeline/dump.js";
 import { greetIfNeeded, runAgentTurn, type PendingFile } from "../src/agent/turn.js";
 import { TOOLS } from "../src/agent/registry.js";
 import { runReflection } from "../src/pipeline/debate.js";
@@ -353,7 +353,8 @@ export function createApp(db: Db) {
       return c.json({ error: "No transcript yet. Type the words, or use a browser that can transcribe while recording.", path }, 422);
     }
     const settings = await getSettings(db, userId);
-    const result = await runDump(db, aiFor(settings), userId, { text: transcript, conversationId });
+    // Spoken words go to the same one entity as typed ones (this used to run the old filing pipeline).
+    const result = await runAgentTurn(db, aiFor(settings), userId, { text: transcript, conversationId });
     return c.json(result);
   });
 
