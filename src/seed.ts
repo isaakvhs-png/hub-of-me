@@ -18,7 +18,11 @@ export async function ensureUser(
 ): Promise<User> {
   const envEmail = envValue("USER_EMAIL")?.toLowerCase();
   const envPassword = envValue("USER_PASSWORD");
-  const envName = envValue("USER_NAME");
+  // A name typed in capitals ("ISAAK") is meant as a name, not a shout: store it as "Isaak".
+  const rawName = envValue("USER_NAME");
+  const envName = rawName && rawName === rawName.toUpperCase() && /[A-Z]/.test(rawName)
+    ? rawName.toLowerCase().replace(/(^|[\s-])(\p{L})/gu, (_m, pre: string, ch: string) => pre + ch.toUpperCase())
+    : rawName;
   // Server start calls this with no opts. When both credentials are set, rewrite the one account in place.
   if (!opts && envEmail && envPassword) {
     const users = await listUsers(db);
