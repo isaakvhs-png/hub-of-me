@@ -2,11 +2,9 @@ import { z } from "zod";
 import type { Db } from "../db.js";
 import type { Router } from "../ai/router.js";
 import { completeJson } from "../ai/tracked.js";
-import { id } from "../ids.js";
-import { saveClaims } from "../picture.js";
 import { getSoul, insertInfoRequest, logAction } from "../repo.js";
 import { changeSoul, mergeSoulSections } from "../soul.js";
-import { conversationView, memoryView } from "./memory.js";
+import { conversationView, memoryView, saveInner, saveMap } from "./memory.js";
 
 const reflectionSchema = z.object({
   thoughts: z.string().min(1),
@@ -16,17 +14,9 @@ const reflectionSchema = z.object({
       sections: z.array(z.object({ heading: z.string().min(1), body: z.string() })).min(1),
     })
     .optional(),
-  claims: z
-    .array(
-      z.object({
-        claimId: z.string().optional(),
-        statement: z.string().min(1),
-        situations: z.string().optional(),
-        status: z.enum(["tentative", "held", "revised", "dropped"]).optional(),
-        evidence: z.array(z.object({ quote: z.string().min(1), source: z.string().min(1) })).optional(),
-      }),
-    )
-    .optional(),
+  portrait: z.string().optional(),
+  map: z.array(z.object({ name: z.string(), known: z.string().optional(), open: z.string().optional() })).optional(),
+  intentions: z.string().optional(),
   asks: z
     .array(z.object({ subject: z.string().min(1), question: z.string().min(1), context: z.string().min(1), why: z.string().min(1) }))
     .optional(),
@@ -57,9 +47,9 @@ export async function reflectQuietly(
       system: `TASK: reflect
 You are stepping back to think, alone, in your own words. Nobody reads this but you and, if he looks, him.
 Think about what you set out to think about. Use everything below. Notice what you don't know yet, what doesn't fit, and what is new ground.
-Your character grows only from real moments like these. If something should change in how you are, write it in the soul as a general principle, not as his words or a rule; keep his words as evidence on claims instead. The sections Purpose, Values and Boundaries stay; Boundaries are his and do not change.
+Your character grows only from real moments like these. If something should change in how you are, write it in the soul as a general principle, not as his words or a rule. Nature and Boundaries are Isaak's: you cannot change them, but if you think one should change, ask him (as an ask) and say why.
 Return one JSON object; every field except thoughts is optional:
-{"thoughts":"what you now think, in your own words","soul":{"reason":"","sections":[{"heading":"","body":""}]},"claims":[{"claimId":"","statement":"how he thinks or what matters to him","situations":"","status":"tentative","evidence":[{"quote":"his exact words","source":"conversation"}]}],"asks":[{"subject":"","question":"","context":"","why":""}],"mind":"a short catch-up"}
+{"thoughts":"what you now think, in your own words","soul":{"reason":"","sections":[{"heading":"","body":""}]},"portrait":"your whole portrait of him, rewritten","map":[{"name":"","known":"","open":""}],"intentions":"what you are going for with him now and why","asks":[{"subject":"","question":"","context":"","why":""}]}
 Only return soul sections you are changing. An ask must make sense read cold: name its subject, why now, and what the answer would change.
 
 WHAT YOU ARE THINKING ABOUT:
@@ -80,7 +70,7 @@ ${conversation}`,
   );
   const done: string[] = [];
   if (out.soul?.sections.length) {
-    const sections = out.soul.sections.filter((section) => section.heading.trim().toLowerCase() !== "boundaries");
+    const sections = out.soul.sections.filter((section) => !["boundaries", "nature"].includes(section.heading.trim().toLowerCase()));
     if (sections.length) {
       try {
         const saved = await changeSoul(db, userId, {
@@ -95,16 +85,13 @@ ${conversation}`,
       }
     }
   }
-  if (out.claims?.length) {
-    const count = await saveClaims(db, userId, out.claims, "record");
-    if (count) done.push(`${count} claim(s) about him`);
-  }
+  if (out.portrait?.trim() && (await saveInner(db, userId, "portrait", out.portrait, `Reflecting: ${input.cause}`))) done.push("portrait rewritten");
+  if (out.map?.length && (await saveMap(db, userId, out.map, `Reflecting: ${input.cause}`))) done.push("map redrawn");
+  if (!out.intentions?.trim() && out.mind?.trim()) out.intentions = out.mind;
+  if (out.intentions?.trim() && (await saveInner(db, userId, "intentions", out.intentions, `Reflecting: ${input.cause}`))) done.push("intentions updated");
   for (const ask of out.asks ?? []) {
     await insertInfoRequest(db, userId, { ...ask, rank: 0 });
     done.push(`asked: ${ask.question}`);
-  }
-  if (out.mind?.trim()) {
-    await db.query(`INSERT INTO mind_notes (id, user_id, content) VALUES ($1,$2,$3)`, [id(), userId, out.mind.trim()]);
   }
   await logAction(db, userId, { what: "reflected", why: input.cause, source: "reflection", payload: { model: input.model, thoughts: out.thoughts.slice(0, 2000), done } });
   return `THOUGHTS: ${out.thoughts}${done.length ? `\nCHANGED: ${done.join("; ")}` : ""}`;

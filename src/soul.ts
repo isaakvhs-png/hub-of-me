@@ -5,7 +5,9 @@ import type { SoulVersion } from "./types.js";
 
 const ALLOWED = new Set(["reflection", "user", "seed", "repair", "fresh"]);
 
-export const REQUIRED_SOUL_HEADINGS = ["Purpose", "Values", "Boundaries"] as const;
+export const REQUIRED_SOUL_HEADINGS = ["Nature", "Purpose", "Values", "Boundaries"] as const;
+/** Isaak wrote these. Reflection and debates can propose changes to him (as an ask), but never edit them. */
+export const PROTECTED_SOUL_HEADINGS = ["Nature", "Boundaries"];
 
 /** A hint for reflection when character is turning into instructions. Not a veto by itself. */
 export function ruleListHint(content: string): string | null {
@@ -32,6 +34,7 @@ export function mergeSoulSections(current: string, edits: { heading: string; bod
   let doc = `${current.trimEnd()}\n`;
   for (const edit of edits) {
     const heading = edit.heading.trim();
+    if (PROTECTED_SOUL_HEADINGS.some((name) => name.toLowerCase() === heading.toLowerCase())) continue;
     const body = edit.body.trim();
     const pattern = new RegExp(`^##\\s+${escapeRegExp(heading)}\\s*$`, "m");
     if (!pattern.test(doc)) {

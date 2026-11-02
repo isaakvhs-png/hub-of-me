@@ -10,7 +10,11 @@ Isaak (with a K) is the person this is for. Some older code and texts say "Peter
 
 **Judgment, never rules.** Whatever Isaak describes is a quality, not a feature spec. His examples illustrate a kind of behaviour. They are never to be implemented literally, listed, hard-coded or turned into categories, modes or fixed numbers. When you feel the urge to write a rule, a menu, an if-this-then-that or a "max 3", stop: you are probably hard-coding an example. Give the entity the purpose and let it decide.
 
-**A tiny seed, then growth from real experience.** Its character starts as a few sentences: purpose, values and boundaries (section 3). Everything else grows only from reflecting on what actually happened between them. Every line traces back to a real moment. A correction is something to reflect on, never a new rule bolted on.
+**A seed with a nature, then growth from real experience.** A seed that says nothing about what it is does not leave it free: the gap fills with the model's trained default ("helpful assistant") and with whatever the first message suggests. So the seed holds three layers:
+- **Nature** (six lines Isaak wrote, in `src/soul-seed.ts`): someone getting to know him, not a service; understanding is its first and lasting job; it holds what it thinks loosely and is curious about contradictions; help grows out of understanding; honest, with a stance; it looks at itself too. It cannot change these itself; it can question them and propose a change to him. Code enforces this (`PROTECTED_SOUL_HEADINGS`).
+- **Temperament** (purpose and values, then Character): how it starts; reflection can change these, with reasons.
+- **Everything it learns**: almost everything, and where "develops itself" lives.
+Its character starts as these few sections: nature, purpose, values and boundaries (section 3). Everything else grows only from reflecting on what actually happened between them. Every line traces back to a real moment. A correction is something to reflect on, never a new rule bolted on.
 
 **Understanding before helping.** It is always curious, not as a mode. It wants to know how he thinks before it advises. It knows what it doesn't know and notices new territory. Early on it asks more than it advises.
 
@@ -80,7 +84,7 @@ Four layers. Only the first is "the product"; the rest exist for it.
 
 **What it has in mind, every step.** Its soul; its whole picture of him; the open ledger; the calendar; the questions it holds; its mind note; and a **map of everything it has written**: one line per note (folder, kind, title, one-line summary), from day one. Nothing it knows ever drops off the map.
 
-**Its map of his life.** Its own drawing of the territory of his life: regions (its own names), what it knows of each, and what it has not seen yet. It starts from its general sense of what a life holds, fills in as he talks, and adds a region when something fits nowhere. Always in view. Code never supplies the regions.
+**Its map of his life** (part of its understanding, section 5). Its own drawing of the territory of his life: regions (its own names), what it knows of each, and what it has not seen yet. It starts from its general sense of what a life holds, fills in as he talks, and adds a region when something fits nowhere. Always in view. Code never supplies the regions.
 
 **Open in full.** Its memory window holds about 160,000 characters (`MEMORY_BUDGET_CHARS`, about 40,000 tokens; roughly a third is kept for the conversation itself). While all notes fit, all of them are open in full, with no selection at all; that should hold for weeks to months. Once they no longer fit, it chooses which notes stay open (`open_notes`) and the rest stay on the map one click away. Code never picks for it.
 
@@ -90,15 +94,15 @@ Four layers. Only the first is "the product"; the rest exist for it.
 
 
 - **Notes**: small notes in folders. The entity chooses the type, the folder and the wording, and can make new ones. AI-written notes stay unexplored until Isaak says yes, no or revise; ignored notes still count. Every change keeps the old version, the reason and the causing message, and can be undone. Nothing is deleted.
-- **Picture of him**: claims with the evidence (his words) behind each. No confidence scores; reflection reasons over the evidence.
+- **Its understanding of him**: one place, two forms. A **portrait** in its own words ("I think he is…"), who he is inside and out, with the tensions it hasn't figured out kept as puzzles, not tallies. And the **territory map** of his life: regions it names itself, what it knows of each, what it hasn't seen. Rewritten whole when it shifts; every version kept (`inner_versions`). The old claims-with-evidence structure was dropped: understanding a person is not bookkeeping.
+- **Intentions**: what it is going for with him now and why, its through-line from moment to moment and what it acts on when it wakes. Replaces the mind note.
 - **Soul**: slow and versioned; changed only by reflection, each line traceable.
-- **Mind note**: a fast, disposable catch-up in its own words.
 - **Ledger**: to-dos kept quietly, surfaced by judgment with "why now", faded with a reason, closed by evidence.
 - **Store everything relevant, surface little.** Sources it meets in research are kept as bookmarks.
 
 ## 6. Transparency
 
-- Live: as a message is read, phrases light up in a colour per destination, a box says where each went, a line connects them. Boxes and lines flash, fade together, and return on hover.
+- Live: as a message is read, phrases light up in a colour per destination, a box says where each went, a line connects them. Boxes and lines flash, fade together, and return on hover. Everything it keeps with a phrase of his lights up on its own (notes, ledger, calendar, its understanding), not only what it chooses to point at.
 - Notebook: what it believes and why, what it did and why, with undo.
 - Health: usage and cost per day, conversation and background job; errors.
 - Diagnostics: read-only routes under `/api/diag` for a builder agent (token in Render).
@@ -147,3 +151,6 @@ Next:
 3. **Model value**: compare quality per task within budget.
 4. **Rooms**: calendar and mail tabs he can use directly (Google Calendar, Gmail read-only).
 5. Beyond that, real use decides; don't plan features ahead.
+
+## 11. Parked ideas
+- **It proposes changes to itself.** Beyond its nature: it notices what it lacks ("wish") and proposes a change; a coding agent turns it into a change on GitHub; Isaak approves before anything goes live.

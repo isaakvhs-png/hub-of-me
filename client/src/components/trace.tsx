@@ -31,6 +31,9 @@ export function traceColor(destination: string): string {
   if (COLORS[key]) return COLORS[key];
   if (/picture/.test(key)) return COLORS.picture;
   if (/ledger|follow/.test(key)) return COLORS.followup;
+  if (/understanding/.test(key)) return COLORS.picture;
+  if (/calendar/.test(key)) return COLORS.world;
+  if (/^note/.test(key)) return COLORS.memory;
   let hash = 0;
   for (const ch of key) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
   return SPARE[hash % SPARE.length];
@@ -41,6 +44,9 @@ export function traceHref(span: TraceSpan): string | null {
   const where = span.destination.toLowerCase();
   if (/picture/.test(where)) return "/picture";
   if (/ledger|follow/.test(where)) return "/todos";
+  if (/understanding/.test(where)) return "/picture";
+  if (/calendar/.test(where)) return "/calendar";
+  if (/^note/.test(where)) return "/library";
   if (span.destination === "world") return "/discovery";
   if (span.destination === "soul" || span.destination === "behavior") return "/soul";
   return null;

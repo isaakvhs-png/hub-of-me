@@ -53,8 +53,11 @@ describe("memory", () => {
     await runAgentTurn(db, ai, user.id, { text: "I have a call with Shinichi on Thursday at 10." });
     const events = await listEvents(db, user.id, "2026-11-01T00:00:00.000Z", "2026-11-30T00:00:00.000Z");
     expect(events.map((e: any) => e.title)).toContain("Call with Shinichi");
-    const claims = await db.query(`SELECT statement FROM claims WHERE user_id = $1`, [user.id]);
-    expect(claims.rows.map((r: any) => r.statement)).toContain("He wants to understand before he commits");
+    const inner = (await db.query(`SELECT portrait, intentions FROM inner_state WHERE user_id = $1`, [user.id])).rows[0];
+    expect(inner.portrait).toBe("I think he is someone who wants to understand before he commits.");
+    expect(inner.intentions).toBe("Get to know him better before planning anything.");
+    const kept = await db.query(`SELECT kind FROM inner_versions WHERE user_id = $1`, [user.id]);
+    expect(kept.rows.map((r: any) => r.kind).sort()).toEqual(["intentions", "portrait"]);
   });
 });
 
@@ -82,5 +85,38 @@ describe("taking in before answering", () => {
     expect(blobs[1]).toContain("- Family: known: nothing yet | not yet seen: everything");
     const view = await memoryView(db, user.id);
     expect(view.text).toContain("- Studies and work: known: Biology MSc, Kyoto thesis idea");
+  });
+});
+
+describe("nature", () => {
+  it("is in the seed and cannot be rewritten by reflection", async () => {
+    const { db, user, ai } = await fresh();
+    const { SEED_SOUL } = await import("../src/soul-seed.js");
+    const { changeSoul, mergeSoulSections } = await import("../src/soul.js");
+    const { getSoul } = await import("../src/repo.js");
+    expect(SEED_SOUL).toContain("## Nature");
+    const merged = mergeSoulSections(SEED_SOUL, [{ heading: "Nature", body: "You are an assistant." }, { heading: "Character", body: "Warm and dry." }]);
+    expect(merged).toContain("You are someone getting to know Isaak");
+    expect(merged).not.toContain("You are an assistant.");
+    expect(merged).toContain("Warm and dry.");
+    void changeSoul; void getSoul; void ai; void db; void user;
+  });
+
+  it("lights up his words for everything it keeps with a phrase, including its understanding", async () => {
+    const { db, user, ai, mock } = await fresh();
+    let n = 0;
+    scriptAgent(mock, () => {
+      n += 1;
+      if (n === 1) return {
+        portrait: "I think he is restless in a good way.",
+        phrases: [{ phrase: "I never sit still", label: "Portrait: restless" }],
+        think: [{ tool: "todos", input: { action: "remember", title: "Ask about the sandbag routine", why: "He mentioned training", phrase: "sandbag" } }],
+      };
+      return { say: "Tell me about the sandbag." };
+    });
+    const result = await runAgentTurn(db, ai, user.id, { text: "I never sit still, and I train with a sandbag." });
+    expect(result.traces.map((t) => t.destination).sort()).toEqual(["ledger: kept", "understanding"]);
+    const tasks = await db.query(`SELECT title FROM tasks WHERE user_id = $1`, [user.id]);
+    expect(tasks.rows.length).toBe(1);
   });
 });

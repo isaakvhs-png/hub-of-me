@@ -300,18 +300,22 @@ export function createApp(db: Db) {
   });
 
   app.get("/api/picture", async (c) => {
+    // Its understanding of him: the portrait and the map of his life, its intentions, and how they changed over time.
     const userId = c.get("userId");
-    const [claims, reactions, mind, seen, asks] = await Promise.all([
-      listClaims(db, userId),
-      listReactions(db, userId),
-      latestMindNote(db, userId),
+    const [inner, versions, seen, asks] = await Promise.all([
+      db.query(`SELECT portrait, life_map, intentions, updated_at FROM inner_state WHERE user_id = $1`, [userId]),
+      db.query(`SELECT kind, content, why, created_at FROM inner_versions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 60`, [userId]),
       seenAt(db, userId, "picture"),
       listInfoRequests(db, userId),
     ]);
+    const row = inner.rows[0] ?? {};
+    let map: unknown[] = [];
+    try { map = JSON.parse(String(row.life_map || "[]")); } catch { map = []; }
     return c.json({
-      claims,
-      reactions,
-      mind,
+      portrait: String(row.portrait ?? ""),
+      map,
+      intentions: String(row.intentions ?? ""),
+      versions: versions.rows.map((v) => ({ kind: String(v.kind), content: String(v.content), why: String(v.why), createdAt: new Date(String(v.created_at)).toISOString() })),
       seen,
       asks: asks.filter((ask) => ask.status === "open" || ask.status === "postponed"),
     });

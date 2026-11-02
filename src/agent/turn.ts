@@ -29,7 +29,7 @@ import type { Task } from "../repo.js";
 import { locateSpans } from "../trace.js";
 import type { Note } from "../types.js";
 import { TOOLS, toolSpec } from "./registry.js";
-import { conversationView, memoryView, openNoteIds, saveMap, setOpenNotes } from "./memory.js";
+import { conversationView, memoryView, openNoteIds, saveInner, saveMap, setOpenNotes } from "./memory.js";
 import { reflectQuietly } from "./reflect.js";
 import { archiveEvent, getBudget, getNote, insertEvent, insertSource, reviseNote, spendSince } from "../repo.js";
 import { archiveNote } from "../pipeline/dump.js";
@@ -78,7 +78,7 @@ function normalizeStep(value: unknown): unknown {
   for (const key of ["think", "map", "state", "topics"]) parseIfString(key);
   const asText = (v: unknown): string =>
     typeof v === "string" ? v : v && typeof v === "object" ? Object.entries(v as Record<string, unknown>).map(([k, x]) => `${k}: ${typeof x === "string" ? x : JSON.stringify(x)}`).join("\n") : v == null ? "" : String(v);
-  for (const key of ["say", "taken_in", "mind", "next_model"]) if (step[key] != null && typeof step[key] !== "string") step[key] = asText(step[key]);
+  for (const key of ["say", "taken_in", "mind", "next_model", "portrait", "intentions"]) if (step[key] != null && typeof step[key] !== "string") step[key] = asText(step[key]);
   if (step.state && typeof step.state === "object" && !Array.isArray(step.state)) {
     step.state = Object.fromEntries(Object.entries(step.state as Record<string, unknown>).map(([k, v]) => [k, asText(v)]));
   } else if (step.state != null) delete step.state;
@@ -87,6 +87,12 @@ function normalizeStep(value: unknown): unknown {
     const region = r as Record<string, unknown>;
     return { name: asText(region.name), known: asText(region.known), open: asText(region.open) };
   });
+  // Its catch-up note became its intentions: one thought, not two.
+  if (typeof step.mind === "string" && step.mind.trim() && !(typeof step.intentions === "string" && step.intentions.trim())) step.intentions = step.mind;
+  delete step.mind;
+  parseIfString("phrases");
+  if (step.phrases != null && !Array.isArray(step.phrases)) delete step.phrases;
+  if (Array.isArray(step.phrases)) step.phrases = (step.phrases as unknown[]).filter((p) => p && typeof p === "object" && (p as Record<string, unknown>).phrase && (p as Record<string, unknown>).label);
   if (step.topics != null && !Array.isArray(step.topics)) delete step.topics;
   if (Array.isArray(step.topics)) step.topics = (step.topics as unknown[]).filter((t) => t && typeof t === "object" && (t as Record<string, unknown>).label && (t as Record<string, unknown>).phrase);
   return step;
@@ -97,6 +103,9 @@ const stepSchema = z.preprocess(normalizeStep, z.object({
   think: toolUses.optional(),
   next_model: z.string().optional(),
   taken_in: z.string().optional(),
+  portrait: z.string().optional(),
+  intentions: z.string().optional(),
+  phrases: z.array(z.object({ phrase: z.string().min(1), label: z.string().min(1) })).optional(),
   map: z.array(z.object({ name: z.string(), known: z.string().optional(), open: z.string().optional() })).optional(),
   state: z
     .object({
@@ -139,9 +148,12 @@ Return one JSON object. Every field is optional; leave out what you don't use.
 - say: what he reads, in your own words. Including say ends this turn; any tools in the same object still run.
 - think: a list of tool uses to do now, as many as you need: [{"what":"","why":"","tool":"","input":{}}]. Without say, you get their results and another step.
 - next_model: which model should do your next step, and start your next turn. Pick from MODELS for what the moment needs.
-- map: your whole map of his life, redrawn: [{"name":"","known":"","open":""}]. Give it whenever your picture of the territory changes.
+- portrait: your whole portrait of him, rewritten, in your own words ("I think he is…"). Give it whenever your sense of him shifts.
+- map: your whole map of the territory of his life, redrawn: [{"name":"","known":"","open":""}]. Give it whenever it changes.
+- intentions: what you are going for with him now and why, rewritten whole, whenever it changes.
+- phrases: [{"phrase":"his exact words","label":"where this went in your understanding"}], so he can see what you took from his words.
 - taken_in: when you are taking something in, what it is, what it tells you about him, where it sits on your map, and what it leaves out.
-- state: {"thinking":"","curious":"","busy":"","waiting":""}; mind: a short catch-up in your own words; topics: [{"label":"","phrase":""}].
+- state: {"thinking":"","curious":"","busy":"","waiting":""}; topics: [{"label":"","phrase":""}].
 phrase values must be copied from his message. If you have nothing to say on a check-in or wake-up, return {"say":""}.
 
 BUDGET: ${input.budget}
@@ -315,7 +327,7 @@ async function turnInner(
               current,
               log: last ? `${toolLog}\n(You have thought enough for this turn. Answer him now in say, with what you have; no tool.)` : toolLog,
               opening: takingIn
-                ? "TAKING IN. Before you answer him, take in what he just sent. What is it? What does it tell you about him? Where does it sit on your map of his life, and what does it leave out? Keep what is worth keeping, with your tools, and redraw your map if it changed. Write what you took in under taken_in. Do not answer him yet: say is ignored in this step."
+                ? "TAKING IN. Before you answer him, take in what he just sent. What is it? What does it tell you about him? Where does it sit on your map of his life, and what does it leave out? Keep what is worth keeping, and rewrite your portrait, map and intentions if they changed. Write what you took in under taken_in. Do not answer him yet: say is ignored in this step."
                 : input.cue === "GREETING DUE" ? "He just arrived." : input.cue === "CHECK IN" ? "You may speak if something is worth saying." : input.cue?.startsWith("WAKE") ? "You woke up on your own. He is away. Think, use tools, or rest; speak only if it is worth his time when he is back." : "Your move.",
             }),
           },
@@ -329,6 +341,9 @@ async function turnInner(
       const drawn = await saveMap(db, userId, decision.map, takingIn ? "Taking in what he sent." : "It redrew its map.");
       if (drawn) toolLog += `\nmap: redrawn with ${drawn} regions.`;
     }
+    if (decision.portrait?.trim() && (await saveInner(db, userId, "portrait", decision.portrait, takingIn ? "Taking in what he sent." : "Its sense of him shifted."))) toolLog += "\nportrait: rewritten.";
+    if (decision.intentions?.trim() && (await saveInner(db, userId, "intentions", decision.intentions, takingIn ? "Taking in what he sent." : "Its intentions changed."))) toolLog += "\nintentions: updated.";
+    for (const item of decision.phrases ?? []) await markPhrase(db, userId, { text: sourceText, userMessageId, traces, onEvent: input.onEvent }, item.phrase, "understanding", item.label);
     if (takingIn) {
       if (decision.taken_in?.trim()) {
         toolLog += `\nWHAT YOU TOOK IN: ${decision.taken_in.trim()}`;
@@ -379,10 +394,7 @@ async function turnInner(
     // Speaking ends the turn. Without say, it gets the tool results and another step.
     if (!decision.say?.trim() && uses.length && !last) continue;
     reply = decision.say?.trim() ?? "";
-    if (decision.mind?.trim()) {
-      await db.query(`INSERT INTO mind_notes (id, user_id, content) VALUES ($1,$2,$3)`, [id(), userId, decision.mind.trim()]);
-      await input.onEvent?.({ type: "mind", label: decision.mind.trim() });
-    }
+    if (decision.intentions?.trim()) await input.onEvent?.({ type: "mind", label: decision.intentions.trim() });
     if (userMessageId && decision.topics?.length) {
       for (const topic of decision.topics) {
         const located = locateSpans(text, [{ phrase: topic.phrase, destination: "topic", label: topic.label }]);
@@ -483,7 +495,7 @@ async function useTool(
       if (summary) await db.query(`UPDATE notes SET summary = $3 WHERE id = $1 AND user_id = $2`, [saved.id, userId, summary]);
       const url = str("url").trim();
       if (url && /^https?:\/\//.test(url)) await insertSource(db, userId, { title, url, excerpt: summary || body.slice(0, 300), kind: "web", origin: "agent" });
-      if (str("phrase")) await markPhrase(db, userId, ctx, str("phrase"), "memory", title);
+      if (str("phrase")) await markPhrase(db, userId, ctx, str("phrase"), `note: ${folder}`, title);
       return `Saved note ${saved.id} in ${folder} as ${kind}: ${title}`;
     }
     if (ctx.tool === "notebook_change") {
@@ -524,6 +536,7 @@ async function useTool(
         if (Number.isNaN(starts.getTime())) return "starts_at must be an ISO time with timezone.";
         const end = Number.isNaN(ends.getTime()) || ends <= starts ? new Date(starts.getTime() + 60 * 60_000) : ends;
         const eventId = await insertEvent(db, userId, { title: str("title") || "Untitled", startsAt: starts.toISOString(), endsAt: end.toISOString(), why: str("why"), source: "agent", allDay: ctx.input.all_day === true });
+        if (str("phrase")) await markPhrase(db, userId, ctx, str("phrase"), "calendar", str("title"));
         return `Added to his calendar [${eventId}]: ${str("title")} at ${starts.toISOString()}`;
       }
       if (action === "move" && str("id")) {
@@ -555,6 +568,7 @@ async function useTool(
           sourceKind: "agent",
           conversationId: ctx.conversationId,
         });
+        if (str("phrase")) await markPhrase(db, userId, ctx, str("phrase"), "ledger: kept", str("title"));
         return `Held quietly: ${saved.map((task) => task.title).join(", ")}`;
       }
       if (action === "done" && str("taskId")) {
@@ -644,12 +658,8 @@ async function markPhrase(
   const eventId = id();
   let targetId: string | null = null;
   const where = destination.toLowerCase();
-  if (/picture/.test(where)) {
-    targetId = id();
-    await db.query(`INSERT INTO claims (id, user_id, statement, situations, status) VALUES ($1,$2,$3,$4,'tentative')`, [targetId, userId, label, ""]);
-    await db.query(`INSERT INTO claim_evidence (id, claim_id, quote, source, source_id) VALUES ($1,$2,$3,'dump',$4)`, [id(), targetId, span.phrase, ctx.userMessageId]);
-  }
-  if (/ledger|follow/.test(where)) {
+  // Only a deliberate mark to the ledger creates an item; a highlight for something already kept does not create it twice.
+  if (/^(ledger|follow ?up|followup)$/.test(where)) {
     const saved = await rememberTasks(db, userId, [{ title: label, why: "From what he just said.", owner: "peter", surfaced: true, whyNow: label }], {
       sourceKind: "agent",
       sourceId: ctx.userMessageId,

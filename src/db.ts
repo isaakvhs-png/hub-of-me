@@ -174,6 +174,16 @@ export async function migrate(db: Db): Promise<void> {
     `ALTER TABLE inner_state ADD COLUMN IF NOT EXISTS start_model TEXT NOT NULL DEFAULT ''`,
     `ALTER TABLE inner_state ADD COLUMN IF NOT EXISTS open_notes TEXT NOT NULL DEFAULT '[]'`,
     `ALTER TABLE inner_state ADD COLUMN IF NOT EXISTS life_map TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE inner_state ADD COLUMN IF NOT EXISTS portrait TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE inner_state ADD COLUMN IF NOT EXISTS intentions TEXT NOT NULL DEFAULT ''`,
+    `CREATE TABLE IF NOT EXISTS inner_versions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      kind TEXT NOT NULL,
+      content TEXT NOT NULL,
+      why TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`,
     `ALTER TABLE notes ADD COLUMN IF NOT EXISTS summary TEXT NOT NULL DEFAULT ''`,
     `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS surfaced BOOLEAN NOT NULL DEFAULT false`,
     `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS fade_reason TEXT`,
