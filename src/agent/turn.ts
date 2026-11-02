@@ -151,7 +151,11 @@ export async function runAgentTurn(
   const text = input.text?.trim() ?? "";
   const files = input.files ?? [];
   let conversationId = input.conversationId ?? null;
-  if (conversationId && !(await getConversation(db, userId, conversationId))) conversationId = null;
+  if (conversationId) {
+    const existing = await getConversation(db, userId, conversationId);
+    // An archived conversation is notebook history: a new message starts a live one instead of writing into the past.
+    if (!existing || existing.archivedAt) conversationId = null;
+  }
   const title = text.split("\n")[0] || files[0]?.name || "Hello";
   if (!conversationId && (text || files.length || input.cue === "GREETING DUE")) conversationId = await createConversation(db, userId, title);
   let userMessageId: string | null = null;
@@ -161,9 +165,13 @@ export async function runAgentTurn(
   const traces: TraceEvent[] = [];
   let toolLog = "";
   let reply = "";
+  let heldSay = "";
   const sourceText = text || files.map((file) => file.name).join("\n");
 
-  for (let step = 0; step < 8; step += 1) {
+  // A safety stop on runaway loops, not a limit on its thinking: when it is reached, it is asked to answer with what it has.
+  const MAX_STEPS = 8;
+  for (let step = 0; step <= MAX_STEPS; step += 1) {
+    const last = step === MAX_STEPS;
     const routed = await routeEffort(db, userId, settings, "conversation");
     const soul = await getSoul(db, userId);
     const decision = await completeJson(
@@ -180,7 +188,7 @@ export async function runAgentTurn(
           cue: input.cue ?? "",
           dump: text,
           files: files.map((file) => file.name).join("\n"),
-          log: toolLog,
+          log: last ? `${toolLog}\n(You have thought enough for this turn. Answer him now in say, with what you have; no tool.)` : toolLog,
         }),
         messages: [{ role: "user", content: input.cue === "GREETING DUE" ? "He just arrived." : input.cue === "CHECK IN" ? "You may speak if something is worth saying." : "Your move." }],
       },
@@ -188,7 +196,9 @@ export async function runAgentTurn(
       { jobKind: "agent" },
     );
     if (decision.state) await saveState(db, userId, decision.state);
-    if (decision.think) {
+    // It may speak and use a tool in the same step; keep what it said instead of dropping it.
+    if (decision.say?.trim()) heldSay = decision.say.trim();
+    if (decision.think && !last) {
       const spec = toolSpec(decision.think.tool);
       await input.onEvent?.({ type: "work", status: "running", label: decision.think.what, targetId: null });
       const result = await useTool(db, ai, userId, {
@@ -213,7 +223,7 @@ export async function runAgentTurn(
       if (!spec) toolLog += "\n(that tool is not one you have)";
       continue;
     }
-    reply = decision.say?.trim() ?? "";
+    reply = decision.say?.trim() || heldSay;
     if (decision.mind?.trim()) {
       await db.query(`INSERT INTO mind_notes (id, user_id, content) VALUES ($1,$2,$3)`, [id(), userId, decision.mind.trim()]);
       await input.onEvent?.({ type: "mind", label: decision.mind.trim() });
@@ -239,7 +249,7 @@ export async function runAgentTurn(
     await addMessage(db, conversationId, "assistant", reply);
   }
   if (!conversationId) {
-    const existing = await db.query(`SELECT id FROM conversations WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`, [userId]);
+    const existing = await db.query(`SELECT id FROM conversations WHERE user_id = $1 AND archived_at IS NULL ORDER BY created_at DESC LIMIT 1`, [userId]);
     conversationId = existing.rows[0] ? String(existing.rows[0].id) : await createConversation(db, userId, title);
   }
   return { conversationId, reply, userMessageId, notes, closed, filingError: null, reflection: null, traces };
@@ -446,7 +456,8 @@ async function readOneFile(db: Db, ai: Router, userId: string, file: PendingFile
   const closed = await closeDeliveredTasks(db, userId, { title: file.name, text: `${ctx.text}\n${bodyText}` }, `Uploaded ${file.name}.`);
   ctx.closed.push(...closed);
   let thread = ctx.conversationId;
-  if (!thread || !(await getConversation(db, userId, thread))) thread = await createConversation(db, userId, file.name);
+  const live = thread ? await getConversation(db, userId, thread) : null;
+  if (!thread || !live || live.archivedAt) thread = await createConversation(db, userId, file.name);
   ctx.conversationId = thread;
   await addMessage(db, thread, "user", [`Uploaded ${file.name}`, bodyText].filter(Boolean).join("\n\n").slice(0, 8000));
   const closedLine = closed.length ? ` That closes: ${closed.map((task) => task.title).join("; ")}.` : "";

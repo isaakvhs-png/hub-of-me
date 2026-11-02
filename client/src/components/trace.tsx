@@ -41,6 +41,11 @@ export function TraceView({ text, spans, onOpen }: { text: string; spans: TraceS
   const marks = spans.filter((span) => span.start >= 0 && span.end > span.start);
   const wrap = useRef<HTMLDivElement>(null);
   const [lines, setLines] = useState<{ id: string; x1: number; y1: number; x2: number; y2: number; color: string }[]>([]);
+  // Spans being hovered: their box and connector line show again together.
+  const [hot, setHot] = useState<string[]>([]);
+  const flashing = new Set(marks.filter((span) => span.flash).map((span) => span.id));
+  // A line always shares its box's visibility: flash and fade with it, return with it on hover.
+  const shown = (spanId: string) => (hot.includes(spanId) ? "opacity-100" : flashing.has(spanId) ? "trace-pop" : "opacity-0");
 
   useLayoutEffect(() => {
     const root = wrap.current;
@@ -94,7 +99,7 @@ export function TraceView({ text, spans, onOpen }: { text: string; spans: TraceS
     <div ref={wrap} className="relative">
       <svg className="pointer-events-none absolute left-0 top-0 h-full w-full overflow-visible" aria-hidden="true">
         {lines.map((line) => (
-          <line key={line.id} x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} stroke={line.color} strokeWidth="1.5" />
+          <line key={line.id} className={`transition-opacity ${shown(line.id)}`} x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} stroke={line.color} strokeWidth="1.5" />
         ))}
       </svg>
       <div className="relative whitespace-pre-wrap leading-relaxed">
@@ -105,7 +110,15 @@ export function TraceView({ text, spans, onOpen }: { text: string; spans: TraceS
           if (!covering.length) return <span key={`${start}-${end}`}>{piece}</span>;
           const shadows = covering.map((span, layer) => `inset 0 -${2 + layer * 3}px 0 ${traceColor(span.destination)}`).join(", ");
           return (
-            <span key={`${start}-${end}`} className="trace-anchor relative inline" data-anchor={covering.map((span) => span.id).join(" ")}>
+            <span
+              key={`${start}-${end}`}
+              className="trace-anchor relative inline"
+              data-anchor={covering.map((span) => span.id).join(" ")}
+              onMouseEnter={() => setHot(covering.map((span) => span.id))}
+              onMouseLeave={() => setHot([])}
+              onFocus={() => setHot(covering.map((span) => span.id))}
+              onBlur={() => setHot([])}
+            >
               <button type="button" className="bg-transparent p-0 text-inherit" style={{ boxShadow: shadows }} onClick={() => onOpen(covering[0])}>
                 {piece}
               </button>
@@ -131,7 +144,9 @@ export function TraceView({ text, spans, onOpen }: { text: string; spans: TraceS
               key={span.id}
               type="button"
               data-box={span.id}
-              className={`trace-pop rounded-md border px-2 py-1 text-left text-xs ${span.flash ? "" : "opacity-0"}`}
+              className={`rounded-md border px-2 py-1 text-left text-xs transition-opacity ${shown(span.id)}`}
+              onMouseEnter={() => setHot([span.id])}
+              onMouseLeave={() => setHot([])}
               style={{ borderColor: traceColor(span.destination) }}
               onClick={() => onOpen(span)}
             >

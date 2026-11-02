@@ -834,8 +834,12 @@ export async function concludeDebate(db: Db, debateId: string, patch: { status: 
   );
 }
 
-export async function listDebates(db: Db, userId: string): Promise<Row[]> {
-  const result = await db.query(`SELECT * FROM debates WHERE user_id = $1 ORDER BY created_at DESC`, [userId]);
+export async function listDebates(db: Db, userId: string, includeArchived = false): Promise<Row[]> {
+  // Archived debates (e.g. from before the fresh start) stay in the database as history; the live list leaves them out.
+  const result = await db.query(
+    `SELECT * FROM debates WHERE user_id = $1 ${includeArchived ? "" : "AND archived_at IS NULL"} ORDER BY created_at DESC`,
+    [userId],
+  );
   return result.rows.map(mapDebate);
 }
 

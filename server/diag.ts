@@ -238,7 +238,7 @@ export function mountDiagnostics(app: Hono<{ Variables: { userId: string } }>, d
     const userId = await soleUserId(db);
     if (!userId) return c.json(redactSecrets({ debates: [] }));
     const archived = includeArchived(c);
-    const debates = (await listDebates(db, userId)).filter((debate) => archived || !debate.archivedAt).slice(0, limit);
+    const debates = (await listDebates(db, userId, true)).filter((debate) => archived || !debate.archivedAt).slice(0, limit);
     const withSides = await Promise.all(
       debates.map(async (debate) => ({
         ...debate,

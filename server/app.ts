@@ -562,7 +562,7 @@ export function createApp(db: Db) {
     return c.json({ ok: true });
   });
 
-  app.get("/api/debates", async (c) => c.json(await listDebates(db, c.get("userId"))));
+  app.get("/api/debates", async (c) => c.json(await listDebates(db, c.get("userId"), c.req.query("history") === "1")));
 
   app.get("/api/debates/:id", async (c) => {
     const userId = c.get("userId");
@@ -819,7 +819,7 @@ export function createApp(db: Db) {
       listNotes(db, userId),
       listFolders(db, userId),
       listSources(db, userId),
-      listDebates(db, userId),
+      listDebates(db, userId, true),
       listActions(db, userId, 1000),
       listPicture(db, userId),
       listPreferences(db, userId),

@@ -62,10 +62,21 @@ export function ChatPage() {
   }, []);
 
   async function loadThread(id: string, flash = false) {
-    const [nextMessages, nextTraces] = await Promise.all([
-      api<Message[]>(`/api/conversations/${id}/messages`),
-      api<TraceSpan[]>(`/api/conversations/${id}/traces`),
-    ]);
+    let nextMessages: Message[];
+    let nextTraces: TraceSpan[];
+    try {
+      [nextMessages, nextTraces] = await Promise.all([
+        api<Message[]>(`/api/conversations/${id}/messages`),
+        api<TraceSpan[]>(`/api/conversations/${id}/traces`),
+      ]);
+    } catch (err) {
+      // A conversation that went into notebook history is not an error for him: just open the live chat.
+      if (err instanceof ApiError && err.status === 404) {
+        setParams({}, { replace: true });
+        return;
+      }
+      throw err;
+    }
     setMessages(nextMessages);
     const replay = nextTraces.filter((span) => flash || span.seen === false);
     setTraces(nextTraces.map((span) => ({ ...span, flash: flash || span.seen === false })));
