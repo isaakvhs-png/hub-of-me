@@ -24,6 +24,7 @@ export const DIAG_ROUTES = [
   "/api/diag/debates",
   "/api/diag/soul",
   "/api/diag/errors",
+  "/api/diag/conversation",
 ] as const;
 
 function diagnosticsToken(): string | null {
@@ -253,6 +254,39 @@ export function mountDiagnostics(app: Hono<{ Variables: { userId: string } }>, d
     if (!userId) return c.json(redactSecrets({ current: null, versions: [] }));
     const [current, versions] = await Promise.all([getSoul(db, userId), listSoulVersions(db, userId)]);
     return c.json(redactSecrets({ current, versions }));
+  });
+
+  /** The live conversation as he saw it, plus what it thought and did along the way, since the last fresh start. Read-only. */
+  app.get("/api/diag/conversation", async (c) => {
+    const limit = limitOf(c);
+    const userId = await soleUserId(db);
+    if (!userId) return c.json({ messages: [], thinking: [], actions: [], calls: [], state: null, mind: [] });
+    const marker = await db.query(`SELECT created_at FROM fresh_starts WHERE user_id = $1`, [userId]);
+    const since = marker.rows[0]?.created_at ? isoTime(marker.rows[0].created_at) : "1970-01-01T00:00:00.000Z";
+    const [messages, thinking, actions, calls, state, mind] = await Promise.all([
+      db.query(
+        `SELECT m.id, m.conversation_id, m.role, m.content, m.created_at FROM messages m JOIN conversations c ON c.id = m.conversation_id
+         WHERE c.user_id = $1 AND c.archived_at IS NULL ORDER BY m.created_at DESC LIMIT $2`,
+        [userId, limit],
+      ),
+      db.query(`SELECT what, why, tool, result, created_at FROM thinking_sessions WHERE user_id = $1 AND created_at >= $2 ORDER BY created_at DESC LIMIT $3`, [userId, since, limit * 3]),
+      db.query(`SELECT what, why, source, payload, created_at FROM action_log WHERE user_id = $1 AND created_at >= $2 ORDER BY created_at DESC LIMIT $3`, [userId, since, limit * 3]),
+      db.query(`SELECT role, model, job_kind, input_tokens, output_tokens, output_text, created_at FROM usage_records WHERE user_id = $1 AND created_at >= $2 ORDER BY created_at DESC LIMIT $3`, [userId, since, limit * 3]),
+      db.query(`SELECT * FROM inner_state WHERE user_id = $1`, [userId]),
+      db.query(`SELECT content, created_at FROM mind_notes WHERE user_id = $1 AND archived_at IS NULL ORDER BY created_at DESC LIMIT 5`, [userId]),
+    ]);
+    const at = (row: Record<string, unknown>) => ({ ...row, created_at: isoTime(row.created_at) });
+    return c.json(
+      redactSecrets({
+        since,
+        messages: messages.rows.map(at).reverse(),
+        thinking: thinking.rows.map(at).reverse(),
+        actions: actions.rows.map(at).reverse(),
+        calls: calls.rows.map(at).reverse(),
+        state: state.rows[0] ?? null,
+        mind: mind.rows.map(at),
+      }),
+    );
   });
 
   app.get("/api/diag/errors", async (c) => {
