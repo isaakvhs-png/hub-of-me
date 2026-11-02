@@ -297,6 +297,7 @@ async function turnInner(
   let takingIn = Boolean(text || files.length);
   for (let step = 0; step <= MAX_STEPS; step += 1) {
     const last = step === MAX_STEPS;
+    await input.onEvent?.({ type: "thinking", phase: takingIn ? "Taking it in" : step === 0 ? "Thinking" : "Answering", model: current });
     const soul = await getSoul(db, userId);
     const memory = await memoryView(db, userId);
     const conversation = await conversationView(db, userId, memory.conversationChars, userMessageId);

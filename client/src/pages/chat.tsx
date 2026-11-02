@@ -31,6 +31,8 @@ export function ChatPage() {
   const [traces, setTraces] = useState<TraceSpan[]>([]);
   const [work, setWork] = useState<{ status: string; label: string; targetId?: string | null } | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
+  /** What it is doing right now, and with which model, while a message is being handled. */
+  const [thinking, setThinking] = useState<{ phase: string; model: string } | null>(null);
   const [draftSpans, setDraftSpans] = useState<TraceSpan[]>([]);
   const [openTrace, setOpenTrace] = useState<TraceSpan | null>(null);
   const skipLoad = useRef(false);
@@ -168,6 +170,7 @@ export function ChatPage() {
         let donePayload: DumpResult | null = null;
         await readSse(response, (event, data) => {
           if (event === "span") setDraftSpans((prev) => [...prev, { ...(data as unknown as TraceSpan), flash: true }]);
+          if (event === "thinking" && typeof data.phase === "string") setThinking({ phase: data.phase, model: typeof data.model === "string" ? data.model : "" });
           if (event === "work" && typeof data.label === "string") {
             setWork({ status: typeof data.status === "string" ? data.status : "running", label: data.label, targetId: (data.targetId as string | null) ?? null });
           }
@@ -183,6 +186,7 @@ export function ChatPage() {
       setDraft(null);
       setDraftSpans([]);
       setWork(null);
+      setThinking(null);
       setFiled(result.notes);
       setText("");
       setLive("");
@@ -194,6 +198,7 @@ export function ChatPage() {
       setDraft(null);
       setError(err instanceof Error ? err.message : "The dump did not land.");
     } finally {
+      setThinking(null);
       sending.current = false;
       setBusy(false);
     }
@@ -299,18 +304,20 @@ export function ChatPage() {
               <div className="mt-1">
                 <TraceView text={draft} spans={draftSpans} onOpen={setOpenTrace} />
               </div>
-              {work ? <p className="mt-2 text-sm text-primary">{work.targetId ? <Link to={`/debates/${work.targetId}`}>{work.label}</Link> : work.label}</p> : null}
             </article>
           ) : null}
           {openTrace ? <TraceDetail span={openTrace} onClose={() => setOpenTrace(null)} /> : null}
-          {busy ? <p className="text-sm text-primary">Reading it, then filing.</p> : null}
-          {filed.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {filed.map((note) => (
-                <a key={note.id} href={`/library?note=${note.id}`} className="rounded-full border border-border px-3 py-1 text-xs text-primary">
-                  {note.status} · {note.title}
-                </a>
-              ))}
+          {busy ? (
+            <div className="flex items-center gap-2 text-sm text-primary" role="status" aria-live="polite">
+              <span className="inline-flex gap-1" aria-hidden="true">
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary [animation-delay:-0.3s]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary [animation-delay:-0.15s]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary" />
+              </span>
+              <span>
+                {thinking ? `${thinking.phase}${thinking.model ? ` · ${modelName(thinking.model)}` : ""}` : "Waking up"}
+                {work && work.status === "running" ? ` · ${work.label}` : ""}
+              </span>
             </div>
           ) : null}
           <div ref={bottom} />
@@ -384,4 +391,14 @@ interface SpeechRec {
   onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
   start: () => void;
   stop: () => void;
+}
+
+function modelName(id: string): string {
+  if (id.includes("sonnet")) return "Claude Sonnet";
+  if (id.includes("haiku")) return "Claude Haiku";
+  if (id.includes("opus")) return "Claude Opus";
+  if (id.includes("flash-lite")) return "Gemini Flash-Lite";
+  if (id.includes("gemini") && id.includes("pro")) return "Gemini Pro";
+  if (id.includes("gemini")) return "Gemini";
+  return id;
 }
