@@ -110,6 +110,8 @@ Read-only, for an assistant looking at this deployment. The routes exist only wh
 | `GET /api/diag/debates` | Recent debates with sides, models, and verdicts. Same `limit`. |
 | `GET /api/diag/soul` | Current soul and the version list. |
 | `GET /api/diag/errors` | Recent server errors, failed jobs, and failure lines from the action log. Same `limit`. |
+| `GET /api/diag/conversation` | The live conversation (all roles), its thinking steps, actions, AI calls with their raw output, inner state and mind notes since the last fresh start. |
+| `GET /api/diag/everything` | Every table, read-only (login sessions left out; password/token hashes and module credentials hidden). `table=`, `limit=` (max 5000), `since=fresh`. |
 
 There is no write route under `/api/diag`.
 

@@ -25,6 +25,7 @@ export const DIAG_ROUTES = [
   "/api/diag/soul",
   "/api/diag/errors",
   "/api/diag/conversation",
+  "/api/diag/everything",
 ] as const;
 
 function diagnosticsToken(): string | null {
@@ -287,6 +288,47 @@ export function mountDiagnostics(app: Hono<{ Variables: { userId: string } }>, d
         mind: mind.rows.map(at),
       }),
     );
+  });
+
+  /**
+   * Everything it stores, table by table, so a builder can diagnose without guessing. Read-only.
+   * New tables show up on their own. Login sessions are left out; password and token hashes and module credentials are hidden.
+   * ?table=notes for one table; ?limit=N rows per table (default 300, max 5000); ?since=fresh for only what came after the last fresh start.
+   */
+  app.get("/api/diag/everything", async (c) => {
+    const only = c.req.query("table");
+    const raw = Number(c.req.query("limit") ?? 300);
+    const limit = Number.isFinite(raw) ? Math.min(5000, Math.max(1, Math.floor(raw))) : 300;
+    const userId = await soleUserId(db);
+    let since: string | null = null;
+    if (c.req.query("since") === "fresh" && userId) {
+      const marker = await db.query(`SELECT created_at FROM fresh_starts WHERE user_id = $1`, [userId]);
+      since = marker.rows[0]?.created_at ? isoTime(marker.rows[0].created_at) : null;
+    }
+    const tables = (
+      await db.query<{ table_name: string }>(`SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY table_name`)
+    ).rows.map((row) => String(row.table_name)).filter((name) => name !== "sessions" && (!only || name === only));
+    const HIDDEN = new Set(["password_hash", "token_hash"]);
+    const out: Record<string, unknown> = {};
+    for (const table of tables) {
+      if (!/^[a-z_][a-z0-9_]*$/.test(table)) continue;
+      const columns = (
+        await db.query<{ column_name: string }>(`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1`, [table])
+      ).rows.map((row) => String(row.column_name));
+      const timeColumn = ["created_at", "started_at", "updated_at"].find((name) => columns.includes(name));
+      const where = since && timeColumn ? `WHERE ${timeColumn} >= $2` : "";
+      const order = timeColumn ? `ORDER BY ${timeColumn} DESC` : "";
+      const rows = (await db.query(`SELECT * FROM ${table} ${where} ${order} LIMIT $1`, since && timeColumn ? [limit, since] : [limit])).rows;
+      out[table] = rows.map((row: Record<string, unknown>) => {
+        const clean: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(row)) {
+          if (HIDDEN.has(key) || (table === "modules" && key === "config")) clean[key] = "(hidden)";
+          else clean[key] = value instanceof Date ? value.toISOString() : value;
+        }
+        return clean;
+      });
+    }
+    return c.json(redactSecrets({ since, limitPerTable: limit, tables: out }));
   });
 
   app.get("/api/diag/errors", async (c) => {
