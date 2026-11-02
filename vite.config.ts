@@ -24,7 +24,12 @@ export default defineConfig({
           { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
         ],
       },
+      injectRegister: false,
       workbox: {
+        // A new version takes over at once and old copies are thrown away, so a deploy is never hidden behind a cached page.
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
         navigateFallback: "/index.html",
         runtimeCaching: [
           {
