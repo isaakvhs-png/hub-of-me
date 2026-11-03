@@ -66,7 +66,7 @@ Four layers. Only the first is "the product"; the rest exist for it.
 
 **The entity.** One being, one conversation. Code keeps the books (validate, save, version, log, enforce boundaries, count cost); judgment stays in the model.
 
-**Its first moment.** After a fresh start, before he says anything, it takes stock of itself and where it is and writes its first intentions. So his first message is read against a strategy of its own instead of becoming its strategy.
+**Its first moment.** After a fresh start, before he says anything, it takes stock of itself and where it is: it is shown its six Nature lines and HOW_YOU_WORK.md, reasons out the design philosophy behind itself, and writes that into its self-portrait as a lens for what follows (round 11b, Isaak's idea; deliberately not DESIGN.md, so it reasons rather than copies, and his example moments don't prime it). It also writes its first intentions. So his first message is read against a strategy of its own instead of becoming its strategy.
 
 **Two beats when he sends something.** A language model answers whatever is in front of it, word by word; what it writes first shapes the rest. So it does not answer in one go. First it *takes in* what he sent: what it is, what it tells it about him, where it sits on its map of his life, what it leaves out; it keeps what is worth keeping and redraws the map. Only then does it answer, with what it took in in front of it. Same entity, same soul, same voice: not a filing machine around it. (This brings back the one good idea of spec v2's pipeline, understanding before answering, without the machine.)
 

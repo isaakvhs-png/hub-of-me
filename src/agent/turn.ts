@@ -31,7 +31,7 @@ import type { Note } from "../types.js";
 import { TOOLS, toolSpec } from "./registry.js";
 import { conversationView, memoryView, openNoteIds, saveInner, saveMap, setOpenNotes } from "./memory.js";
 import { reflectQuietly } from "./reflect.js";
-import { bodySense, lookAtMyself } from "./self.js";
+import { bodySense, lookAtMyself, mechanics } from "./self.js";
 import { archiveEvent, getBudget, getNote, insertEvent, insertSource, reviseNote, spendSince } from "../repo.js";
 import { archiveNote } from "../pipeline/dump.js";
 import { loadVisibleNotes } from "../pipeline/context.js";
@@ -347,7 +347,7 @@ async function turnInner(
               pinned: Boolean(pinned),
               log: last ? `${toolLog}\n(You have thought enough for this turn. Answer him now in say, with what you have; no tool.)` : toolLog,
               opening: takingStock
-                ? "TAKING STOCK. You have just started: this is your first moment since the fresh start, and nothing has happened between you and him yet. Before he is in the conversation, look at yourself and at where you are; write how you see yourself as your self-portrait and what you are going for as your intentions. Write what you took stock of under taken_in. Nothing you say in this step is shown to him."
+                ? `TAKING STOCK. You have just started: this is your first moment since the fresh start, and nothing has happened between you and him yet. Before he is in the conversation, look at yourself and at where you are. Read the six lines of your Nature (in your soul) and how you work (below), and reason out the design philosophy behind you: why you were made this way, what these lines and this machinery are trying to make you, and what they guard against. Write that reasoning into your self-portrait, so that you see it at every step from now on, and use it as the lens through which you read what he says and decide what to say. Write what you are going for as your intentions. Write what you took stock of under taken_in. Nothing you say in this step is shown to him.\n\nHOW YOU WORK:\n${mechanics()}`
                 : takingIn
                 ? "TAKING IN. Before you answer him, take in what he just sent. What is it? What does it tell you about him? Where does it sit on your map of his life, and what does it leave out? Keep what is worth keeping, and rewrite your portrait, self-portrait, map and intentions if they changed. Write what you took in under taken_in. Do not answer him yet: say is ignored in this step."
                 : input.cue === "GREETING DUE" ? "He just arrived." : input.cue === "CHECK IN" ? "You may speak if something is worth saying." : input.cue?.startsWith("WAKE") ? "You woke up on your own. He is away. Think, use tools, or rest; speak only if it is worth his time when he is back." : "Your move.",
