@@ -120,6 +120,7 @@ export async function lookAtMyself(db: Db, userId: string, input: { file?: strin
   await logAction(db, userId, { what: "looked at itself", why: "It took stock of how it works.", source: "agent", payload: {} });
   const soul = await getSoul(db, userId);
   const history = await db.query(
+    // Only since the last fresh start: what came before is his history, not its memory.
     `SELECT kind, at, text FROM (
        SELECT 'took in' AS kind, created_at AS at, result AS text FROM thinking_sessions WHERE user_id = $1 AND tool IS NULL
        UNION ALL
@@ -127,7 +128,7 @@ export async function lookAtMyself(db: Db, userId: string, input: { file?: strin
          FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.user_id = $1 AND c.archived_at IS NULL
        UNION ALL
        SELECT 'intentions', created_at, content FROM inner_versions WHERE user_id = $1 AND kind = 'intentions'
-     ) h ORDER BY at DESC LIMIT 24`,
+     ) h WHERE at >= COALESCE((SELECT created_at FROM fresh_starts WHERE user_id = $1), 'epoch') ORDER BY at DESC LIMIT 24`,
     [userId],
   );
   const recent = history.rows

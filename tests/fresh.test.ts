@@ -91,3 +91,17 @@ describe("a fresh start leaves nothing behind that could pass as knowledge", () 
     expect(sense).toContain("0 upcoming calendar item(s)");
   });
 });
+
+describe("looking at itself after a fresh start", () => {
+  it("does not show it what it took in or intended in earlier rounds", async () => {
+    const { db, user } = await fresh();
+    const { freshStart } = await import("../src/fresh.js");
+    const { lookAtMyself } = await import("../src/agent/self.js");
+    await db.query(`INSERT INTO thinking_sessions (id, user_id, what, why, tool, result) VALUES ('ts-old', $1, 'Took in', 'old', NULL, 'OLD ROUND THOUGHT')`, [user.id]);
+    await db.query(`INSERT INTO inner_versions (id, user_id, kind, content, why) VALUES ('iv-old2', $1, 'intentions', 'OLD ROUND INTENTIONS', 'old')`, [user.id]);
+    await freshStart(db);
+    const view = await lookAtMyself(db, user.id, {});
+    expect(view).not.toContain("OLD ROUND THOUGHT");
+    expect(view).not.toContain("OLD ROUND INTENTIONS");
+  });
+});
