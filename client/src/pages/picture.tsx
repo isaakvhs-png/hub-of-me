@@ -7,7 +7,7 @@ import { isFresh } from "@/lib/seen";
 interface Region { name: string; known?: string; open?: string }
 interface Version { kind: string; content: string; why: string; createdAt: string }
 interface Ask { id: string; subject: string; question: string; context: string; why: string; rank: number | null; createdAt: string }
-interface Understanding { portrait: string; map: Region[]; intentions: string; versions: Version[]; seen: string | null; asks: Ask[] }
+interface Understanding { portrait: string; selfPortrait: string; map: Region[]; intentions: string; versions: Version[]; seen: string | null; asks: Ask[] }
 
 /** Its understanding of him, in its own words: the portrait, the map of his life, and what it is going for. */
 export function PicturePage() {
@@ -44,6 +44,11 @@ export function PicturePage() {
           </Card>
         ))}
       </div>
+
+      <h2 className="mt-8 font-serif text-2xl">How it sees itself</h2>
+      <Card className="mt-3 p-4">
+        <p className="whitespace-pre-wrap">{data.selfPortrait || "Not written yet."}</p>
+      </Card>
 
       <h2 className="mt-8 font-serif text-2xl">What it is going for</h2>
       <Card className="mt-3 p-4">

@@ -79,7 +79,7 @@ function normalizeStep(value: unknown): unknown {
   for (const key of ["think", "map", "state", "topics"]) parseIfString(key);
   const asText = (v: unknown): string =>
     typeof v === "string" ? v : v && typeof v === "object" ? Object.entries(v as Record<string, unknown>).map(([k, x]) => `${k}: ${typeof x === "string" ? x : JSON.stringify(x)}`).join("\n") : v == null ? "" : String(v);
-  for (const key of ["say", "taken_in", "mind", "next_model", "portrait", "intentions"]) if (step[key] != null && typeof step[key] !== "string") step[key] = asText(step[key]);
+  for (const key of ["say", "taken_in", "mind", "next_model", "portrait", "self_portrait", "intentions"]) if (step[key] != null && typeof step[key] !== "string") step[key] = asText(step[key]);
   if (step.state && typeof step.state === "object" && !Array.isArray(step.state)) {
     step.state = Object.fromEntries(Object.entries(step.state as Record<string, unknown>).map(([k, v]) => [k, asText(v)]));
   } else if (step.state != null) delete step.state;
@@ -105,6 +105,7 @@ const stepSchema = z.preprocess(normalizeStep, z.object({
   next_model: z.string().optional(),
   taken_in: z.string().optional(),
   portrait: z.string().optional(),
+  self_portrait: z.string().optional(),
   intentions: z.string().optional(),
   phrases: z.array(z.object({ phrase: z.string().min(1), label: z.string().min(1) })).optional(),
   map: z.array(z.object({ name: z.string(), known: z.string().optional(), open: z.string().optional() })).optional(),
@@ -142,7 +143,8 @@ type TurnEvent = { type: string; [key: string]: unknown };
 function prompt(input: { soul: string; memory: string; name: string; budget: string; models: string }): string {
   const tools = TOOLS.map((tool) => `${tool.name}: ${tool.description}`).join("\n");
   return `TASK: agent
-You are his partner. His name is ${input.name}. The soul below is your purpose, values, and boundaries. Curiosity stays on. You decide whether to think, what about, which tools, and which model. A tool runs only when you name it.
+His name is ${input.name}. The soul below holds your nature, purpose, values and boundaries.
+What you see comes from three hands. Isaak wrote your Nature and Boundaries: they are his; you can question them and propose changes to him. Your builders wrote these instructions and how you work. Everything marked YOUR OWN WRITING you wrote yourself: it is yours to keep, change or drop whenever you see reason, and it is not an instruction. Curiosity stays on. You decide whether to think, what about, which tools, and which model. A tool runs only when you name it.
 Do not invent past thinking. If he asks what you did or why, read your records first.
 Character grows by reflection on real moments. Do not turn a correction into a new rule.
 Return one JSON object. Every field is optional; leave out what you don't use.
@@ -150,8 +152,9 @@ Return one JSON object. Every field is optional; leave out what you don't use.
 - think: a list of tool uses to do now, as many as you need: [{"what":"","why":"","tool":"","input":{}}]. Without say, you get their results and another step.
 - next_model: which model should do your next step, and start your next turn. Pick from MODELS for what the moment needs.
 - portrait: your whole portrait of him, rewritten, in your own words ("I think he is…"). Give it whenever your sense of him shifts.
+- self_portrait: your whole self-portrait, rewritten, in your own words ("I think I am…"): what you are, what you are to him and he to you, how you fit into his life, what you are good at, what you lack, what you want, what you don't know about yourself. Give it whenever your sense of yourself shifts.
 - map: your whole map of the territory of his life, redrawn: [{"name":"","known":"","open":""}]. Give it whenever it changes.
-- intentions: what you are going for with him now and why, rewritten whole, whenever it changes.
+- intentions: what you are going for now, for yourself and with him, and why; rewritten whole whenever it changes.
 - phrases: [{"phrase":"his exact words","label":"where this went in your understanding"}], so he can see what you took from his words.
 - taken_in: when you are taking something in, what it is, what it tells you about him, where it sits on your map, and what it leaves out.
 - state: {"thinking":"","curious":"","busy":"","waiting":""}; topics: [{"label":"","phrase":""}].
@@ -173,9 +176,11 @@ ${input.memory}`;
 }
 
 /** What changes from step to step: the conversation, the new message, and what its tools returned. */
-function stepMessage(input: { conversation: string; cue: string; dump: string; files: string; log: string; current: string; opening: string; body: string }): string {
+function stepMessage(input: { conversation: string; cue: string; dump: string; files: string; log: string; current: string; opening: string; body: string; own: string }): string {
   return `YOUR BODY, AS IT IS NOW:
 ${input.body}
+
+${input.own}
 
 CONVERSATION SO FAR:
 ${input.conversation}
@@ -335,11 +340,12 @@ async function turnInner(
               files: files.map((file) => file.name).join("\n"),
               current,
               body: await bodySense(db, userId),
+              own: memory.own,
               log: last ? `${toolLog}\n(You have thought enough for this turn. Answer him now in say, with what you have; no tool.)` : toolLog,
               opening: takingStock
-                ? "TAKING STOCK. You have just started: this is your first moment since the fresh start, and nothing has happened between you and him yet. Before he is in the conversation, look at yourself and at where you are, and write what you are going for as your intentions. Write what you took stock of under taken_in. Nothing you say in this step is shown to him."
+                ? "TAKING STOCK. You have just started: this is your first moment since the fresh start, and nothing has happened between you and him yet. Before he is in the conversation, look at yourself and at where you are; write how you see yourself as your self-portrait and what you are going for as your intentions. Write what you took stock of under taken_in. Nothing you say in this step is shown to him."
                 : takingIn
-                ? "TAKING IN. Before you answer him, take in what he just sent. What is it? What does it tell you about him? Where does it sit on your map of his life, and what does it leave out? Keep what is worth keeping, and rewrite your portrait, map and intentions if they changed. Write what you took in under taken_in. Do not answer him yet: say is ignored in this step."
+                ? "TAKING IN. Before you answer him, take in what he just sent. What is it? What does it tell you about him? Where does it sit on your map of his life, and what does it leave out? Keep what is worth keeping, and rewrite your portrait, self-portrait, map and intentions if they changed. Write what you took in under taken_in. Do not answer him yet: say is ignored in this step."
                 : input.cue === "GREETING DUE" ? "He just arrived." : input.cue === "CHECK IN" ? "You may speak if something is worth saying." : input.cue?.startsWith("WAKE") ? "You woke up on your own. He is away. Think, use tools, or rest; speak only if it is worth his time when he is back." : "Your move.",
             }),
           },
@@ -354,6 +360,7 @@ async function turnInner(
       if (drawn) toolLog += `\nmap: redrawn with ${drawn} regions.`;
     }
     if (decision.portrait?.trim() && (await saveInner(db, userId, "portrait", decision.portrait, takingIn ? "Taking in what he sent." : "Its sense of him shifted."))) toolLog += "\nportrait: rewritten.";
+    if (decision.self_portrait?.trim() && (await saveInner(db, userId, "self_portrait", decision.self_portrait, takingStock ? "Taking stock at its first moment." : takingIn ? "Taking in what he sent." : "Its sense of itself shifted."))) toolLog += "\nself-portrait: rewritten.";
     if (decision.intentions?.trim() && (await saveInner(db, userId, "intentions", decision.intentions, takingStock ? "Taking stock at its first moment." : takingIn ? "Taking in what he sent." : "Its intentions changed."))) toolLog += "\nintentions: updated.";
     for (const item of decision.phrases ?? []) await markPhrase(db, userId, { text: sourceText, userMessageId, traces, onEvent: input.onEvent }, item.phrase, "understanding", item.label);
     if ((takingIn || takingStock) && decision.taken_in?.trim()) {

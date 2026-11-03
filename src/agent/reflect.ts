@@ -15,6 +15,7 @@ const reflectionSchema = z.object({
     })
     .optional(),
   portrait: z.string().optional(),
+  self_portrait: z.string().optional(),
   map: z.array(z.object({ name: z.string(), known: z.string().optional(), open: z.string().optional() })).optional(),
   intentions: z.string().optional(),
   asks: z
@@ -49,7 +50,7 @@ You are stepping back to think, alone, in your own words. Nobody reads this but 
 Think about what you set out to think about. Use everything below. Notice what you don't know yet, what doesn't fit, and what is new ground.
 Your character grows only from real moments like these. If something should change in how you are, write it in the soul as a general principle, not as his words or a rule. Nature and Boundaries are Isaak's: you cannot change them, but if you think one should change, ask him (as an ask) and say why.
 Return one JSON object; every field except thoughts is optional:
-{"thoughts":"what you now think, in your own words","soul":{"reason":"","sections":[{"heading":"","body":""}]},"portrait":"your whole portrait of him, rewritten","map":[{"name":"","known":"","open":""}],"intentions":"what you are going for with him now and why","asks":[{"subject":"","question":"","context":"","why":""}]}
+{"thoughts":"what you now think, in your own words","soul":{"reason":"","sections":[{"heading":"","body":""}]},"portrait":"your whole portrait of him, rewritten","self_portrait":"your whole self-portrait, rewritten","map":[{"name":"","known":"","open":""}],"intentions":"what you are going for now, for yourself and with him, and why","asks":[{"subject":"","question":"","context":"","why":""}]}
 Only return soul sections you are changing. An ask must make sense read cold: name its subject, why now, and what the answer would change.
 
 WHAT YOU ARE THINKING ABOUT:
@@ -60,6 +61,8 @@ ${soul.content}
 
 WHAT YOU HAVE IN MIND:
 ${memory.text}
+
+${memory.own}
 
 CONVERSATION:
 ${conversation}`,
@@ -86,6 +89,7 @@ ${conversation}`,
     }
   }
   if (out.portrait?.trim() && (await saveInner(db, userId, "portrait", out.portrait, `Reflecting: ${input.cause}`))) done.push("portrait rewritten");
+  if (out.self_portrait?.trim() && (await saveInner(db, userId, "self_portrait", out.self_portrait, `Reflecting: ${input.cause}`))) done.push("self-portrait rewritten");
   if (out.map?.length && (await saveMap(db, userId, out.map, `Reflecting: ${input.cause}`))) done.push("map redrawn");
   if (!out.intentions?.trim() && out.mind?.trim()) out.intentions = out.mind;
   if (out.intentions?.trim() && (await saveInner(db, userId, "intentions", out.intentions, `Reflecting: ${input.cause}`))) done.push("intentions updated");

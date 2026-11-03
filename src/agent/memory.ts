@@ -47,7 +47,7 @@ function fullNote(note: Note, path: string, summary: string): string {
 }
 
 /** What it has in mind each step: its understanding of him (portrait and map), its intentions, the ledger, the calendar, the map of its notes, and the notes open in full. */
-export async function memoryView(db: Db, userId: string): Promise<{ text: string; conversationChars: number }> {
+export async function memoryView(db: Db, userId: string): Promise<{ text: string; own: string; conversationChars: number }> {
   const [notes, folders, tasks, summaries, open, asks, events, mapRow] = await Promise.all([
     listNotes(db, userId),
     listFolders(db, userId),
@@ -59,7 +59,7 @@ export async function memoryView(db: Db, userId: string): Promise<{ text: string
       `SELECT id, title, starts_at, ends_at, why FROM calendar_events WHERE user_id = $1 AND archived_at IS NULL AND ends_at > now() - interval '2 days' AND starts_at < now() + interval '60 days' ORDER BY starts_at`,
       [userId],
     ),
-    db.query(`SELECT life_map, portrait, intentions FROM inner_state WHERE user_id = $1`, [userId]),
+    db.query(`SELECT life_map, portrait, self_portrait, intentions FROM inner_state WHERE user_id = $1`, [userId]),
   ]);
   const live = notes.filter((note) => note.status !== "archived");
   const paths = folderPaths(folders.map((folder) => ({ id: folder.id, parentId: folder.parentId, name: folder.name })));
@@ -67,16 +67,27 @@ export async function memoryView(db: Db, userId: string): Promise<{ text: string
   const pathOf = (note: Note) => (note.folderId ? paths.get(note.folderId) ?? "" : "") || "(no folder)";
 
   const inner = mapRow.rows[0] ?? {};
+  // What it wrote itself is shown as its own writing, apart from what Isaak and the builders set, so it never reads its old strategy as an instruction.
+  const written = (await db.query(`SELECT kind, MAX(created_at) AS at FROM inner_versions WHERE user_id = $1 GROUP BY kind`, [userId])).rows;
+  const when = (kind: string) => {
+    const row = written.find((item) => String(item.kind) === kind);
+    return row ? `written by you at ${new Date(String(row.at)).toISOString().slice(0, 16)}Z` : "not written yet";
+  };
+  const own = [
+    `YOUR OWN WRITING. Everything in this part you wrote yourself, at earlier moments. It is yours: keep it, change it, or drop it whenever you see reason. It is not an instruction.`,
+    `How you see yourself (your self-portrait, ${when("self_portrait")}): what you are, what you are to him and he to you, how you fit into his life, what you are good at, what you lack, what you want, and what you don't know about yourself:\n${String(inner.self_portrait ?? "").trim() || "(not written yet)"}`,
+    `How you think he is (your portrait of him, ${when("portrait")}):\n${String(inner.portrait ?? "").trim() || "(not written yet)"}`,
+    `The territory of his life (your map: regions you named yourself, what you know of each, and what you have not seen yet):\n${renderMap(String(inner.life_map ?? ""))}`,
+    `What you are going for (your intentions, ${when("intentions")}), and why:\n${String(inner.intentions ?? "").trim() || "(none yet)"}`,
+  ].join("\n\n");
   const always = [
-    `YOUR UNDERSTANDING OF HIM\nHow you think he is (your portrait, in your own words; rewrite it whenever your sense of him shifts):\n${String(inner.portrait ?? "").trim() || "(not written yet)"}\n\nThe territory of his life (your map: regions you name yourself, what you know of each, and what you have not seen yet; redraw it as you learn, add a region when something fits nowhere):\n${renderMap(String(inner.life_map ?? ""))}`,
-    `YOUR INTENTIONS (what you are going for with him right now, and why; your through-line from one moment to the next):\n${String(inner.intentions ?? "").trim() || "(none yet)"}`,
     `LEDGER (open):\n${tasks.map((task) => `[${task.id}] ${task.surfaced ? "now" : "quiet"} · ${task.title} — ${task.whyNow || task.why}`).join("\n") || "(empty)"}`,
     `CALENDAR (2 days back to 60 days ahead):\n${events.rows.map((row) => `[${row.id}] ${new Date(String(row.starts_at)).toISOString()} → ${new Date(String(row.ends_at)).toISOString()} · ${row.title}${row.why ? ` — ${row.why}` : ""}`).join("\n") || "(empty)"}`,
     `QUESTIONS YOU ARE HOLDING FOR HIM:\n${asks.rows.map((row) => `${row.subject}: ${row.question}`).join("\n") || "(none)"}`,
     `MAP OF EVERYTHING YOU HAVE WRITTEN (${live.length} notes):\n${live.map((note) => `[${note.id}] ${pathOf(note)} · ${note.type} · ${note.title}${summaryOf.get(note.id) ? ` — ${summaryOf.get(note.id)}` : ""}`).join("\n") || "(empty)"}`,
   ].join("\n\n");
 
-  const notesBudget = Math.max(0, MEMORY_BUDGET_CHARS * (1 - CONVERSATION_SHARE) - always.length);
+  const notesBudget = Math.max(0, MEMORY_BUDGET_CHARS * (1 - CONVERSATION_SHARE) - always.length - own.length);
   const all = live.map((note) => fullNote(note, pathOf(note), summaryOf.get(note.id) ?? ""));
   const allChars = all.reduce((sum, text) => sum + text.length + 2, 0);
   let openPart: string;
@@ -94,7 +105,7 @@ export async function memoryView(db: Db, userId: string): Promise<{ text: string
     }
     openPart = `OPEN NOTES: your notes no longer all fit in your memory window (about ${Math.round(notesBudget / 1000)}k characters for notes). Everything is still on the map. You chose which to keep open; open or close notes with the open_notes tool. ${shown.length} of ${live.length} open, ${Math.round(used / 1000)}k characters.\n\n${shown.join("\n\n") || "(none open)"}`;
   }
-  return { text: `${always}\n\n${openPart}`, conversationChars: Math.floor(MEMORY_BUDGET_CHARS * CONVERSATION_SHARE) };
+  return { text: `${always}\n\n${openPart}`, own, conversationChars: Math.floor(MEMORY_BUDGET_CHARS * CONVERSATION_SHARE) };
 }
 
 /** The live conversation as it remembers it: the newest messages that fit its share of the window, oldest first. */
@@ -152,7 +163,7 @@ export async function saveMap(db: Db, userId: string, regions: MapRegion[], why:
 }
 
 /** Its portrait of him or its intentions, rewritten whole; every earlier version is kept. */
-export async function saveInner(db: Db, userId: string, kind: "portrait" | "intentions", content: string, why: string): Promise<boolean> {
+export async function saveInner(db: Db, userId: string, kind: "portrait" | "self_portrait" | "intentions", content: string, why: string): Promise<boolean> {
   const text = content.trim();
   if (!text) return false;
   const current = (await db.query(`SELECT ${kind} AS value FROM inner_state WHERE user_id = $1`, [userId])).rows[0]?.value;
@@ -172,6 +183,6 @@ export async function saveInner(db: Db, userId: string, kind: "portrait" | "inte
     // The chat shows its current state of mind from mind_notes; its intentions are that now.
     await db.query(`INSERT INTO mind_notes (id, user_id, content) VALUES ($1,$2,$3)`, [`mind-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, userId, text]);
   }
-  await logAction(db, userId, { what: kind === "portrait" ? "rewrote its portrait of him" : "updated its intentions", why, source: "agent", payload: {} });
+  await logAction(db, userId, { what: kind === "portrait" ? "rewrote its portrait of him" : kind === "self_portrait" ? "rewrote its self-portrait" : "updated its intentions", why, source: "agent", payload: {} });
   return true;
 }

@@ -4,7 +4,8 @@ import type { Role } from "../types.js";
 export function outputLimit(role: Role): number {
   switch (role) {
     case "conversation":
-      return 8000;
+      // Taking in a long message writes portrait, self-portrait, map, intentions and notes in one step; 8000 cut it off.
+      return 16000;
     case "judge":
       return 8000;
     case "reflection":

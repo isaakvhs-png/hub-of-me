@@ -303,7 +303,7 @@ export function createApp(db: Db) {
     // Its understanding of him: the portrait and the map of his life, its intentions, and how they changed over time.
     const userId = c.get("userId");
     const [inner, versions, seen, asks] = await Promise.all([
-      db.query(`SELECT portrait, life_map, intentions, updated_at FROM inner_state WHERE user_id = $1`, [userId]),
+      db.query(`SELECT portrait, self_portrait, life_map, intentions, updated_at FROM inner_state WHERE user_id = $1`, [userId]),
       db.query(`SELECT kind, content, why, created_at FROM inner_versions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 60`, [userId]),
       seenAt(db, userId, "picture"),
       listInfoRequests(db, userId),
@@ -313,6 +313,7 @@ export function createApp(db: Db) {
     try { map = JSON.parse(String(row.life_map || "[]")); } catch { map = []; }
     return c.json({
       portrait: String(row.portrait ?? ""),
+      selfPortrait: String(row.self_portrait ?? ""),
       map,
       intentions: String(row.intentions ?? ""),
       versions: versions.rows.map((v) => ({ kind: String(v.kind), content: String(v.content), why: String(v.why), createdAt: new Date(String(v.created_at)).toISOString() })),

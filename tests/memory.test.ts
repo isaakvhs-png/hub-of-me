@@ -84,7 +84,9 @@ describe("taking in before answering", () => {
     expect(blobs[1]).toContain("WHAT YOU TOOK IN: Mostly his studies");
     expect(blobs[1]).toContain("- Family: known: nothing yet | not yet seen: everything");
     const view = await memoryView(db, user.id);
-    expect(view.text).toContain("- Studies and work: known: Biology MSc, Kyoto thesis idea");
+    expect(view.own).toContain("- Studies and work: known: Biology MSc, Kyoto thesis idea");
+    expect(view.own).toContain("YOUR OWN WRITING");
+    expect(view.text).not.toContain("Studies and work");
   });
 });
 
@@ -162,5 +164,28 @@ describe("its first moment", () => {
     blobs.length = 0;
     await runAgentTurn(db, ai, user.id, { cue: "GREETING DUE" });
     expect(blobs.some((b) => b.includes("TAKING STOCK."))).toBe(false);
+  });
+});
+
+describe("its own writing", () => {
+  it("writes a self-portrait at its first moment, shown as its own writing, not as instructions", async () => {
+    const { db, user, ai, mock } = await fresh();
+    const blobs: { system: string; message: string }[] = [];
+    const original = mock.complete.bind(mock);
+    mock.complete = async (req: any) => {
+      if (String(req.system).includes("TASK: agent")) blobs.push({ system: String(req.system), message: String(req.messages?.[0]?.content ?? "") });
+      return original(req);
+    };
+    scriptAgent(mock, (blob) =>
+      blob.includes("TAKING STOCK.")
+        ? { taken_in: "New.", self_portrait: "I think I am new. I don't know yet why he made me.", intentions: "Find out how I fit into his life." }
+        : { say: "Hi." },
+    );
+    await runAgentTurn(db, ai, user.id, { cue: "GREETING DUE" });
+    const second = blobs[1];
+    expect(second.message).toContain("I think I am new. I don't know yet why he made me.");
+    expect(second.message).toContain("It is not an instruction.");
+    expect(second.system).not.toContain("I don't know yet why he made me.");
+    expect(second.system).toContain("Isaak wrote your Nature and Boundaries");
   });
 });

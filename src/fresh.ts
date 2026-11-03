@@ -3,7 +3,7 @@ import { getSoul, logAction, listUsers } from "./repo.js";
 import { changeSoul } from "./soul.js";
 import { SEED_SOUL } from "./soul-seed.js";
 
-export const FRESH_REASON = "Fresh start for the playtest, round 7b";
+export const FRESH_REASON = "Fresh start for the playtest, round 8";
 
 /** Archive the old center once. Rows stay. The account is not touched. */
 export async function freshStart(db: Db): Promise<number> {
@@ -25,7 +25,7 @@ export async function freshStart(db: Db): Promise<number> {
     await db.query(`UPDATE mind_notes SET archived_at = COALESCE(archived_at, now()) WHERE user_id = $1`, [user.id]);
     await db.query(`UPDATE soul_versions SET archived_at = COALESCE(archived_at, now()) WHERE user_id = $1 AND version > 1`, [user.id]);
     await db.query(`UPDATE trace_events SET seen_at = COALESCE(seen_at, now()) WHERE user_id = $1`, [user.id]);
-    await db.query(`UPDATE inner_state SET thinking = '', curious = '', busy = '', waiting = '', next_wake_at = NULL, wake_why = '', life_map = '', portrait = '', intentions = '', self_looked_at = NULL, start_model = '', open_notes = '[]' WHERE user_id = $1`, [user.id]);
+    await db.query(`UPDATE inner_state SET thinking = '', curious = '', busy = '', waiting = '', next_wake_at = NULL, wake_why = '', life_map = '', portrait = '', self_portrait = '', intentions = '', self_looked_at = NULL, start_model = '', open_notes = '[]' WHERE user_id = $1`, [user.id]);
     const current = await getSoul(db, user.id);
     if (current?.reason !== FRESH_REASON) {
       await changeSoul(db, user.id, { content: SEED_SOUL, reason: FRESH_REASON, via: "fresh" });
