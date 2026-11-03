@@ -854,8 +854,9 @@ async function availableModels(db: Db, userId: string, settings: Settings): Prom
   }
   if (anthropic) {
     list.push({ id: "claude-haiku-5-5", about: "Claude's small model. About EUR 0.001 per step. Fast; takes things at face value." });
-    // Sonnet is where a turn starts until it chooses otherwise: stepping down is easy to judge, stepping up needs knowing what you are missing.
-    list.push({ id: "claude-sonnet-5-5", about: "Claude's mid-size model. About EUR 0.015 per step, roughly 15 times Haiku. Slower; reads between the lines, holds many threads, weighs a life.", everyday: true });
+    list.push({ id: "claude-sonnet-5-5", about: "Claude's mid-size model. About EUR 0.015 per step, roughly 15 times Haiku. Slower; reads between the lines, holds many threads, weighs a life." });
+    // Experiment (3 Nov, round 10): a turn starts on Opus until it chooses otherwise, to see whether the strongest mind reads him differently.
+    list.push({ id: "claude-opus-5-5", about: "Claude's largest model. About EUR 0.04 per step, roughly 2 to 3 times Sonnet. Slowest; the deepest judgment, best at weighing things against each other and noticing what is not said.", everyday: true });
   }
   if (gemini) list.push({ id: "gemini-2.5-pro", about: "Google's large model. About EUR 0.012 per step. A different mind from Claude; strong on long material." });
   if (!list.length) throw new Error("No AI model is available. Set ANTHROPIC_API_KEY or GEMINI_API_KEY.");

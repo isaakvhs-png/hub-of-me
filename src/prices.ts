@@ -31,6 +31,13 @@ export const LIST_PRICES: Record<string, Price> = {
     longInputPerMTokUsd: 0.5,
     longOutputPerMTokUsd: 2.5,
   },
+  // Opus 5.5: $4 / $20, 5-minute cache write $5, cache read $0.20 (platform.claude.com model page, checked 3 Nov 2026).
+  "claude-opus-5-5": {
+    inputPerMTokUsd: 4,
+    outputPerMTokUsd: 20,
+    cacheWritePerMTokUsd: 5,
+    cacheReadPerMTokUsd: 0.2,
+  },
   "claude-sonnet-5-5": {
     inputPerMTokUsd: 2,
     outputPerMTokUsd: 10,

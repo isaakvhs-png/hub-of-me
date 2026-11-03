@@ -165,3 +165,9 @@ Next:
 
 ## 11. Parked ideas
 - **It proposes changes to itself.** Beyond its nature: it notices what it lacks ("wish") and proposes a change; a coding agent turns it into a change on GitHub; Isaak approves before anything goes live.
+- **Merging it and Isaak into one "package"** (his digital half). Parked 3 Nov. Why it came up: the split between him, it and "us" feels arbitrary. Open concern: a mirror and an honest stance need it to be someone else.
+
+## 12. Next round (after the Opus experiment, round 10)
+- **Reasons without examples**: a letter in Isaak's voice about why it exists, read at its first moment; it writes its own self-portrait and intentions from it. Paused, to assess next.
+- Isaak's observation (3 Nov): it treats "flag that I'm unsure" as enough proportion and still advises. He'd like it to say only what it is sure about, unless he asks for its guesses. To assess together with the letter.
+
