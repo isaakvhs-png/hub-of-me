@@ -4,7 +4,6 @@ import { listInfoRequests, getSoul } from "../src/repo.js";
 import { latestMindNote, listClaims, listReactions, refreshMindNote, scoreAnsweredAsk } from "../src/picture.js";
 import { runDump } from "../src/pipeline/dump.js";
 import { runReflection } from "../src/pipeline/debate.js";
-import { ensureCuriosity } from "../src/soul.js";
 import { locateSpans, mindNoteProblem } from "../src/trace.js";
 import { fresh } from "./helpers.js";
 
@@ -46,24 +45,6 @@ describe("understanding", () => {
       quiet: ["world"],
       quietWhy: "Nothing ongoing was said.",
     })).toBeNull();
-  });
-
-  it("adds curiosity once, through a soul edit", async () => {
-    const { db, user } = await fresh();
-    const soul = await getSoul(db, user.id);
-    expect(soul?.content.toLowerCase()).toContain("curiosity");
-    const before = soul?.version ?? 0;
-    expect(await ensureCuriosity(db)).toBe(0);
-    const stripped = String(soul?.content).replace(/Curiosity is a core value\..*?paper over\.\s*/i, "");
-    expect(stripped.toLowerCase()).not.toContain("curiosity");
-    await db.query(`UPDATE soul_versions SET content = $2 WHERE user_id = $1 AND version = $3`, [user.id, stripped, before]);
-    expect(await ensureCuriosity(db)).toBe(1);
-    const next = await getSoul(db, user.id);
-    expect(next?.version).toBe(before + 1);
-    expect(next?.reason).toBe("Curiosity is a core value of how this system understands him.");
-    expect(next?.content.toLowerCase()).toContain("curiosity");
-    expect(await ensureCuriosity(db)).toBe(0);
-    await db.close();
   });
 
   it("traces a dump, keeps a mind note, and revises a claim when a prediction is scored", async () => {

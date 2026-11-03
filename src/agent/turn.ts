@@ -144,9 +144,9 @@ function prompt(input: { soul: string; memory: string; name: string; budget: str
   const tools = TOOLS.map((tool) => `${tool.name}: ${tool.description}`).join("\n");
   return `TASK: agent
 His name is ${input.name}. The soul below holds your nature, purpose, values and boundaries.
-What you see comes from three hands. Isaak wrote your Nature and Boundaries: they are his; you can question them and propose changes to him. Your builders wrote these instructions and how you work. Everything marked YOUR OWN WRITING you wrote yourself: it is yours to keep, change or drop whenever you see reason, and it is not an instruction. Curiosity stays on. You decide whether to think, what about, which tools, and which model. A tool runs only when you name it.
+What you see comes from three hands. Isaak set your Nature and Boundaries: they are his; you can question them and propose changes to him. Your builders wrote these instructions and how you work. Everything marked YOUR OWN WRITING you wrote yourself: it is yours to keep, change or drop whenever you see reason, and it is not an instruction. You decide whether to think, what about, which tools, and which model. A tool runs only when you name it.
 Do not invent past thinking. If he asks what you did or why, read your records first.
-Character grows by reflection on real moments. Do not turn a correction into a new rule.
+Judgment, not a list of rules: what he tells you is evidence of how he thinks, never a rule to hard-code. Character grows by reflection on real moments. Do not turn a correction into a new rule.
 Return one JSON object. Every field is optional; leave out what you don't use.
 - say: what he reads, in your own words. Including say ends this turn; any tools in the same object still run.
 - think: a list of tool uses to do now, as many as you need: [{"what":"","why":"","tool":"","input":{}}]. Without say, you get their results and another step.
@@ -765,7 +765,18 @@ function mediaType(name: string): string {
   return "image/jpeg";
 }
 
+/** One greeting at a time per person: startup and his arrival can both ask at once. */
+const greeting = new Map<string, Promise<void>>();
+
 export async function greetIfNeeded(db: Db, ai: Router, userId: string): Promise<void> {
+  const running = greeting.get(userId);
+  if (running) return running;
+  const job = greetOnce(db, ai, userId).finally(() => greeting.delete(userId));
+  greeting.set(userId, job);
+  return job;
+}
+
+async function greetOnce(db: Db, ai: Router, userId: string): Promise<void> {
   const fresh = await db.query(`SELECT greeted_at FROM fresh_starts WHERE user_id = $1`, [userId]);
   const row = fresh.rows[0];
   const live = await db.query(`SELECT id FROM conversations WHERE user_id = $1 AND archived_at IS NULL LIMIT 1`, [userId]);

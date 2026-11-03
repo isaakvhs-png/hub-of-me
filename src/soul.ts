@@ -6,7 +6,7 @@ import type { SoulVersion } from "./types.js";
 const ALLOWED = new Set(["reflection", "user", "seed", "repair", "fresh"]);
 
 export const REQUIRED_SOUL_HEADINGS = ["Nature", "Purpose", "Values", "Boundaries"] as const;
-/** Isaak wrote these. Reflection and debates can propose changes to him (as an ask), but never edit them. */
+/** Isaak's lines. Reflection and debates can propose changes to him (as an ask), but never edit them. */
 export const PROTECTED_SOUL_HEADINGS = ["Nature", "Boundaries"];
 
 /** A hint for reflection when character is turning into instructions. Not a veto by itself. */
@@ -104,28 +104,6 @@ export function sectionBody(content: string, heading: string): string {
     }
   }
   return lines.slice(start + 1, end).join("\n").trim();
-}
-
-const CURIOSITY = "Curiosity is a core value. Understand him before steering him. What is not yet understood is something to explore, not a gap to paper over.";
-
-/** One soul edit for installs that predate curiosity. No-op once the word is already there. */
-export async function ensureCuriosity(db: Db): Promise<number> {
-  const users = await listUsers(db);
-  let edited = 0;
-  for (const user of users) {
-    const soul = await getSoul(db, user.id);
-    if (!soul || /curiosity/i.test(soul.content)) continue;
-    const heading = sectionBody(soul.content, "Values") ? "Values" : sectionBody(soul.content, "Values and long-term direction") ? "Values and long-term direction" : "Values";
-    const existing = sectionBody(soul.content, heading);
-    const body = existing ? `${existing}\n\n${CURIOSITY}` : CURIOSITY;
-    await changeSoul(db, user.id, {
-      content: mergeSoulSections(soul.content, [{ heading, body }]),
-      reason: "Curiosity is a core value of how this system understands him.",
-      via: "repair",
-    });
-    edited += 1;
-  }
-  return edited;
 }
 
 /** If the current soul is missing required sections, append a new version with version 1's text. */

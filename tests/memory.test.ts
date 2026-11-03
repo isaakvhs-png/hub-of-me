@@ -98,7 +98,7 @@ describe("nature", () => {
     const { getSoul } = await import("../src/repo.js");
     expect(SEED_SOUL).toContain("## Nature");
     const merged = mergeSoulSections(SEED_SOUL, [{ heading: "Nature", body: "You are an assistant." }, { heading: "Character", body: "Warm and dry." }]);
-    expect(merged).toContain("You are someone getting to know Isaak");
+    expect(merged).toContain("You are getting to know Isaak over a long time");
     expect(merged).not.toContain("You are an assistant.");
     expect(merged).toContain("Warm and dry.");
     void changeSoul; void getSoul; void ai; void db; void user;
@@ -186,6 +186,6 @@ describe("its own writing", () => {
     expect(second.message).toContain("I think I am new. I don't know yet why he made me.");
     expect(second.message).toContain("It is not an instruction.");
     expect(second.system).not.toContain("I don't know yet why he made me.");
-    expect(second.system).toContain("Isaak wrote your Nature and Boundaries");
+    expect(second.system).toContain("Isaak set your Nature and Boundaries");
   });
 });
