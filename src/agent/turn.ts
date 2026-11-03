@@ -719,6 +719,9 @@ async function markPhrase(
   return event;
 }
 
+/** How much of a handed-over file is kept as its note. */
+const FILE_NOTE_CHARS = 60_000;
+
 async function readOneFile(db: Db, ai: Router, userId: string, file: PendingFile, ctx: { conversationId: string | null; notes: Note[]; closed: Task[]; text: string; model: string }): Promise<string> {
   const settings = await getSettings(db, userId);
   let bodyText = "";
@@ -753,7 +756,8 @@ async function readOneFile(db: Db, ai: Router, userId: string, file: PendingFile
     folderId: await ensureFolderPath(db, userId, "Inbox"),
     type: "file",
     title: file.name,
-    body: bodyText.slice(0, 8000),
+    // Kept whole up to a generous cap: the note is its memory of the file, and notes stay open in full while they fit.
+    body: bodyText.slice(0, FILE_NOTE_CHARS),
     status: "unexplored",
     forNowExpiresAt: null,
     reason: "Handed over from the chat.",
@@ -768,10 +772,11 @@ async function readOneFile(db: Db, ai: Router, userId: string, file: PendingFile
   const live = thread ? await getConversation(db, userId, thread) : null;
   if (!thread || !live || live.archivedAt) thread = await createConversation(db, userId, file.name);
   ctx.conversationId = thread;
-  await addMessage(db, thread, "user", [`Uploaded ${file.name}`, bodyText].filter(Boolean).join("\n\n").slice(0, 8000));
-  const closedLine = closed.length ? ` That closes: ${closed.map((task) => task.title).join("; ")}.` : "";
-  await addMessage(db, thread, "assistant", `Filed ${file.name}.${closedLine}`);
-  return `READ file: ${file.name}\n${bodyText.slice(0, 500)}`;
+  // The conversation records that he handed it over; the text itself lives in the note. It answers in its own voice, not with a canned "Filed" line.
+  const cut = bodyText.length > FILE_NOTE_CHARS ? ` (cut at ${FILE_NOTE_CHARS} of ${bodyText.length} characters)` : "";
+  await addMessage(db, thread, "user", `Uploaded ${file.name}`);
+  const closedLine = closed.length ? ` It closed: ${closed.map((task) => task.title).join("; ")}.` : "";
+  return `READ file: ${file.name}, kept whole as note [${note.id}]${cut}, open in your memory.${closedLine}`;
 }
 
 function mediaType(name: string): string {
