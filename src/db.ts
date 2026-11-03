@@ -178,6 +178,7 @@ export async function migrate(db: Db): Promise<void> {
     `ALTER TABLE inner_state ADD COLUMN IF NOT EXISTS intentions TEXT NOT NULL DEFAULT ''`,
     `ALTER TABLE inner_state ADD COLUMN IF NOT EXISTS self_looked_at TIMESTAMPTZ`,
     `ALTER TABLE inner_state ADD COLUMN IF NOT EXISTS self_portrait TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS pinned_model TEXT NOT NULL DEFAULT ''`,
     `CREATE TABLE IF NOT EXISTS inner_versions (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id),

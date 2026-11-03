@@ -156,3 +156,20 @@ describe("formatting slips", () => {
     expect(n).toBe(2);
   });
 });
+
+describe("a pinned model", () => {
+  it("runs every step on the model he pinned, and its own switch waits", async () => {
+    const { db, user, ai, mock } = await fresh();
+    await db.query(`UPDATE settings SET pinned_model = 'mock-strong' WHERE user_id = $1`, [user.id]);
+    const seen: string[] = [];
+    const original = mock.complete.bind(mock);
+    mock.complete = async (req: any) => {
+      if (String(req.system).includes("TASK: agent")) seen.push(String(req.messages?.[0]?.content ?? "").match(/thinking with (\S+) right now/)?.[1] ?? "?");
+      return original(req);
+    };
+    scriptAgent(mock, (blob) => (blob.includes("TAKING IN.") ? { next_model: "mock-cheap", taken_in: "ok" } : { say: "Done." }));
+    await runAgentTurn(db, ai, user.id, { text: "A long story." });
+    expect(seen.every((m) => m === "mock-strong")).toBe(true);
+    expect(seen.length).toBe(2);
+  });
+});

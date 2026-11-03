@@ -660,6 +660,25 @@ export function createApp(db: Db) {
 
   app.get("/api/health", async (c) => c.json(await healthReport(db, c.get("userId"))));
 
+  // The model pin in the chat: "" means its own choice; otherwise every step uses that model.
+  app.get("/api/model", async (c) => {
+    const userId = c.get("userId");
+    const { modelChoices, pinnedModel } = await import("../src/agent/turn.js");
+    return c.json({ pinned: (await pinnedModel(db, userId)) ?? "", choices: await modelChoices(db, userId) });
+  });
+
+  app.post("/api/model", async (c) => {
+    const userId = c.get("userId");
+    const body = z.object({ model: z.string() }).parse(await c.req.json());
+    const { modelChoices } = await import("../src/agent/turn.js");
+    const choices = await modelChoices(db, userId);
+    const model = body.model.trim();
+    if (model && !choices.some((item) => item.id === model)) return c.json({ error: "That model is not available." }, 400);
+    await db.query(`UPDATE settings SET pinned_model = $2 WHERE user_id = $1`, [userId, model]);
+    await logAction(db, userId, { what: model ? `pinned the model to ${model}` : "unpinned the model", why: "Isaak chose it in the chat.", source: "user", payload: {} });
+    return c.json({ pinned: model });
+  });
+
   app.get("/api/settings", async (c) => {
     const userId = c.get("userId");
     const [settings, budget, moduleRow] = await Promise.all([getSettings(db, userId), getBudget(db, userId), getModule(db, userId, "gmail")]);

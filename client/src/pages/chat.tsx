@@ -33,6 +33,18 @@ export function ChatPage() {
   const [draft, setDraft] = useState<string | null>(null);
   /** What it is doing right now, and with which model, while a message is being handled. */
   const [thinking, setThinking] = useState<{ phase: string; model: string } | null>(null);
+  /** Which model thinks: "" is its own choice; anything else is pinned by him for every step. */
+  const [pinned, setPinned] = useState("");
+  const [choices, setChoices] = useState<{ id: string; about: string }[]>([]);
+  useEffect(() => {
+    api<{ pinned: string; choices: { id: string; about: string }[] }>("/api/model")
+      .then((data) => { setPinned(data.pinned); setChoices(data.choices); })
+      .catch(() => undefined);
+  }, []);
+  async function pin(model: string) {
+    setPinned(model);
+    try { await api("/api/model", { method: "POST", body: JSON.stringify({ model }) }); } catch (err) { setError(err instanceof Error ? err.message : "Could not set the model."); }
+  }
   const [draftSpans, setDraftSpans] = useState<TraceSpan[]>([]);
   const [openTrace, setOpenTrace] = useState<TraceSpan | null>(null);
   const skipLoad = useRef(false);
@@ -367,6 +379,17 @@ export function ChatPage() {
             <Button type="button" variant={recording ? "default" : "outline"} size="icon" onClick={() => void toggleRecord()} aria-label={recording ? "Stop recording" : "Record"}>
               {recording ? <Square size={16} /> : <Mic size={16} />}
             </Button>
+            <select
+              aria-label="Which model thinks"
+              title="Which model thinks: its own choice, or one you pin for every step"
+              className="h-10 rounded-md border border-border bg-background px-2 text-xs text-muted-foreground"
+              value={pinned}
+              onChange={(event) => void pin(event.target.value)}
+              disabled={busy}
+            >
+              <option value="">Its choice</option>
+              {choices.map((item) => <option key={item.id} value={item.id}>{modelName(item.id)}</option>)}
+            </select>
             <Button type="submit" disabled={busy || (!text.trim() && files.length === 0)}>Send</Button>
           </div>
         </form>

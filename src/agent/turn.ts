@@ -176,7 +176,7 @@ ${input.memory}`;
 }
 
 /** What changes from step to step: the conversation, the new message, and what its tools returned. */
-function stepMessage(input: { conversation: string; cue: string; dump: string; files: string; log: string; current: string; opening: string; body: string; own: string }): string {
+function stepMessage(input: { conversation: string; cue: string; dump: string; files: string; log: string; current: string; opening: string; body: string; own: string; pinned?: boolean }): string {
   return `YOUR BODY, AS IT IS NOW:
 ${input.body}
 
@@ -199,7 +199,7 @@ TOOL RESULTS:
 ${input.log || "(none)"}
 END TOOL RESULTS
 
-You are thinking with ${input.current} right now. ${input.opening}`;
+You are thinking with ${input.current} right now.${input.pinned ? " Isaak has pinned this model for now." : ""} ${input.opening}`;
 }
 
 async function saveState(db: Db, userId: string, state: { thinking?: string; curious?: string; busy?: string; waiting?: string }): Promise<void> {
@@ -301,6 +301,9 @@ async function turnInner(
   const chosen = (await db.query(`SELECT start_model FROM inner_state WHERE user_id = $1`, [userId])).rows[0]?.start_model;
   // It starts on the model it chose last; before it has ever chosen, on the everyday conversation model.
   let current = menu.find((item) => item.id === chosen)?.id ?? menu.find((item) => item.everyday)?.id ?? menu[0].id;
+  // Isaak can pin one model for every step (a testing choice in the chat). While pinned, its own model choices wait.
+  const pinned = await pinnedModel(db, userId, menu);
+  if (pinned) current = pinned;
   let decision: z.output<typeof stepSchema> = {};
   // Two beats: when he has sent something, it first takes it in (no answer yet), then answers.
   let takingIn = Boolean(text || files.length);
@@ -341,6 +344,7 @@ async function turnInner(
               current,
               body: await bodySense(db, userId),
               own: memory.own,
+              pinned: Boolean(pinned),
               log: last ? `${toolLog}\n(You have thought enough for this turn. Answer him now in say, with what you have; no tool.)` : toolLog,
               opening: takingStock
                 ? "TAKING STOCK. You have just started: this is your first moment since the fresh start, and nothing has happened between you and him yet. Before he is in the conversation, look at yourself and at where you are; write how you see yourself as your self-portrait and what you are going for as your intentions. Write what you took stock of under taken_in. Nothing you say in this step is shown to him."
@@ -368,7 +372,9 @@ async function turnInner(
       await rememberSession(db, userId, takingStock ? "Took stock of itself" : "Took in what he sent", decision.taken_in.trim().slice(0, 500), null, decision.taken_in.trim());
     }
     const wanted = decision.next_model?.trim();
-    if (wanted && wanted !== current) {
+    if (wanted && wanted !== current && pinned) {
+      toolLog += `\n(Isaak has pinned ${pinned} for now, so you stay on it; your choice of ${wanted} is noted.)`;
+    } else if (wanted && wanted !== current) {
       const pick = menu.find((item) => item.id === wanted);
       if (pick) {
         await logAction(db, userId, { what: `switched to ${pick.id}`, why: `It chose ${pick.id} for what comes next.`, source: "agent", payload: { from: current, to: pick.id } });
@@ -896,4 +902,18 @@ async function webSearch(db: Db, ai: Router, userId: string, query: string, mode
   }
   await logAction(db, userId, { what: "searched the web", why: guard.query, source: "agent", payload: { model: searcher } });
   return `SEARCH RESULTS for "${guard.query}":\n${text}`;
+}
+
+/** The model Isaak pinned in the chat, if any and if it is available. */
+export async function pinnedModel(db: Db, userId: string, menu?: { id: string }[]): Promise<string | null> {
+  const row = (await db.query(`SELECT pinned_model FROM settings WHERE user_id = $1`, [userId])).rows[0];
+  const id = String(row?.pinned_model ?? "").trim();
+  if (!id) return null;
+  if (menu && !menu.some((item) => item.id === id)) return null;
+  return id;
+}
+
+export async function modelChoices(db: Db, userId: string): Promise<{ id: string; about: string }[]> {
+  const settings = await getSettings(db, userId);
+  return (await availableModels(db, userId, settings)).map((item) => ({ id: item.id, about: item.about }));
 }
