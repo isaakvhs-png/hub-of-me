@@ -74,3 +74,20 @@ describe("a second fresh start", () => {
     expect(note.status).toBe("archived");
   });
 });
+
+describe("a fresh start leaves nothing behind that could pass as knowledge", () => {
+  it("archives the calendar and counts its own writing only since the fresh start", async () => {
+    const { db, user } = await fresh();
+    const { freshStart } = await import("../src/fresh.js");
+    const { bodySense } = await import("../src/agent/self.js");
+    await db.query(`INSERT INTO fresh_starts (user_id, reason, greeted_at) VALUES ($1, 'an older round', now())`, [user.id]);
+    await db.query(`INSERT INTO calendar_events (id, user_id, title, starts_at, ends_at, why, source) VALUES ('ev-old', $1, 'Old guess', now() + interval '3 days', now() + interval '4 days', 'guessed', 'agent')`, [user.id]);
+    await db.query(`INSERT INTO inner_versions (id, user_id, kind, content, why) VALUES ('iv-old', $1, 'portrait', 'old', 'old round')`, [user.id]);
+    await freshStart(db);
+    const ev = (await db.query(`SELECT archived_at FROM calendar_events WHERE id = 'ev-old'`)).rows[0];
+    expect(ev.archived_at).not.toBeNull();
+    const sense = await bodySense(db, user.id);
+    expect(sense).toContain("portrait not written yet");
+    expect(sense).toContain("0 upcoming calendar item(s)");
+  });
+});

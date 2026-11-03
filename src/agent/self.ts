@@ -66,7 +66,11 @@ export async function bodySense(db: Db, userId: string): Promise<string> {
     listNotes(db, userId),
     listTasks(db, userId, "open"),
     db.query(`SELECT COUNT(*) AS n FROM calendar_events WHERE user_id = $1 AND archived_at IS NULL AND ends_at > now()`, [userId]),
-    db.query(`SELECT kind, COUNT(*) AS n, MAX(created_at) AS last FROM inner_versions WHERE user_id = $1 GROUP BY kind`, [userId]),
+    db.query(
+      `SELECT kind, COUNT(*) AS n, MAX(created_at) AS last FROM inner_versions WHERE user_id = $1
+       AND created_at >= COALESCE((SELECT created_at FROM fresh_starts WHERE user_id = $1), 'epoch') GROUP BY kind`,
+      [userId],
+    ),
     db.query(`SELECT COUNT(*) AS n FROM conversations WHERE user_id = $1 AND archived_at IS NULL`, [userId]),
     db.query(
       `SELECT m.role, COUNT(*) AS n FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.user_id = $1 AND c.archived_at IS NULL GROUP BY m.role`,

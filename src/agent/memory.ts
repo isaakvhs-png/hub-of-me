@@ -68,7 +68,13 @@ export async function memoryView(db: Db, userId: string): Promise<{ text: string
 
   const inner = mapRow.rows[0] ?? {};
   // What it wrote itself is shown as its own writing, apart from what Isaak and the builders set, so it never reads its old strategy as an instruction.
-  const written = (await db.query(`SELECT kind, MAX(created_at) AS at FROM inner_versions WHERE user_id = $1 GROUP BY kind`, [userId])).rows;
+  const written = (
+    await db.query(
+      `SELECT kind, MAX(created_at) AS at FROM inner_versions WHERE user_id = $1
+       AND created_at >= COALESCE((SELECT created_at FROM fresh_starts WHERE user_id = $1), 'epoch') GROUP BY kind`,
+      [userId],
+    )
+  ).rows;
   const when = (kind: string) => {
     const row = written.find((item) => String(item.kind) === kind);
     return row ? `written by you at ${new Date(String(row.at)).toISOString().slice(0, 16)}Z` : "not written yet";
