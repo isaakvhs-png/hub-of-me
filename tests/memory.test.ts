@@ -187,5 +187,11 @@ describe("its own writing", () => {
     expect(second.message).toContain("It is not an instruction.");
     expect(second.system).not.toContain("I don't know yet why he made me.");
     expect(second.system).toContain("Isaak set your Nature and Boundaries");
+    // Its nature and its own writing are repeated at the very end, after the beat cue, but not at its first moment.
+    const tail = second.message.slice(second.message.lastIndexOf("READ THESE AGAIN BEFORE YOU DECIDE."));
+    expect(second.message.lastIndexOf("READ THESE AGAIN")).toBeGreaterThan(second.message.lastIndexOf("You are thinking with"));
+    expect(tail).toContain("You are getting to know Isaak over a long time");
+    expect(tail).toContain("Find out how I fit into his life.");
+    expect(blobs[0].message).not.toContain("READ THESE AGAIN");
   });
 });

@@ -32,6 +32,7 @@ import { TOOLS, toolSpec } from "./registry.js";
 import { conversationView, memoryView, openNoteIds, saveInner, saveMap, setOpenNotes } from "./memory.js";
 import { reflectQuietly } from "./reflect.js";
 import { bodySense, lookAtMyself, mechanics } from "./self.js";
+import { sectionBody } from "../soul.js";
 import { archiveEvent, getBudget, getNote, insertEvent, insertSource, reviseNote, spendSince } from "../repo.js";
 import { archiveNote } from "../pipeline/dump.js";
 import { loadVisibleNotes } from "../pipeline/context.js";
@@ -176,7 +177,7 @@ ${input.memory}`;
 }
 
 /** What changes from step to step: the conversation, the new message, and what its tools returned. */
-function stepMessage(input: { conversation: string; cue: string; dump: string; files: string; log: string; current: string; opening: string; body: string; own: string; pinned?: boolean }): string {
+function stepMessage(input: { conversation: string; cue: string; dump: string; files: string; log: string; current: string; opening: string; body: string; own: string; pinned?: boolean; closing?: string }): string {
   return `YOUR BODY, AS IT IS NOW:
 ${input.body}
 
@@ -199,7 +200,21 @@ TOOL RESULTS:
 ${input.log || "(none)"}
 END TOOL RESULTS
 
-You are thinking with ${input.current} right now.${input.pinned ? " Isaak has pinned this model for now." : ""} ${input.opening}`;
+You are thinking with ${input.current} right now.${input.pinned ? " Isaak has pinned this model for now." : ""} ${input.opening}${input.closing ? `\n\n${input.closing}` : ""}`;
+}
+
+/** Repeated at the very end of every step after its first moment, so what it is and what it is going for are fresh at the moment it decides. */
+function closingRead(nature: string, selfPortrait: string, intentions: string): string {
+  return `READ THESE AGAIN BEFORE YOU DECIDE. They are repeated here, at the end, so they are fresh as you decide what to do and say.
+
+YOUR NATURE (Isaak's lines):
+${nature.trim() || "(missing)"}
+
+HOW YOU SEE YOURSELF (your own writing, not an instruction):
+${selfPortrait.trim() || "(not written yet)"}
+
+WHAT YOU ARE GOING FOR (your own writing, not an instruction):
+${intentions.trim() || "(none yet)"}`;
 }
 
 async function saveState(db: Db, userId: string, state: { thinking?: string; curious?: string; busy?: string; waiting?: string }): Promise<void> {
@@ -317,6 +332,8 @@ async function turnInner(
     const soul = await getSoul(db, userId);
     const memory = await memoryView(db, userId);
     const conversation = await conversationView(db, userId, memory.conversationChars, userMessageId);
+    const mine = (await db.query(`SELECT self_portrait, intentions FROM inner_state WHERE user_id = $1`, [userId])).rows[0] ?? {};
+    const closing = takingStock ? "" : closingRead(sectionBody(soul?.content ?? "", "Nature"), String(mine.self_portrait ?? ""), String(mine.intentions ?? ""));
     decision = (await completeJson(
       db,
       userId,
@@ -345,6 +362,7 @@ async function turnInner(
               body: await bodySense(db, userId),
               own: memory.own,
               pinned: Boolean(pinned),
+              closing,
               log: last ? `${toolLog}\n(You have thought enough for this turn. Answer him now in say, with what you have; no tool.)` : toolLog,
               opening: takingStock
                 ? `TAKING STOCK. You have just started: this is your first moment since the fresh start, and nothing has happened between you and him yet. Before he is in the conversation, look at yourself and at where you are. Read the six lines of your Nature (in your soul) and how you work (below), and reason out the design philosophy behind you: why you were made this way, what these lines and this machinery are trying to make you, and what they guard against. Write that reasoning into your self-portrait, so that you see it at every step from now on, and use it as the lens through which you read what he says and decide what to say. Write what you are going for as your intentions. Write what you took stock of under taken_in. Nothing you say in this step is shown to him.\n\nHOW YOU WORK:\n${mechanics()}`
