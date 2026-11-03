@@ -299,9 +299,13 @@ async function turnInner(
   let decision: z.output<typeof stepSchema> = {};
   // Two beats: when he has sent something, it first takes it in (no answer yet), then answers.
   let takingIn = Boolean(text || files.length);
+  // Its very first moment after a fresh start, before he says anything: it takes stock of itself and forms its own intentions,
+  // so that what he first says is read against a strategy of its own instead of becoming its strategy.
+  const hasIntentions = Boolean(String((await db.query(`SELECT intentions FROM inner_state WHERE user_id = $1`, [userId])).rows[0]?.intentions ?? "").trim());
+  let takingStock = input.cue === "GREETING DUE" && !hasIntentions;
   for (let step = 0; step <= MAX_STEPS; step += 1) {
     const last = step === MAX_STEPS;
-    await input.onEvent?.({ type: "thinking", phase: takingIn ? "Taking it in" : step === 0 ? "Thinking" : "Answering", model: current });
+    await input.onEvent?.({ type: "thinking", phase: takingStock ? "Taking stock" : takingIn ? "Taking it in" : step === 0 ? "Thinking" : "Answering", model: current });
     const soul = await getSoul(db, userId);
     const memory = await memoryView(db, userId);
     const conversation = await conversationView(db, userId, memory.conversationChars, userMessageId);
@@ -332,7 +336,9 @@ async function turnInner(
               current,
               body: await bodySense(db, userId),
               log: last ? `${toolLog}\n(You have thought enough for this turn. Answer him now in say, with what you have; no tool.)` : toolLog,
-              opening: takingIn
+              opening: takingStock
+                ? "TAKING STOCK. You have just started: this is your first moment since the fresh start, and nothing has happened between you and him yet. Before he is in the conversation, look at yourself and at where you are, and write what you are going for as your intentions. Write what you took stock of under taken_in. Nothing you say in this step is shown to him."
+                : takingIn
                 ? "TAKING IN. Before you answer him, take in what he just sent. What is it? What does it tell you about him? Where does it sit on your map of his life, and what does it leave out? Keep what is worth keeping, and rewrite your portrait, map and intentions if they changed. Write what you took in under taken_in. Do not answer him yet: say is ignored in this step."
                 : input.cue === "GREETING DUE" ? "He just arrived." : input.cue === "CHECK IN" ? "You may speak if something is worth saying." : input.cue?.startsWith("WAKE") ? "You woke up on your own. He is away. Think, use tools, or rest; speak only if it is worth his time when he is back." : "Your move.",
             }),
@@ -348,13 +354,11 @@ async function turnInner(
       if (drawn) toolLog += `\nmap: redrawn with ${drawn} regions.`;
     }
     if (decision.portrait?.trim() && (await saveInner(db, userId, "portrait", decision.portrait, takingIn ? "Taking in what he sent." : "Its sense of him shifted."))) toolLog += "\nportrait: rewritten.";
-    if (decision.intentions?.trim() && (await saveInner(db, userId, "intentions", decision.intentions, takingIn ? "Taking in what he sent." : "Its intentions changed."))) toolLog += "\nintentions: updated.";
+    if (decision.intentions?.trim() && (await saveInner(db, userId, "intentions", decision.intentions, takingStock ? "Taking stock at its first moment." : takingIn ? "Taking in what he sent." : "Its intentions changed."))) toolLog += "\nintentions: updated.";
     for (const item of decision.phrases ?? []) await markPhrase(db, userId, { text: sourceText, userMessageId, traces, onEvent: input.onEvent }, item.phrase, "understanding", item.label);
-    if (takingIn) {
-      if (decision.taken_in?.trim()) {
-        toolLog += `\nWHAT YOU TOOK IN: ${decision.taken_in.trim()}`;
-        await rememberSession(db, userId, "Took in what he sent", decision.taken_in.trim().slice(0, 500), null, decision.taken_in.trim());
-      }
+    if ((takingIn || takingStock) && decision.taken_in?.trim()) {
+      toolLog += `\n${takingStock ? "WHAT YOU TOOK STOCK OF" : "WHAT YOU TOOK IN"}: ${decision.taken_in.trim()}`;
+      await rememberSession(db, userId, takingStock ? "Took stock of itself" : "Took in what he sent", decision.taken_in.trim().slice(0, 500), null, decision.taken_in.trim());
     }
     const wanted = decision.next_model?.trim();
     if (wanted && wanted !== current) {
@@ -392,9 +396,10 @@ async function turnInner(
       await rememberSession(db, userId, what, why, use.tool, result);
       await input.onEvent?.({ type: "work", status: "done", label: what, targetId: null });
     }
-    if (takingIn) {
-      // Taking in is its own beat: whatever it said there is not the answer.
+    if (takingIn || takingStock) {
+      // Taking in (or taking stock) is its own beat: whatever it said there is not the answer.
       takingIn = false;
+      takingStock = false;
       if (!last) continue;
     }
     // Speaking ends the turn. Without say, it gets the tool results and another step.

@@ -143,3 +143,24 @@ describe("knowing itself", () => {
     expect(after).not.toContain("Last looked: never");
   });
 });
+
+describe("its first moment", () => {
+  it("takes stock of itself and writes its own intentions before greeting him", async () => {
+    const { db, user, ai, mock } = await fresh();
+    const blobs: string[] = [];
+    scriptAgent(mock, (blob) => {
+      blobs.push(blob);
+      if (blob.includes("TAKING STOCK.")) return { say: "not shown", taken_in: "I am new and know nothing.", intentions: "Listen first; learn who he is before saying much." };
+      return { say: "Hi Isaak." };
+    });
+    const result = await runAgentTurn(db, ai, user.id, { cue: "GREETING DUE" });
+    expect(result.reply).toBe("Hi Isaak.");
+    expect(blobs[1]).toContain("WHAT YOU TOOK STOCK OF: I am new and know nothing.");
+    const inner = (await db.query(`SELECT intentions FROM inner_state WHERE user_id = $1`, [user.id])).rows[0];
+    expect(inner.intentions).toBe("Listen first; learn who he is before saying much.");
+    // A later greeting (it already has intentions) does not take stock again.
+    blobs.length = 0;
+    await runAgentTurn(db, ai, user.id, { cue: "GREETING DUE" });
+    expect(blobs.some((b) => b.includes("TAKING STOCK."))).toBe(false);
+  });
+});
