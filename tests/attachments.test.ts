@@ -22,7 +22,7 @@ describe("dump attachments", () => {
     expect(uploads.map((file) => file.name)).toEqual(["orchard-notes.txt", "upload"]);
   });
 
-  it("files each upload and closes only the to-do that file delivers", async () => {
+  it("files each upload whole and leaves the ledger for it to decide", async () => {
     const db = await createDb({ memory: true });
     await migrate(db);
     const user = await ensureUser(db, { email: "peter@test", password: "secret", name: "Peter", provider: "mock" });
@@ -43,11 +43,9 @@ describe("dump attachments", () => {
     expect(response.status).toBe(200);
     const body = await response.json() as { notes: { title: string }[]; closed: { title: string }[]; conversationId: string };
     expect(body.notes.map((note) => note.title)).toEqual(["orchard-notes.txt", "harbor-notes.txt"]);
-    expect(body.closed.map((task) => task.title).sort()).toEqual(["summary of harbor", "summary of orchard"]);
-    const open = await listTasks(db, user.id, "open");
-    expect(open.map((task) => task.title)).toEqual(["summary of meadow"]);
-    const done = await listTasks(db, user.id, "done");
-    expect(done).toHaveLength(2);
+    expect(body.closed).toEqual([]);
+    expect(await listTasks(db, user.id, "open")).toHaveLength(3);
+    expect(await listTasks(db, user.id, "done")).toHaveLength(0);
     expect(await listNotes(db, user.id)).toHaveLength(2);
     const messages = await app.request(`/api/conversations/${body.conversationId}/messages`, { headers: { cookie } });
     const rows = await messages.json() as { role: string; content: string }[];

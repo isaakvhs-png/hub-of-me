@@ -24,7 +24,7 @@ import {
   logAction,
   setTaskStatus,
 } from "../repo.js";
-import { closeDeliveredTasks, rememberTasks } from "../tasks.js";
+import { rememberTasks } from "../tasks.js";
 import type { Task } from "../repo.js";
 import { locateSpans } from "../trace.js";
 import type { Note } from "../types.js";
@@ -766,8 +766,7 @@ async function readOneFile(db: Db, ai: Router, userId: string, file: PendingFile
     mockEra: settings.provider === "mock",
   });
   ctx.notes.push(note);
-  const closed = await closeDeliveredTasks(db, userId, { title: file.name, text: `${ctx.text}\n${bodyText}` }, `Uploaded ${file.name}.`);
-  ctx.closed.push(...closed);
+  // Nothing in the ledger closes automatically because a file arrived: it decides that itself (todos).
   let thread = ctx.conversationId;
   const live = thread ? await getConversation(db, userId, thread) : null;
   if (!thread || !live || live.archivedAt) thread = await createConversation(db, userId, file.name);
@@ -775,8 +774,7 @@ async function readOneFile(db: Db, ai: Router, userId: string, file: PendingFile
   // The conversation records that he handed it over; the text itself lives in the note. It answers in its own voice, not with a canned "Filed" line.
   const cut = bodyText.length > FILE_NOTE_CHARS ? ` (cut at ${FILE_NOTE_CHARS} of ${bodyText.length} characters)` : "";
   await addMessage(db, thread, "user", `Uploaded ${file.name}`);
-  const closedLine = closed.length ? ` It closed: ${closed.map((task) => task.title).join("; ")}.` : "";
-  return `READ file: ${file.name}, kept whole as note [${note.id}]${cut}, open in your memory.${closedLine}`;
+  return `READ file: ${file.name}, kept whole as note [${note.id}]${cut}, open in your memory.`;
 }
 
 function mediaType(name: string): string {

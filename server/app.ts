@@ -87,7 +87,6 @@ import { mountDiagnostics } from "./diag.js";
 import { recordServerError } from "./error-log.js";
 import { scheduleFeedbackDrain } from "../src/feedback.js";
 import { extractTrace, latestMindNote, listClaims, listLooseTraces, listReactions, listTraceForConversation, markSeen, refreshMindNote, scoreAnsweredAsk, seenAt } from "../src/picture.js";
-import { closeDeliveredTasks } from "../src/tasks.js";
 import { fieldText, filesFromField } from "../src/attachments.js";
 import { clearSession, hashToken, readSession, writeSession } from "./session.js";
 
@@ -787,7 +786,7 @@ export function createApp(db: Db) {
       folderId: await ensureFolderPath(db, userId, "Inbox"),
       type: "file",
       title: name,
-      body: bodyText.slice(0, 8000),
+      body: bodyText.slice(0, 60_000),
       status: "unexplored",
       forNowExpiresAt: null,
       mockEra: ingestSettings.provider === "mock",
@@ -795,8 +794,7 @@ export function createApp(db: Db) {
       causingMessageId: null,
       source: "ingest",
     });
-    const closed = await closeDeliveredTasks(db, userId, { title: name, text: bodyText }, `Uploaded ${name}.`);
-    return c.json({ sourceId, note, closed });
+    return c.json({ sourceId, note, closed: [] });
   });
 
   app.get("/api/tasks", async (c) => {

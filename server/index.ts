@@ -12,6 +12,7 @@ import { scheduleFeedbackDrain } from "../src/feedback.js";
 import { getSettings, settleStuckDebates } from "../src/repo.js";
 import { applyEnvProvider, ensureUser } from "../src/seed.js";
 import { restoreCorruptedSouls } from "../src/soul.js";
+import { reopenClosedByUpload } from "../src/tasks.js";
 import { freshStart } from "../src/fresh.js";
 import { greetIfNeeded, wakeIfDue } from "../src/agent/turn.js";
 import { zonedParts } from "../src/time.js";
@@ -24,6 +25,7 @@ await ensureUser(db);
 await applyEnvProvider(db);
 await settleStuckDebates(db);
 await restoreCorruptedSouls(db);
+await reopenClosedByUpload(db);
 await db.query(
   `UPDATE settings SET alternate_model = 'gemini:gemini-2.5-flash-lite' WHERE alternate_model LIKE '%gemini-2.5-flash' AND alternate_model NOT LIKE '%flash-lite%'`,
 );

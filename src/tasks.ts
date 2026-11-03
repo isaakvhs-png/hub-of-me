@@ -55,3 +55,19 @@ export async function closeNamedTasks(db: Db, userId: string, ids: string[], why
   }
   return closed;
 }
+
+/** One-off repair: an old rule closed ledger items whenever a file was uploaded and its words matched. Reopen those. */
+export async function reopenClosedByUpload(db: Db): Promise<number> {
+  const rows = (
+    await db.query(
+      `SELECT DISTINCT a.user_id, a.payload->>'taskId' AS task_id FROM action_log a
+       JOIN tasks t ON t.id = a.payload->>'taskId' AND t.status = 'done'
+       WHERE a.what = 'task done' AND a.why LIKE 'Uploaded %'
+       AND NOT EXISTS (SELECT 1 FROM action_log b WHERE b.payload->>'taskId' = a.payload->>'taskId' AND b.created_at > a.created_at)`,
+    )
+  ).rows;
+  for (const row of rows) {
+    await setTaskStatus(db, String(row.user_id), String(row.task_id), "open", "Reopened: an old automatic rule had closed it when a file was uploaded. Only you decide what is done.");
+  }
+  return rows.length;
+}
