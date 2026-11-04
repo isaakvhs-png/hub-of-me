@@ -957,8 +957,8 @@ async function availableModels(db: Db, userId: string, settings: Settings): Prom
   const list: ModelChoice[] = [];
   if (gemini) {
     const { usedToday } = await usageWindows(db, userId);
-    const left = Math.max(0, 500 - (usedToday["gemini-2.5-flash-lite"] ?? 0));
-    if (left > 0) list.push({ id: "gemini-2.5-flash-lite", about: `Google's smallest model. Free (about ${left} calls left today). Quick and shallow.` });
+    const left = Math.max(0, 500 - (usedToday["gemini-3.5-flash-lite"] ?? 0));
+    if (left > 0) list.push({ id: "gemini-3.5-flash-lite", about: `Google's smallest model. Free on a free-tier key (about ${left} calls left today), otherwise roughly Sonnet's price per token at a fraction of its depth. Quick and shallow.` });
   }
   if (anthropic) {
     // What a step really costs, measured from its own recent steps; a list-price estimate until there are enough.

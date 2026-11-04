@@ -50,7 +50,7 @@ export async function ensureUser(
     cheapModel: "anthropic:claude-haiku-5-5",
     strongModel: "anthropic:claude-sonnet-5-5",
     judgeModel: "anthropic:claude-sonnet-5-5",
-    alternateModel: "gemini:gemini-2.5-flash-lite",
+    alternateModel: "gemini:gemini-3.5-flash-lite",
     localCategories: [],
     forNowTtlHours: 72,
     dictationLang: "",

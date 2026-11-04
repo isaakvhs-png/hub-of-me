@@ -13,7 +13,7 @@ import { getSettings, settleStuckDebates } from "../src/repo.js";
 import { applyEnvProvider, ensureUser } from "../src/seed.js";
 import { restoreCorruptedSouls } from "../src/soul.js";
 import { reopenClosedByUpload } from "../src/tasks.js";
-import { freshStart } from "../src/fresh.js";
+import { FRESH_REASON, freshStart } from "../src/fresh.js";
 import { greetIfNeeded, wakeIfDue } from "../src/agent/turn.js";
 import { zonedParts } from "../src/time.js";
 import { createApp } from "./app.js";
@@ -26,11 +26,13 @@ await applyEnvProvider(db);
 await settleStuckDebates(db);
 await restoreCorruptedSouls(db);
 await reopenClosedByUpload(db);
+// Google retired Gemini 2.5 Flash-Lite for new keys (5 Nov 2026); move saved choices to 3.5 Flash-Lite.
 await db.query(
-  `UPDATE settings SET alternate_model = 'gemini:gemini-2.5-flash-lite' WHERE alternate_model LIKE '%gemini-2.5-flash' AND alternate_model NOT LIKE '%flash-lite%'`,
+  `UPDATE settings SET alternate_model = 'gemini:gemini-3.5-flash-lite' WHERE alternate_model LIKE '%gemini-2.5-flash%'`,
 );
+await db.query(`UPDATE settings SET pinned_model = 'gemini-3.5-flash-lite' WHERE pinned_model = 'gemini-2.5-flash-lite'`);
 const fresh = await freshStart(db);
-if (fresh) console.log(`Fresh start archived the previous center for ${fresh} account(s). Reason: Fresh start before core redesign.`);
+if (fresh) console.log(`Fresh start archived the previous center for ${fresh} account(s). Reason: ${FRESH_REASON}`);
 const everyone = await db.query<{ id: string }>(`SELECT id FROM users`);
 for (const row of everyone.rows) {
   try {

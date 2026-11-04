@@ -9,12 +9,12 @@ export interface RoutedModel {
 
 /** Free-tier ceilings named for routing. Pro is not used. Flash is not the light default. */
 export const FREE_QUOTA = [
-  { model: "gemini-2.5-flash-lite", perDay: 500, perMinute: 15 },
+  { model: "gemini-3.5-flash-lite", perDay: 500, perMinute: 15 },
   { model: "gemini-2.5-flash", perDay: 20, perMinute: 10 },
   { model: "gemini-2.5-pro", perDay: 0, perMinute: 0 },
 ] as const;
 
-export const LIGHT_MODEL = "gemini-2.5-flash-lite";
+export const LIGHT_MODEL = "gemini-3.5-flash-lite";
 export const CONVERSATION_MODEL = "claude-haiku-5-5";
 export const DEEP_MODEL = "claude-sonnet-5-5";
 

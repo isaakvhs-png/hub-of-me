@@ -44,6 +44,9 @@ export const LIST_PRICES: Record<string, Price> = {
     cacheWritePerMTokUsd: 2.5,
     cacheReadPerMTokUsd: 0.1,
   },
+  // Gemini 3.5 Flash-Lite replaced 2.5 Flash-Lite for new users (Google's error, 5 Nov 2026). Paid list price $0.30 / $2.50
+  // (third-party pricing pages, 5 Nov; not yet checked on Google's own page). On a free-tier key it costs nothing, so this overcounts.
+  "gemini-3.5-flash-lite": { inputPerMTokUsd: 0.3, outputPerMTokUsd: 2.5 },
   "gemini-2.5-flash-lite": { inputPerMTokUsd: 0, outputPerMTokUsd: 0 },
   "gemini-2.5-flash": { inputPerMTokUsd: 0.3, outputPerMTokUsd: 2.5 },
   "gemini-2.5-pro": {

@@ -21,7 +21,7 @@ export async function brainModel(db: Db, userId: string, job: "intake" | "sessio
   if (process.env.BRAIN_MODEL?.trim()) return process.env.BRAIN_MODEL.trim();
   if (process.env.ANTHROPIC_API_KEY?.trim()) return "claude-haiku-5-5";
   void job;
-  return "gemini-2.5-flash-lite";
+  return "gemini-3.5-flash-lite";
 }
 
 const CHUNK_CHARS = 5000;
