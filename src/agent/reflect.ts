@@ -4,7 +4,9 @@ import type { Router } from "../ai/router.js";
 import { completeJson } from "../ai/tracked.js";
 import { getSoul, insertInfoRequest, logAction } from "../repo.js";
 import { changeSoul, mergeSoulSections } from "../soul.js";
-import { conversationView, memoryView, saveInner, saveMap } from "./memory.js";
+import { conversationView, memoryView } from "./memory.js";
+import { addEntry, listBricks } from "../brain/store.js";
+import { brainView, wallText } from "../brain/view.js";
 
 const reflectionSchema = z.object({
   thoughts: z.string().min(1),
@@ -22,6 +24,7 @@ const reflectionSchema = z.object({
     .array(z.object({ subject: z.string().min(1), question: z.string().min(1), context: z.string().min(1), why: z.string().min(1) }))
     .optional(),
   mind: z.string().optional(),
+  about_me: z.string().optional(),
 });
 
 /**
@@ -50,7 +53,7 @@ You are stepping back to think, alone, in your own words. Nobody reads this but 
 Think about what you set out to think about. Use everything below. Notice what you don't know yet, what doesn't fit, and what is new ground.
 Your character grows only from real moments like these. If something should change in how you are, write it in the soul as a general principle, not as his words or a rule. Nature and Boundaries are Isaak's: you cannot change them, but if you think one should change, ask him (as an ask) and say why.
 Return one JSON object; every field except thoughts is optional:
-{"thoughts":"what you now think, in your own words","soul":{"reason":"","sections":[{"heading":"","body":""}]},"portrait":"your whole portrait of him, rewritten","self_portrait":"your whole self-portrait, rewritten","map":[{"name":"","known":"","open":""}],"intentions":"what you are going for now, for yourself and with him, and why","asks":[{"subject":"","question":"","context":"","why":""}]}
+{"thoughts":"what you now think, in your own words","about_me":"what this tells you about yourself, if anything (added to your own brick)","soul":{"reason":"","sections":[{"heading":"","body":""}]},"asks":[{"subject":"","question":"","context":"","why":""}]}
 Only return soul sections you are changing. An ask must make sense read cold: name its subject, why now, and what the answer would change.
 
 WHAT YOU ARE THINKING ABOUT:
@@ -59,10 +62,12 @@ ${input.cause}
 SOUL:
 ${soul.content}
 
-WHAT YOU HAVE IN MIND:
-${memory.text}
+${(await brainView(db, userId, { ids: [] })).agenda}
 
-${memory.own}
+${await wallText(db, userId)}
+
+ALSO IN MIND:
+${memory.text}
 
 CONVERSATION:
 ${conversation}`,
@@ -88,11 +93,13 @@ ${conversation}`,
       }
     }
   }
-  if (out.portrait?.trim() && (await saveInner(db, userId, "portrait", out.portrait, `Reflecting: ${input.cause}`))) done.push("portrait rewritten");
-  if (out.self_portrait?.trim() && (await saveInner(db, userId, "self_portrait", out.self_portrait, `Reflecting: ${input.cause}`))) done.push("self-portrait rewritten");
-  if (out.map?.length && (await saveMap(db, userId, out.map, `Reflecting: ${input.cause}`))) done.push("map redrawn");
-  if (!out.intentions?.trim() && out.mind?.trim()) out.intentions = out.mind;
-  if (out.intentions?.trim() && (await saveInner(db, userId, "intentions", out.intentions, `Reflecting: ${input.cause}`))) done.push("intentions updated");
+  // What it concludes is added to the web, never rewritten over it: the thought on its own brick.
+  const me = (await listBricks(db, userId)).find((b) => b.kind === "self");
+  if (me) {
+    await addEntry(db, userId, { brickId: me.id, kind: "conclusion", text: `Reflecting on ${input.cause.slice(0, 120)}: ${out.thoughts}`.slice(0, 1200), origin: "own" });
+    if (out.about_me?.trim()) await addEntry(db, userId, { brickId: me.id, kind: "idea", text: out.about_me, origin: "own" });
+    done.push("added to my own brick");
+  }
   for (const ask of out.asks ?? []) {
     await insertInfoRequest(db, userId, { ...ask, rank: 0 });
     done.push(`asked: ${ask.question}`);

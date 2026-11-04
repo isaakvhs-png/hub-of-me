@@ -190,6 +190,50 @@ export async function migrate(db: Db): Promise<void> {
     `ALTER TABLE notes ADD COLUMN IF NOT EXISTS summary TEXT NOT NULL DEFAULT ''`,
     `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS surfaced BOOLEAN NOT NULL DEFAULT false`,
     `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS fade_reason TEXT`,
+    // The brick web (MIND_DESIGN.md). Everything has archived_at: a fresh start archives, nothing is deleted.
+    `CREATE TABLE IF NOT EXISTS brain_sources (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), kind TEXT NOT NULL, title TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT now(), archived_at TIMESTAMPTZ
+    )`,
+    `CREATE TABLE IF NOT EXISTS brain_stream (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), kind TEXT NOT NULL, source_id TEXT,
+      content TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), archived_at TIMESTAMPTZ
+    )`,
+    `CREATE TABLE IF NOT EXISTS bricks (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), name TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'thing',
+      origin TEXT NOT NULL DEFAULT 'his', summary TEXT NOT NULL DEFAULT '', contact TEXT NOT NULL DEFAULT '', source_id TEXT,
+      lit_count INTEGER NOT NULL DEFAULT 0, last_lit_at TIMESTAMPTZ, last_revisited_at TIMESTAMPTZ,
+      warmth DOUBLE PRECISION NOT NULL DEFAULT 0, warmth_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), archived_at TIMESTAMPTZ
+    )`,
+    `CREATE TABLE IF NOT EXISTS brick_moments (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), brick_id TEXT NOT NULL, stream_id TEXT, source_id TEXT,
+      quote TEXT NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT now(), archived_at TIMESTAMPTZ
+    )`,
+    `CREATE TABLE IF NOT EXISTS brick_entries (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), brick_id TEXT NOT NULL, kind TEXT NOT NULL,
+      text TEXT NOT NULL, origin TEXT NOT NULL DEFAULT 'his', status TEXT NOT NULL DEFAULT 'open', status_note TEXT NOT NULL DEFAULT '',
+      stream_id TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), archived_at TIMESTAMPTZ
+    )`,
+    `CREATE TABLE IF NOT EXISTS brick_links (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), a TEXT NOT NULL, b TEXT NOT NULL, type TEXT NOT NULL,
+      strength DOUBLE PRECISION NOT NULL DEFAULT 1, reason TEXT NOT NULL DEFAULT '', made_by TEXT NOT NULL DEFAULT 'code',
+      used_count INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), archived_at TIMESTAMPTZ
+    )`,
+    `CREATE TABLE IF NOT EXISTS agenda (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), kind TEXT NOT NULL, text TEXT NOT NULL, why TEXT NOT NULL DEFAULT '',
+      next_step TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'open', close_note TEXT NOT NULL DEFAULT '', brick_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(), closed_at TIMESTAMPTZ, archived_at TIMESTAMPTZ
+    )`,
+    `CREATE TABLE IF NOT EXISTS brain_sessions (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), goal TEXT NOT NULL DEFAULT '', log TEXT NOT NULL DEFAULT '[]',
+      left_off TEXT NOT NULL DEFAULT '', wins TEXT NOT NULL DEFAULT '', cost_eur_cents DOUBLE PRECISION NOT NULL DEFAULT 0,
+      ended_why TEXT NOT NULL DEFAULT '', started_at TIMESTAMPTZ NOT NULL DEFAULT now(), ended_at TIMESTAMPTZ, archived_at TIMESTAMPTZ
+    )`,
+    `CREATE TABLE IF NOT EXISTS brain_activations (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), cause TEXT NOT NULL, energies TEXT NOT NULL DEFAULT '{}',
+      used TEXT NOT NULL DEFAULT '[]', created_at TIMESTAMPTZ NOT NULL DEFAULT now(), archived_at TIMESTAMPTZ
+    )`,
     `INSERT INTO debate_feedback (id, user_id, debate_id, body, status, created_at)
      SELECT d.id || '-legacy-feedback', d.user_id, d.id, d.user_feedback, 'done', d.created_at
      FROM debates d

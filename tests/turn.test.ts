@@ -167,7 +167,11 @@ describe("a pinned model", () => {
       if (String(req.system).includes("TASK: agent")) seen.push(String(req.messages?.[0]?.content ?? "").match(/thinking with (\S+) right now/)?.[1] ?? "?");
       return original(req);
     };
-    scriptAgent(mock, (blob) => (blob.includes("TAKING IN.") ? { next_model: "mock-cheap", taken_in: "ok" } : { say: "Done." }));
+    let first = true;
+    scriptAgent(mock, () => {
+      if (first) { first = false; return { next_model: "mock-cheap", think: [{ tool: "todos", input: { action: "list" } }] }; }
+      return { say: "Done." };
+    });
     await runAgentTurn(db, ai, user.id, { text: "A long story." });
     expect(seen.every((m) => m === "mock-strong")).toBe(true);
     expect(seen.length).toBe(2);

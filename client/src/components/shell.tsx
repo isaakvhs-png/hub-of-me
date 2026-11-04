@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { Activity, MessageSquare, MoreHorizontal, NotebookPen, Settings } from "lucide-react";
+import { Activity, MessageSquare, MoreHorizontal, NotebookPen, Settings, Network } from "lucide-react";
 import { api } from "@/lib/api";
 import { cn, eur } from "@/lib/utils";
 
 const primary = [
   { to: "/", label: "Chat", icon: MessageSquare, end: true },
+  { to: "/mind", label: "Mind", icon: Network, end: false },
   { to: "/notebook", label: "Notebook", icon: NotebookPen, end: false },
   { to: "/health", label: "Health", icon: Activity, end: false },
   { to: "/settings", label: "Settings", icon: Settings, end: false },

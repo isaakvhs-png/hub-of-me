@@ -11,6 +11,7 @@ import { AsksPage, BriefPage, DebatePage, DebatesPage, HealthPage, SettingsPage,
 import { ToDoPage } from "@/pages/todos";
 import { PicturePage } from "@/pages/picture";
 import { NotebookPage } from "@/pages/notebook";
+import { MindPage } from "@/pages/mind";
 
 export function App() {
   const [user, setUser] = useState<{ name: string } | null | undefined>(undefined);
@@ -26,6 +27,7 @@ export function App() {
     <Shell name={user.name} onLogout={() => setUser(null)}>
       <Routes>
         <Route path="/" element={<ChatPage />} />
+        <Route path="/mind" element={<MindPage />} />
         <Route path="/library" element={<LibraryPage />} />
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/discovery" element={<DiscoveryPage />} />

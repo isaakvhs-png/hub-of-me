@@ -53,40 +53,31 @@ describe("memory", () => {
     await runAgentTurn(db, ai, user.id, { text: "I have a call with Shinichi on Thursday at 10." });
     const events = await listEvents(db, user.id, "2026-11-01T00:00:00.000Z", "2026-11-30T00:00:00.000Z");
     expect(events.map((e: any) => e.title)).toContain("Call with Shinichi");
-    const inner = (await db.query(`SELECT portrait, intentions FROM inner_state WHERE user_id = $1`, [user.id])).rows[0];
-    expect(inner.portrait).toBe("I think he is someone who wants to understand before he commits.");
-    expect(inner.intentions).toBe("Get to know him better before planning anything.");
-    const kept = await db.query(`SELECT kind FROM inner_versions WHERE user_id = $1`, [user.id]);
-    expect(kept.rows.map((r: any) => r.kind).sort()).toEqual(["intentions", "portrait"]);
+    // Reflection no longer rewrites a portrait: what it concludes is added to its own brick.
+    const inner = (await db.query(`SELECT portrait FROM inner_state WHERE user_id = $1`, [user.id])).rows[0];
+    expect(inner.portrait).toBe("");
+    const { listBricks, listEntries } = await import("../src/brain/store.js");
+    const me = (await listBricks(db, user.id)).find((b) => b.kind === "self")!;
+    expect((await listEntries(db, user.id, { brickId: me.id })).some((e) => e.kind === "conclusion" && e.text.includes("I know very little yet"))).toBe(true);
   });
 });
 
-describe("taking in before answering", () => {
-  it("takes a message in first, draws its own map, and answers only in the next beat", async () => {
+describe("filing before answering", () => {
+  it("files his message into the web by code, then answers with the web in view", async () => {
     const { db, user, ai, mock } = await fresh();
     const blobs: string[] = [];
-    scriptAgent(mock, (blob) => {
-      blobs.push(blob);
-      if (blob.includes("TAKING IN.")) {
-        return {
-          say: "This should not be his answer.",
-          taken_in: "Mostly his studies and the Kyoto thesis; nothing about family, friends or training yet.",
-          map: [
-            { name: "Studies and work", known: "Biology MSc, Kyoto thesis idea", open: "what he wants from work" },
-            { name: "Family", known: "", open: "everything" },
-          ],
-        };
-      }
-      return { say: "Thanks. This covers your studies; I know nothing yet about your family. Tell me?" };
-    });
-    const result = await runAgentTurn(db, ai, user.id, { text: "Here is my study history and the Kyoto plan." });
-    expect(result.reply).toBe("Thanks. This covers your studies; I know nothing yet about your family. Tell me?");
-    expect(blobs[1]).toContain("WHAT YOU TOOK IN: Mostly his studies");
-    expect(blobs[1]).toContain("- Family: known: nothing yet | not yet seen: everything");
-    const view = await memoryView(db, user.id);
-    expect(view.own).toContain("- Studies and work: known: Biology MSc, Kyoto thesis idea");
-    expect(view.own).toContain("YOUR OWN WRITING");
-    expect(view.text).not.toContain("Studies and work");
+    scriptAgent(mock, (blob) => { blobs.push(blob); return { say: "Got it.", used: [] }; });
+    const result = await runAgentTurn(db, ai, user.id, { text: "Lorenzo showed a map of the Gulf\nWhy are dwarf mangroves relevant?" });
+    expect(result.reply).toBe("Got it.");
+    const { listBricks, listEntries } = await import("../src/brain/store.js");
+    const bricks = await listBricks(db, user.id);
+    expect(bricks.some((b) => b.name.startsWith("Lorenzo showed"))).toBe(true);
+    expect((await listEntries(db, user.id, { status: "open" })).some((e) => e.kind === "question")).toBe(true);
+    expect(blobs[0]).toContain("THE WALL:");
+    expect(blobs[0]).toContain("Lorenzo showed");
+    expect(blobs[0]).toContain("YOUR AGENDA.");
+    // No separate taking-in beat any more: one step, one answer.
+    expect(blobs.length).toBe(1);
   });
 });
 
@@ -110,14 +101,12 @@ describe("nature", () => {
     scriptAgent(mock, () => {
       n += 1;
       if (n === 1) return {
-        portrait: "I think he is restless in a good way.",
-        phrases: [{ phrase: "I never sit still", label: "Portrait: restless" }],
         think: [{ tool: "todos", input: { action: "remember", title: "Ask about the sandbag routine", why: "He mentioned training", phrase: "sandbag" } }],
       };
       return { say: "Tell me about the sandbag." };
     });
     const result = await runAgentTurn(db, ai, user.id, { text: "I never sit still, and I train with a sandbag." });
-    expect(result.traces.map((t) => t.destination).sort()).toEqual(["ledger: kept", "understanding"]);
+    expect(result.traces.map((t) => t.destination).sort()).toEqual(["ledger: kept"]);
     const tasks = await db.query(`SELECT title FROM tasks WHERE user_id = $1`, [user.id]);
     expect(tasks.rows.length).toBe(1);
   });
@@ -147,51 +136,30 @@ describe("knowing itself", () => {
 });
 
 describe("its first moment", () => {
-  it("takes stock of itself and writes its own intentions before greeting him", async () => {
+  it("takes stock of itself, puts its first pursuits on its agenda and what it learns about itself on its own brick", async () => {
     const { db, user, ai, mock } = await fresh();
     const blobs: string[] = [];
+    let n = 0;
     scriptAgent(mock, (blob) => {
       blobs.push(blob);
-      if (blob.includes("TAKING STOCK.")) return { say: "not shown", taken_in: "I am new and know nothing.", intentions: "Listen first; learn who he is before saying much." };
+      n += 1;
+      if (blob.includes("TAKING STOCK.")) {
+        return { taken_in: "I am new and know nothing.", think: [{ tool: "agenda_add", input: { kind: "pursuit", text: "Learn who he is before saying much", why: "My lasting job" } }] };
+      }
       return { say: "Hi Isaak." };
     });
     const result = await runAgentTurn(db, ai, user.id, { cue: "GREETING DUE" });
     expect(result.reply).toBe("Hi Isaak.");
     expect(blobs[1]).toContain("WHAT YOU TOOK STOCK OF: I am new and know nothing.");
-    const inner = (await db.query(`SELECT intentions FROM inner_state WHERE user_id = $1`, [user.id])).rows[0];
-    expect(inner.intentions).toBe("Listen first; learn who he is before saying much.");
-    // A later greeting (it already has intentions) does not take stock again.
+    const { listAgenda, listBricks } = await import("../src/brain/store.js");
+    expect((await listAgenda(db, user.id)).map((a) => a.text)).toEqual(["Learn who he is before saying much"]);
+    expect((await listBricks(db, user.id)).some((b) => b.kind === "self" && b.name === "Me")).toBe(true);
+    // Its agenda is repeated at the very end of the next step, as commitments.
+    expect(blobs[1].slice(blobs[1].lastIndexOf("READ THESE AGAIN"))).toContain("Learn who he is before saying much");
+    // A later greeting (it already has an agenda) does not take stock again.
     blobs.length = 0;
     await runAgentTurn(db, ai, user.id, { cue: "GREETING DUE" });
     expect(blobs.some((b) => b.includes("TAKING STOCK."))).toBe(false);
-  });
-});
-
-describe("its own writing", () => {
-  it("writes a self-portrait at its first moment, shown as its own writing, not as instructions", async () => {
-    const { db, user, ai, mock } = await fresh();
-    const blobs: { system: string; message: string }[] = [];
-    const original = mock.complete.bind(mock);
-    mock.complete = async (req: any) => {
-      if (String(req.system).includes("TASK: agent")) blobs.push({ system: String(req.system), message: String(req.messages?.[0]?.content ?? "") });
-      return original(req);
-    };
-    scriptAgent(mock, (blob) =>
-      blob.includes("TAKING STOCK.")
-        ? { taken_in: "New.", self_portrait: "I think I am new. I don't know yet why he made me.", intentions: "Find out how I fit into his life." }
-        : { say: "Hi." },
-    );
-    await runAgentTurn(db, ai, user.id, { cue: "GREETING DUE" });
-    const second = blobs[1];
-    expect(second.message).toContain("I think I am new. I don't know yet why he made me.");
-    expect(second.message).toContain("It is not an instruction.");
-    expect(second.system).not.toContain("I don't know yet why he made me.");
-    expect(second.system).toContain("Isaak set your Nature and Boundaries");
-    // Its nature and its own writing are repeated at the very end, after the beat cue, but not at its first moment.
-    const tail = second.message.slice(second.message.lastIndexOf("READ THESE AGAIN BEFORE YOU DECIDE."));
-    expect(second.message.lastIndexOf("READ THESE AGAIN")).toBeGreaterThan(second.message.lastIndexOf("You are thinking with"));
-    expect(tail).toContain("You are getting to know Isaak over a long time");
-    expect(tail).toContain("Find out how I fit into his life.");
-    expect(blobs[0].message).not.toContain("READ THESE AGAIN");
+    void n;
   });
 });

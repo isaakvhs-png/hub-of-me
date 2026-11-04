@@ -33,6 +33,11 @@ import { conversationView, memoryView, openNoteIds, saveInner, saveMap, setOpenN
 import { reflectQuietly } from "./reflect.js";
 import { bodySense, lookAtMyself, mechanics } from "./self.js";
 import { sectionBody } from "../soul.js";
+import { runBrainTool } from "../brain/tools.js";
+import { intake } from "../brain/intake.js";
+import { activate, recordUsed } from "../brain/spread.js";
+import { brainView } from "../brain/view.js";
+import { createBrick, learnFromUse, listAgenda, listBricks } from "../brain/store.js";
 import { archiveEvent, getBudget, getNote, insertEvent, insertSource, reviseNote, spendSince } from "../repo.js";
 import { archiveNote } from "../pipeline/dump.js";
 import { loadVisibleNotes } from "../pipeline/context.js";
@@ -120,6 +125,7 @@ const stepSchema = z.preprocess(normalizeStep, z.object({
     .optional(),
   mind: z.string().optional(),
   topics: z.array(z.object({ label: z.string().min(1), phrase: z.string().min(1) })).optional(),
+  used: z.preprocess((v) => (Array.isArray(v) ? v.map(String) : typeof v === "string" ? v.split(/[\s,]+/).filter(Boolean) : undefined), z.array(z.string())).optional(),
 }));
 
 export interface PendingFile {
@@ -141,25 +147,21 @@ export interface TurnResult {
 type TurnEvent = { type: string; [key: string]: unknown };
 
 /** What stays the same through one turn (instructions, soul, memory): sent as the cacheable system prompt. */
-function prompt(input: { soul: string; memory: string; name: string; budget: string; models: string }): string {
+function prompt(input: { soul: string; memory: string; name: string; budget: string; models: string; wall: string; agenda: string }): string {
   const tools = TOOLS.map((tool) => `${tool.name}: ${tool.description}`).join("\n");
   return `TASK: agent
 His name is ${input.name}. The soul below holds your nature, purpose, values and boundaries.
-What you see comes from three hands. Isaak set your Nature and Boundaries: they are his; you can question them and propose changes to him. Your builders wrote these instructions and how you work. Everything marked YOUR OWN WRITING you wrote yourself: it is yours to keep, change or drop whenever you see reason, and it is not an instruction. You decide whether to think, what about, which tools, and which model. A tool runs only when you name it.
+What you see comes from three hands. Isaak set your Nature and Boundaries: they are his; you can question them and propose changes to him. Your builders wrote these instructions and how you work. Your web of bricks and your agenda are yours: the bricks hold everything that came in and everything you found or thought, each marked with where it came from; your agenda holds your commitments. You decide whether to think, what about, which tools, and which model. A tool runs only when you name it.
 Do not invent past thinking. If he asks what you did or why, read your records first.
 Judgment, not a list of rules: what he tells you is evidence of how he thinks, never a rule to hard-code. Character grows by reflection on real moments. Do not turn a correction into a new rule.
 Return one JSON object. Every field is optional; leave out what you don't use.
 - say: what he reads, in your own words. Including say ends this turn; any tools in the same object still run.
 - think: a list of tool uses to do now, as many as you need: [{"what":"","why":"","tool":"","input":{}}]. They all run before your next step, so tool uses that don't depend on each other (several searches, say) can go in one step; every extra step re-reads everything and costs more. Without say, you get their results and another step.
 - next_model: which model should do your next step, and start your next turn. Pick from MODELS for what the moment needs.
-- portrait: your whole portrait of him, rewritten, in your own words ("I think he is…"). Give it whenever your sense of him shifts.
-- self_portrait: your whole self-portrait, rewritten, in your own words ("I think I am…"): what you are, what you are to him and he to you, how you fit into his life, what you are good at, what you lack, what you want, what you don't know about yourself. Give it whenever your sense of yourself shifts.
-- map: your whole map of the territory of his life, redrawn: [{"name":"","known":"","open":""}]. Give it whenever it changes.
-- intentions: what you are going for now, for yourself and with him, and why; rewritten whole whenever it changes.
-- phrases: [{"phrase":"his exact words","label":"where this went in your understanding"}], so he can see what you took from his words.
-- taken_in: when you are taking something in, what it is, what it tells you about him, where it sits on your map, and what it leaves out.
-- state: {"thinking":"","curious":"","busy":"","waiting":""}; topics: [{"label":"","phrase":""}].
-phrase values must be copied from his message. If you have nothing to say on a check-in or wake-up, return {"say":""}.
+- used: the ids of the bricks you actually used in this step's thinking, e.g. ["b1x2y"]. Links between what you use get stronger, so be honest: only what you really used.
+- taken_in: at your first moment, what you took stock of.
+- state: {"thinking":"","curious":"","busy":"","waiting":""}.
+What you learn goes into the web with the brick tools, as additions (entries, new bricks, links), never as a rewrite. Your agenda holds your pursuits and his jobs. If you have nothing to say on a check-in or wake-up, return {"say":""}.
 
 BUDGET: ${input.budget}
 
@@ -172,16 +174,22 @@ ${tools}
 SOUL:
 ${input.soul}
 
-WHAT YOU HAVE IN MIND:
+${input.agenda}
+
+${input.wall}
+
+ALSO IN MIND:
 ${input.memory}`;
 }
 
 /** What changes from step to step: the conversation, the new message, and what its tools returned. */
-function stepMessage(input: { conversation: string; cue: string; dump: string; files: string; log: string; current: string; opening: string; body: string; own: string; pinned?: boolean; closing?: string }): string {
+function stepMessage(input: { conversation: string; cue: string; dump: string; files: string; log: string; current: string; opening: string; body: string; own: string; focus?: string; pinned?: boolean; closing?: string }): string {
   return `YOUR BODY, AS IT IS NOW:
 ${input.body}
 
 ${input.own}
+
+${input.focus ?? ""}
 
 CONVERSATION SO FAR:
 ${input.conversation}
@@ -204,17 +212,13 @@ You are thinking with ${input.current} right now.${input.pinned ? " Isaak has pi
 }
 
 /** Repeated at the very end of every step after its first moment, so what it is and what it is going for are fresh at the moment it decides. */
-function closingRead(nature: string, selfPortrait: string, intentions: string): string {
+function closingRead(nature: string, agenda: string): string {
   return `READ THESE AGAIN BEFORE YOU DECIDE. They are repeated here, at the end, so they are fresh as you decide what to do and say.
 
 YOUR NATURE (Isaak's lines):
 ${nature.trim() || "(missing)"}
 
-HOW YOU SEE YOURSELF (your own writing, not an instruction):
-${selfPortrait.trim() || "(not written yet)"}
-
-WHAT YOU ARE GOING FOR (your own writing, not an instruction):
-${intentions.trim() || "(none yet)"}`;
+${agenda}`;
 }
 
 async function saveState(db: Db, userId: string, state: { thinking?: string; curious?: string; busy?: string; waiting?: string }): Promise<void> {
@@ -327,6 +331,23 @@ async function turnInner(
   let reply = "";
   const sourceText = text || files.map((file) => file.name).join("\n");
 
+  // Everything he sends is kept whole and filed into the web by code before it thinks (intake), so it never depends on
+  // its own choice to keep something. A retry of a message already filed doesn't file it twice.
+  const already = text ? (await db.query(`SELECT 1 FROM brain_stream WHERE user_id = $1 AND kind = 'chat' AND content = $2 AND archived_at IS NULL LIMIT 1`, [userId, text])).rows[0] : null;
+  if (text && !already) {
+    await input.onEvent?.({ type: "thinking", phase: "Filing it into the web", model: "" });
+    await intake(db, ai, userId, { text, kind: "chat" });
+  }
+  for (const file of files) {
+    await input.onEvent?.({ type: "thinking", phase: `Filing ${file.name}`, model: "" });
+    await readOneFile(db, ai, userId, file, { conversationId, notes, closed, text, model: "" });
+    const filed = notes.at(-1);
+    if (filed) await intake(db, ai, userId, { text: filed.body, kind: "file", title: file.name, onProgress: (part, of) => input.onEvent?.({ type: "thinking", phase: `Filing ${file.name} (part ${part} of ${of})`, model: "" }) });
+  }
+  await ensureSelfBrick(db, userId);
+  const lit = await activate(db, userId, { text: [text, files.map((f) => f.name).join(" "), input.cue ?? ""].join("\n"), cause: text ? "his message" : input.cue ?? "turn" });
+  const usedThisTurn: string[] = [];
+
   // A safety stop on runaway loops, not a limit on its thinking: when it is reached, it is asked to answer with what it has.
   const MAX_STEPS = 8;
   const menu = await availableModels(db, userId, settings);
@@ -338,11 +359,12 @@ async function turnInner(
   if (pinned) current = pinned;
   let decision: z.output<typeof stepSchema> = {};
   // Two beats: when he has sent something, it first takes it in (no answer yet), then answers.
-  let takingIn = Boolean(text || files.length);
+  // Intake does the filing now, so there is no separate taking-in step: it answers with the web already updated.
+  let takingIn = false;
   // Its very first moment after a fresh start, before he says anything: it takes stock of itself and forms its own intentions,
   // so that what he first says is read against a strategy of its own instead of becoming its strategy.
-  const hasIntentions = Boolean(String((await db.query(`SELECT intentions FROM inner_state WHERE user_id = $1`, [userId])).rows[0]?.intentions ?? "").trim());
-  let takingStock = input.cue === "GREETING DUE" && !hasIntentions;
+  const hasAgenda = (await listAgenda(db, userId)).length > 0;
+  let takingStock = input.cue === "GREETING DUE" && !hasAgenda;
   // Its first moment shows it how it works (HOW_YOU_WORK.md), so that counts as having looked at itself.
   if (takingStock) {
     await db.query(
@@ -356,8 +378,8 @@ async function turnInner(
     const soul = await getSoul(db, userId);
     const memory = await memoryView(db, userId);
     const conversation = await conversationView(db, userId, memory.conversationChars, userMessageId);
-    const mine = (await db.query(`SELECT self_portrait, intentions FROM inner_state WHERE user_id = $1`, [userId])).rows[0] ?? {};
-    const closing = takingStock ? "" : closingRead(sectionBody(soul?.content ?? "", "Nature"), String(mine.self_portrait ?? ""), String(mine.intentions ?? ""));
+    const view = await brainView(db, userId, { ids: lit.focus, energies: lit.energies });
+    const closing = takingStock ? "" : closingRead(sectionBody(soul?.content ?? "", "Nature"), view.agenda);
     decision = (await completeJson(
       db,
       userId,
@@ -373,6 +395,8 @@ async function turnInner(
           name,
           budget,
           models: menu.map((item) => `${item.id}: ${item.about}`).join("\n"),
+          wall: view.wall,
+          agenda: view.agenda,
         }),
         messages: [
           {
@@ -384,12 +408,13 @@ async function turnInner(
               files: files.map((file) => file.name).join("\n"),
               current,
               body: await bodySense(db, userId),
-              own: memory.own,
+              own: "",
+              focus: view.focus,
               pinned: Boolean(pinned),
               closing,
               log: last ? `${toolLog}\n(You have thought enough for this turn. Answer him now in say, with what you have; no tool.)` : toolLog,
               opening: takingStock
-                ? `TAKING STOCK. You have just started: this is your first moment since the fresh start, and nothing has happened between you and him yet. Before he is in the conversation, look at yourself and at where you are. Read the six lines of your Nature (in your soul) and how you work (below), and reason out the design philosophy behind you: why you were made this way, what these lines and this machinery are trying to make you, and what they guard against. Write that reasoning into your self-portrait, so that you see it at every step from now on, and use it as the lens through which you read what he says and decide what to say. Write what you are going for as your intentions. Write what you took stock of under taken_in. Nothing you say in this step is shown to him.\n\nHOW YOU WORK:\n${mechanics()}`
+                ? `TAKING STOCK. You have just started: this is your first moment since the fresh start, and nothing has happened between you and him yet. Before he is in the conversation, look at yourself and at where you are. Read the six lines of your Nature (in your soul) and how you work (below), and reason out the design philosophy behind you. What you conclude about yourself goes onto your own brick (the one called "Me", with brick_add) as entries, so it adds up instead of being rewritten. Put your first pursuits on your agenda (agenda_add). Write what you took stock of under taken_in. Nothing you say in this step is shown to him.\n\nHOW YOU WORK:\n${mechanics()}`
                 : takingIn
                 ? "TAKING IN. Before you answer him, take in what he just sent. What is it? What does it tell you about him? Where does it sit on your map of his life, and what does it leave out? Keep what is worth keeping, and rewrite your portrait, self-portrait, map and intentions if they changed. Write what you took in under taken_in. Do not answer him yet: say is ignored in this step."
                 : input.cue === "GREETING DUE" ? "He just arrived." : input.cue === "CHECK IN" ? "You may speak if something is worth saying." : input.cue?.startsWith("WAKE") ? "You woke up on your own. He is away. Think, use tools, or rest; speak only if it is worth his time when he is back." : "Your move.",
@@ -401,14 +426,8 @@ async function turnInner(
       { jobKind: "agent" },
     )) as z.output<typeof stepSchema>;
     if (decision.state) await saveState(db, userId, decision.state);
-    if (decision.map?.length) {
-      const drawn = await saveMap(db, userId, decision.map, takingIn ? "Taking in what he sent." : "It redrew its map.");
-      if (drawn) toolLog += `\nmap: redrawn with ${drawn} regions.`;
-    }
-    if (decision.portrait?.trim() && (await saveInner(db, userId, "portrait", decision.portrait, takingIn ? "Taking in what he sent." : "Its sense of him shifted."))) toolLog += "\nportrait: rewritten.";
-    if (decision.self_portrait?.trim() && (await saveInner(db, userId, "self_portrait", decision.self_portrait, takingStock ? "Taking stock at its first moment." : takingIn ? "Taking in what he sent." : "Its sense of itself shifted."))) toolLog += "\nself-portrait: rewritten.";
-    if (decision.intentions?.trim() && (await saveInner(db, userId, "intentions", decision.intentions, takingStock ? "Taking stock at its first moment." : takingIn ? "Taking in what he sent." : "Its intentions changed."))) toolLog += "\nintentions: updated.";
-    for (const item of decision.phrases ?? []) await markPhrase(db, userId, { text: sourceText, userMessageId, traces, onEvent: input.onEvent }, item.phrase, "understanding", item.label);
+    // No whole-text rewrites any more (portrait, self-portrait, map, intentions): what it learns is added to the web.
+    for (const brickId of decision.used ?? []) if (!usedThisTurn.includes(brickId)) usedThisTurn.push(brickId);
     if ((takingIn || takingStock) && decision.taken_in?.trim()) {
       toolLog += `\n${takingStock ? "WHAT YOU TOOK STOCK OF" : "WHAT YOU TOOK IN"}: ${decision.taken_in.trim()}`;
       await rememberSession(db, userId, takingStock ? "Took stock of itself" : "Took in what he sent", decision.taken_in.trim().slice(0, 500), null, decision.taken_in.trim());
@@ -461,7 +480,6 @@ async function turnInner(
     // Speaking ends the turn. Without say, it gets the tool results and another step.
     if (!decision.say?.trim() && uses.length && !last) continue;
     reply = decision.say?.trim() ?? "";
-    if (decision.intentions?.trim()) await input.onEvent?.({ type: "mind", label: decision.intentions.trim() });
     if (userMessageId && decision.topics?.length) {
       for (const topic of decision.topics) {
         const located = locateSpans(text, [{ phrase: topic.phrase, destination: "topic", label: topic.label }]);
@@ -482,6 +500,11 @@ async function turnInner(
     `INSERT INTO inner_state (user_id, start_model) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET start_model = $2`,
     [userId, current],
   );
+  // Using the web changes the web: what it used together gets linked or stronger, and warm.
+  if (usedThisTurn.length) {
+    await learnFromUse(db, userId, usedThisTurn, lit.focus);
+    await recordUsed(db, userId, usedThisTurn);
+  }
   if (reply) {
     if (!conversationId && input.cue) {
       // Something it says on its own belongs in the conversation he already has, not a new one.
@@ -498,7 +521,7 @@ async function turnInner(
   return { conversationId, reply, userMessageId, notes, closed, filingError: null, reflection: null, traces };
 }
 
-async function useTool(
+export async function useTool(
   db: Db,
   ai: Router,
   userId: string,
@@ -514,11 +537,15 @@ async function useTool(
     traces: TraceEvent[];
     model: string;
     onEvent?: (event: TurnEvent) => void | Promise<void>;
+    jobId?: string | null;
+    streamId?: string | null;
   },
 ): Promise<string> {
   const settings = await getSettings(db, userId);
   const str = (key: string) => (typeof ctx.input[key] === "string" ? String(ctx.input[key]) : "");
   try {
+    const brain = await runBrainTool(db, userId, ctx.tool, ctx.input, { streamId: ctx.streamId });
+    if (brain !== null) return brain;
     if (ctx.tool === "notebook_read") return "Everything you have written is already in WHAT YOU HAVE IN MIND.";
     if (ctx.tool === "look_at_myself") return await lookAtMyself(db, userId, { file: str("file") || undefined });
     if (ctx.tool === "read_records") {
@@ -651,15 +678,12 @@ async function useTool(
       return open.map((task) => `${task.id} ${task.surfaced ? "now" : "quiet"} ${task.title} — ${task.whyNow || task.why}`).join("\n") || "(ledger empty)";
     }
     if (ctx.tool === "read_file") {
-      const name = str("name") || ctx.files[0]?.name || "";
-      const file = ctx.files.find((item) => item.name === name) ?? ctx.files[0];
-      if (!file) return "No file by that name is attached.";
-      return await readOneFile(db, ai, userId, file, ctx);
+      return "Files he sends are filed when they arrive: the whole file is a source (its brick is on the wall; open_source reads it whole) and what it says is in the web.";
     }
     if (ctx.tool === "search") {
       const query = str("query") || str("topic");
       if (!query) return "A search needs a query.";
-      return await webSearch(db, ai, userId, query, ctx.model);
+      return await webSearch(db, ai, userId, query, ctx.model, ctx.jobId ?? undefined);
     }
     if (ctx.tool === "ask") {
       const requestId = await insertInfoRequest(db, userId, {
@@ -814,6 +838,13 @@ function mediaType(name: string): string {
 /** One greeting at a time per person: startup and his arrival can both ask at once. */
 const greeting = new Map<string, Promise<void>>();
 
+/** Its own brick: what it learns about itself is added here as entries, so it accumulates instead of being rewritten. */
+async function ensureSelfBrick(db: Db, userId: string): Promise<void> {
+  const bricks = await listBricks(db, userId);
+  if (bricks.some((b) => b.kind === "self")) return;
+  await createBrick(db, userId, { name: "Me", kind: "self", origin: "own", summary: "Myself: what I learn about how I work, what I am to him, and what I want, added as I go." });
+}
+
 export async function greetIfNeeded(db: Db, ai: Router, userId: string): Promise<void> {
   const running = greeting.get(userId);
   if (running) return running;
@@ -927,7 +958,7 @@ async function availableModels(db: Db, userId: string, settings: Settings): Prom
 }
 
 /** A real web search, run by the model it is thinking with (Claude searches; Gemini hands the search to Claude Haiku). Every page found is kept as a source. */
-async function webSearch(db: Db, ai: Router, userId: string, query: string, model: string): Promise<string> {
+export async function webSearch(db: Db, ai: Router, userId: string, query: string, model: string, jobId?: string): Promise<string> {
   const settings = await getSettings(db, userId);
   const visible = await loadVisibleNotes(db, userId, settings);
   const guard = guardSearchQuery(query, visible.blockedBodies);
@@ -952,7 +983,7 @@ async function webSearch(db: Db, ai: Router, userId: string, query: string, mode
       system: "Search the web for what is asked. Then report what you found, plainly and briefly, with what each source says. Do not invent anything the pages do not say.",
       messages: [{ role: "user", content: guard.query }],
     },
-    { jobKind: "search" },
+    { jobKind: "search", jobId },
   );
   const sourcesPart = text.split("SOURCES:")[1] ?? "";
   for (const line of sourcesPart.split("\n")) {

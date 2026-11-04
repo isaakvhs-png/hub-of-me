@@ -101,7 +101,6 @@ describe("understanding", () => {
     expect(response.status).toBe(200);
     const body = await response.text();
     expect(body).toContain("event: span");
-    expect(body).toContain("event: mind");
     expect(body).toContain("event: done");
     await db.close();
   });

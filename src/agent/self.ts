@@ -92,17 +92,24 @@ export async function bodySense(db: Db, userId: string): Promise<string> {
   }
   const live = notes.filter((note) => note.status !== "archived");
   const spent = (await spendSince(db, userId, startOfMonth("Europe/Amsterdam").toISOString())).spentEurCents;
-  const portrait = version("portrait");
-  const intentions = version("intentions");
+  const web = (await db.query(
+    `SELECT (SELECT COUNT(*) FROM bricks WHERE user_id = $1 AND archived_at IS NULL) AS bricks,
+            (SELECT COUNT(*) FROM brick_links WHERE user_id = $1 AND archived_at IS NULL) AS links,
+            (SELECT COUNT(*) FROM brick_entries WHERE user_id = $1 AND archived_at IS NULL AND status = 'open') AS open,
+            (SELECT COUNT(*) FROM agenda WHERE user_id = $1 AND archived_at IS NULL AND status = 'open') AS agenda,
+            (SELECT COUNT(*) FROM brain_sessions WHERE user_id = $1 AND archived_at IS NULL) AS sessions`,
+    [userId],
+  )).rows[0] ?? {};
+  void version; void regions;
   return [
     `- Age: started fresh ${started ? `${ago(started)} (${started.slice(0, 16)}Z)` : "at an unknown time"}. ${Number(convos.rows[0]?.n ?? 0)} conversation(s); ${count("user")} message(s) from him, ${count("assistant")} from you.`,
     `- How you work: explained in your own design notes, which you can read with look_at_myself. Last looked: ${ago(iso(state.self_looked_at))}.`,
     `- Soul: ${sections.join(", ") || "(empty)"}${grown.length ? "" : "; nothing has grown beyond the seed yet"}.`,
-    `- Understanding of him: portrait ${portrait ? `version ${portrait.n}, last rewritten ${ago(iso(portrait.last))}` : "not written yet"}; map ${regions ? `with ${regions} regions` : "not drawn yet"}; intentions ${intentions ? `version ${intentions.n}, last changed ${ago(iso(intentions.last))}` : "none yet"}.`,
+    `- Your web: ${Number(web.bricks ?? 0)} bricks, ${Number(web.links ?? 0)} links, ${Number(web.open ?? 0)} open questions or leads; ${Number(web.agenda ?? 0)} open agenda items; ${Number(web.sessions ?? 0)} work session(s) of your own so far.`,
     `- Memory: ${live.length} note(s), ${tasks.length} open ledger item(s), ${Number(events.rows[0]?.n ?? 0)} upcoming calendar item(s).`,
     `- Senses: you perceive his messages and the files he attaches, and the web when you search. Not yet: his email, a calendar outside this app, anything while the server sleeps.`,
     `- Hands: ${TOOLS.length} tools (${TOOLS.map((tool) => tool.name).join(", ")}).`,
-    `- How he sees you: Chat (your replies; his words underlined where you kept something), How it sees you (portrait, map, intentions, history), Library (notes), Calendar, Notebook (soul, ledger, debates, change history, tools), Health (cost).`,
+    `- How he sees you: Chat (your replies), Mind (your web: bricks, links, warmth, what lit up, your agenda and what your sessions did), Library (notes and files), Calendar, Notebook (soul, ledger, debates, change history, tools), Health (cost).`,
     `- Rhythm: ${state.next_wake_at ? `you asked to wake ${new Date(String(state.next_wake_at)).toISOString().slice(0, 16)}Z: ${state.wake_why}` : "no wake-up set"}. Budget: EUR ${(spent / 100).toFixed(2)} of EUR ${(budget.monthlyCapEurCents / 100).toFixed(2)} used this month.`,
   ].join("\n");
 }

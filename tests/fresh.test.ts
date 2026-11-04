@@ -87,7 +87,7 @@ describe("a fresh start leaves nothing behind that could pass as knowledge", () 
     const ev = (await db.query(`SELECT archived_at FROM calendar_events WHERE id = 'ev-old'`)).rows[0];
     expect(ev.archived_at).not.toBeNull();
     const sense = await bodySense(db, user.id);
-    expect(sense).toContain("portrait not written yet");
+    expect(sense).toContain("Your web: 0 bricks");
     expect(sense).toContain("0 upcoming calendar item(s)");
   });
 });

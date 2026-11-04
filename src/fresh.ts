@@ -2,8 +2,9 @@ import type { Db } from "./db.js";
 import { getSoul, logAction, listUsers } from "./repo.js";
 import { changeSoul } from "./soul.js";
 import { SEED_SOUL } from "./soul-seed.js";
+import { archiveBrain } from "./brain/store.js";
 
-export const FRESH_REASON = "Fresh start for the playtest, round 12 (Nature, self-portrait and intentions repeated at the end of each step)";
+export const FRESH_REASON = "Fresh start for the playtest, round 13 (the brick web: intake, energy, warmth, agenda, work sessions)";
 
 /** Archive the old center once. Rows stay. The account is not touched. */
 export async function freshStart(db: Db): Promise<number> {
@@ -27,6 +28,7 @@ export async function freshStart(db: Db): Promise<number> {
     await db.query(`UPDATE trace_events SET seen_at = COALESCE(seen_at, now()) WHERE user_id = $1`, [user.id]);
     // The calendar belongs to the round too: a fresh start must not hand it an old guess as a fact.
     await db.query(`UPDATE calendar_events SET archived_at = COALESCE(archived_at, now()) WHERE user_id = $1`, [user.id]);
+    await archiveBrain(db, user.id);
     await db.query(`UPDATE inner_state SET thinking = '', curious = '', busy = '', waiting = '', next_wake_at = NULL, wake_why = '', life_map = '', portrait = '', self_portrait = '', intentions = '', self_looked_at = NULL, start_model = '', open_notes = '[]' WHERE user_id = $1`, [user.id]);
     const current = await getSoul(db, user.id);
     if (current?.reason !== FRESH_REASON) {

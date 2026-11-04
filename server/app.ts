@@ -15,6 +15,8 @@ import { assertGmailReadOnly, assertGrantedScopes, gmailAuthUrl, gmailModule } f
 import { hashPassword, verifyPassword } from "../src/password.js";
 import { archiveNote, undoNote } from "../src/pipeline/dump.js";
 import { greetIfNeeded, runAgentTurn, workingNow, type PendingFile } from "../src/agent/turn.js";
+import { brickDetail, listAgenda, listBricks, listLinks } from "../src/brain/store.js";
+import { listSessions, runSession, sessionNow } from "../src/brain/session.js";
 import { TOOLS } from "../src/agent/registry.js";
 import { runReflection } from "../src/pipeline/debate.js";
 import { runNightly, runResearch, writeBrief } from "../src/pipeline/jobs.js";
@@ -797,7 +799,51 @@ export function createApp(db: Db) {
     return c.json({ sourceId, note, closed: [] });
   });
 
-  app.get("/api/working", (c) => c.json({ working: workingNow(c.get("userId")) }));
+  app.get("/api/working", (c) => c.json({ working: workingNow(c.get("userId")) ?? sessionNow(c.get("userId")) }));
+
+  // The brick web (MIND_DESIGN.md): what the Mind page shows, and "Explore now" for a work session of its own.
+  app.get("/api/brain", async (c) => {
+    const userId = c.get("userId");
+    const [bricks, links, agenda, sessions, act, moments] = await Promise.all([
+      listBricks(db, userId),
+      listLinks(db, userId),
+      listAgenda(db, userId),
+      listSessions(db, userId, 8),
+      db.query(`SELECT cause, energies, used, created_at FROM brain_activations WHERE user_id = $1 AND archived_at IS NULL ORDER BY created_at DESC LIMIT 1`, [userId]),
+      db.query(`SELECT brick_id, created_at FROM brick_moments WHERE user_id = $1 AND archived_at IS NULL`, [userId]),
+    ]);
+    const born = (await db.query(`SELECT created_at FROM fresh_starts WHERE user_id = $1`, [userId])).rows[0]?.created_at;
+    const row = act.rows[0];
+    const parse = (v: unknown, d: unknown) => { try { return JSON.parse(String(v)); } catch { return d; } };
+    const momentsByBrick: Record<string, string[]> = {};
+    for (const m of moments.rows) (momentsByBrick[String(m.brick_id)] ??= []).push(new Date(String(m.created_at)).toISOString());
+    return c.json({
+      bornAt: born ? new Date(String(born)).toISOString() : null,
+      now: new Date().toISOString(),
+      bricks: bricks.map((b) => ({ ...b, moments: momentsByBrick[b.id] ?? [] })),
+      links,
+      agenda,
+      sessions,
+      activation: row ? { cause: String(row.cause), energies: parse(row.energies, {}), used: parse(row.used, []), at: new Date(String(row.created_at)).toISOString() } : null,
+      running: sessionNow(userId),
+    });
+  });
+
+  app.get("/api/brain/bricks/:id", async (c) => {
+    const detail = await brickDetail(db, c.get("userId"), c.req.param("id"));
+    return detail ? c.json(detail) : c.json({ error: "No such brick." }, 404);
+  });
+
+  app.post("/api/brain/explore", async (c) => {
+    const userId = c.get("userId");
+    if (sessionNow(userId)) return c.json({ error: "A work session is already running." }, 409);
+    const settings = await getSettings(db, userId);
+    // It runs in the background; the page follows it through /api/working and /api/brain.
+    void runSession(db, aiFor(settings), userId).catch(async (error) => {
+      await logAction(db, userId, { what: "work session failed", why: error instanceof Error ? error.message.slice(0, 300) : "unknown", source: "session", payload: {} }).catch(() => undefined);
+    });
+    return c.json({ started: true });
+  });
 
   app.get("/api/tasks", async (c) => {
     const userId = c.get("userId");

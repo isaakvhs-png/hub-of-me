@@ -45,6 +45,8 @@ export class MockProvider {
   private canned(req: AiRequest): string {
     const blob = `${req.system}\n${req.messages.map((m) => m.content).join("\n")}`;
     if (req.system.includes("TASK: agent")) return agentTurn(blob);
+    if (req.system.includes("TASK: intake")) return intakeMock(blob);
+    if (req.system.includes("TASK: session")) return sessionMock(blob);
     if (req.system.includes("TASK: reflect")) return JSON.stringify({ thoughts: "I know very little yet; what he values is the open question.", portrait: "I think he is someone who wants to understand before he commits.", intentions: "Get to know him better before planning anything." });
     if (req.system.includes("TASK: vision")) return "A page of writing, readable enough to keep.";
     if (req.role === "critic") {
@@ -226,6 +228,22 @@ function commit(blob: string): string {
   });
 }
 
+/** Stand-in intake: each of the first lines becomes a brick named after its first words. Generic, not a reading of anyone. */
+function intakeMock(blob: string): string {
+  const text = (blob.split("NEW TEXT")[1] ?? "").split("\n").slice(1).join("\n").split("END NEW TEXT")[0] ?? "";
+  const lines = text.split("\n").map((l) => l.trim()).filter((l) => l.length > 3).slice(0, 4);
+  const items = lines.map((line, i) => ({ name: line.split(/\s+/).slice(0, 3).join(" ").replace(/[^\p{L}\p{N} ]/gu, ""), kind: "topic", summary: line.slice(0, 80), quote: line, group: i, entries: [{ kind: line.includes("?") ? "question" : "fact", text: line }] }));
+  const links = items.length > 1 ? [{ a: items[0].name, b: items[1].name, type: "about", reason: "mentioned one after the other" }] : [];
+  return JSON.stringify({ items, links });
+}
+
+function sessionMock(blob: string): string {
+  if (blob.includes("(this is the first step)")) {
+    return JSON.stringify({ goal: "Look at what came in and pick one thing to understand better.", thought: "Starting with my agenda.", think: [{ what: "Add a pursuit", why: "So the next session has something to act on.", tool: "agenda_add", input: { kind: "pursuit", text: "Understand what he cares about most", why: "It is my lasting job." } }] });
+  }
+  return JSON.stringify({ thought: "That is enough for this session.", done: true, wins: "Added a pursuit to my agenda.", left_off: "Pick up the pursuit next time." });
+}
+
 function agentTurn(blob: string): string {
   const results = blob.split("TOOL RESULTS:")[1] ?? "";
   if (blob.includes("GREETING DUE")) {
@@ -237,7 +255,7 @@ function agentTurn(blob: string): string {
   }
   if (blob.includes("CHECK IN") || blob.includes("WAKE:")) return JSON.stringify({ say: "" });
   const attached = section(blob, "ATTACHMENTS");
-  const names = attached.split("\n").map((line) => line.trim()).filter((line) => line && line !== "(none)" && !results.includes(`READ file: ${line}`));
+  const names = results.includes("filed when they arrive") ? [] : attached.split("\n").map((line) => line.trim()).filter((line) => line && line !== "(none)" && !results.includes(`READ file: ${line}`));
   if (names.length) {
     return JSON.stringify({ think: { what: `Read ${names[0]}`, why: "He handed it over.", tool: "read_file", input: { name: names[0] } } });
   }
