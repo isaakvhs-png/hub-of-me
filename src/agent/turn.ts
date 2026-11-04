@@ -343,6 +343,13 @@ async function turnInner(
   // so that what he first says is read against a strategy of its own instead of becoming its strategy.
   const hasIntentions = Boolean(String((await db.query(`SELECT intentions FROM inner_state WHERE user_id = $1`, [userId])).rows[0]?.intentions ?? "").trim());
   let takingStock = input.cue === "GREETING DUE" && !hasIntentions;
+  // Its first moment shows it how it works (HOW_YOU_WORK.md), so that counts as having looked at itself.
+  if (takingStock) {
+    await db.query(
+      `INSERT INTO inner_state (user_id, self_looked_at) VALUES ($1, now()) ON CONFLICT (user_id) DO UPDATE SET self_looked_at = now()`,
+      [userId],
+    );
+  }
   for (let step = 0; step <= MAX_STEPS; step += 1) {
     const last = step === MAX_STEPS;
     await input.onEvent?.({ type: "thinking", phase: takingStock ? "Taking stock" : takingIn ? "Taking it in" : step === 0 ? "Thinking" : "Answering", model: current });
