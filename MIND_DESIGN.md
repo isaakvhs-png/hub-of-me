@@ -33,12 +33,13 @@ Every input and every action, raw and in order: his messages, files, Gemini impo
 A brick is one thing. Granular: a page of notes gives 20–30 bricks. Inside a brick:
 1. **Name.**
 2. **Summary**, two or three lines. A cache, rebuilt at night *from the brick's own moments and entries*, never from the previous summary.
-3. **Moments:** pointers into the stream for every time it came up (date, source, his exact words).
+3. **Moments:** one moment = one time the brick came up: a pointer into the stream with the date, the source and his exact words. Moments are the evidence; they are what the summary is rebuilt from. **Display (Isaak, 4 Nov):** each moment is coloured by when it came in, on a scale relative to the entity's whole lifespan: the newest is fully blue, the oldest red, and as time passes early moments bunch together in shades of red while recent ones stay distinct.
 4. **Entries** that grew from those moments: fact, question, lead, idea, conclusion, to-do. Each carries its **origin** (his words / a web source / its own thought) and a **status** (open / answered / dropped).
 5. **Sources** it appeared in (the corner dot in the walkthrough).
 6. **Bookkeeping:** created, last lit, times lit, last revisited.
 7. **Warmth** (see 3.4).
-8. **Meaning fingerprint:** an embedding of name plus summary, used to find related bricks.
+8. **Meaning fingerprint:** not the description itself but a list of numbers an embedding model computes from the brick's name and summary. Texts with similar meaning get similar numbers, so comparing them is a fast way to find related bricks without a model reading everything. Not human-readable.
+9. **People:** a brick that is a person also holds their contact details, when those appear in his own material (his notes, files, Gemini chats, later email). Hard rule. It never looks contact details up and never puts them into a web search (Boundaries).
 
 A brick that is its own thought (origin: its thought) is marked as such everywhere. Its thoughts never count as evidence about Isaak.
 
@@ -69,7 +70,8 @@ Its self-portrait becomes bricks too (things it learned about itself, each with 
 
 1. **Chat** (text, voice, files).
 2. **Gemini via Google Takeout.** Isaak brainstorms by voice to Gemini many times a day (hold the button, talk); it is his main capture channel. He would put more in if he knew it was also a filing system. Import a Takeout export of his Gemini activity now and then. **To check before building:** the export format, and whether it contains both his prompts and Gemini's answers. Fallback: an AI reading his Gemini history in his already signed-in browser (slow, occasional).
-3. **Later:** a phone-friendly dump box (the app already installs as a PWA).
+3. **Raw files** (PDFs, documents, images, spreadsheets): kept whole as a source, with its own brick ("first-day notes.txt", "WI workflow.pdf"). Intake extracts the bricks inside as with any input, each with a moment pointing to the file. Images get a written description first. Asking about the file opens the file itself, not just what was extracted.
+4. **Later:** a phone-friendly dump box (the app already installs as a PWA).
 
 **Intake** (cheap model, on every input):
 1. Save the input whole to the stream.
@@ -81,7 +83,7 @@ Embeddings: Gemini's embedding model (free tier) or similar; stored in Postgres 
 
 ## 5. When Isaak talks to it
 
-1. **Starting points:** bricks named in his message or close in meaning to it get full energy; warm bricks get a small head start.
+1. **Starting points:** bricks named in his message or close in meaning to it get full energy; warm bricks get a small head start. **Energy** exists only for the length of one turn or one step: it spreads out from the starting points and fades with every step until it is too faint to continue (shown animated in *Bricks from Zero*, step 6). **Warmth** (3.4) is what's left afterwards and fades over hours.
 2. **Spreading:** energy flows along links in proportion to strength, losing some at every step, with **a little randomness** added so it doesn't always walk the same routes. Two or three steps deep.
 3. **What it's shown**, in this order:
    - its agenda (commitments);
@@ -101,7 +103,12 @@ Opus for this, as now (pinned for testing).
 ## 6. Its own time
 
 ### 6.1 Work sessions
-When idle and within budget, a few times a day, the code starts a session. A session is a series of steps like a turn: each step rereads the session so far and decides the next move (search, read, conclude, link, write a thought, draft something, queue a question). At the end it writes where it left off; the next session continues from the raw session log. Results go into the bricks and an "it's been doing" feed.
+When idle and within budget, a few times a day, the code starts a session. A session is a series of steps like a turn: each step rereads the session so far and decides the next move (search, read, conclude, link, make new bricks, write a thought, draft something, queue a question). Results go into the bricks and an "it's been doing" feed.
+
+- **No hard stop for suggestions (Isaak, 4 Nov):** something that would reach a person is saved as a suggestion for him, and the session carries on.
+- **When a session ends:** when it judges it has reached a satisfying point, or at a per-session spending cap (Isaak: high, e.g. €2 of tokens), with a daily and monthly cap above that. Note: on a cheap model €2 is a lot of work; several €2 sessions a day would exceed the €20 a month, so the caps have to be set together.
+- **Concrete wins:** each session must close something (answer a question, finish a job step, mark an entry done or dropped with a reason) or record why it couldn't. The agenda has to shrink as well as grow. The feed shows what was closed. This targets the deferring seen in round 12 (it only acted when there was no "later").
+- At the end it writes where it left off; the next session continues from the raw session log.
 
 Model: a cheap one (Gemini Flash or Claude Haiku recommended; Flash-Lite free but weak). Budget choice open.
 
@@ -110,6 +117,7 @@ The model picks from a list the code assembles:
 - his jobs ("find papers on predicting NbS effects");
 - its own pursuits;
 - curiosity: open questions in entries, thin spots (bricks with few links), clusters that keep coming back;
+  - **Where open questions come from:** (a) questions in his own words, picked up by intake ("why is it relevant?", "what does karstic mean?"); (b) questions it raises itself when it notices a gap or a contradiction while thinking, marked as its own; (c) questions he leaves unanswered when it asks him. Each is an entry with status open until answered or dropped.
 - **one guaranteed random revisit** of a brick that hasn't been lit or revisited for longest.
 
 ### 6.3 Random revisits (Isaak's idea, instead of decay)
@@ -134,6 +142,7 @@ Once a day, on a stronger model (Sonnet or Gemini Pro, not Opus):
 - **Routines** it writes for itself (Voyager-style, text only).
 - **The map view** of the whole web.
 - **An inner voice / council** (Isaak's idea): a second voice whose job is its agenda and long-term picture, arguing with the voice that answers. Only once the core exists.
+- **Debate mode on the brain** (Isaak, 4 Nov, for later): a council of differently-tempered models assesses one topic, including how it is represented in the web (is this cluster right, is something missing or wrongly linked). Builds on the existing debate tool.
 
 ## 9. Pitfalls and counters
 1. Merging too much (Kyoto thesis + Japan): merges are new bricks that link to the originals, which stay.
@@ -151,6 +160,7 @@ Once a day, on a stronger model (Sonnet or Gemini Pro, not Opus):
 13. Privacy: autonomous searches about people (colleagues, researchers). Decide whether names of public professionals may be searched; contact details and private matters never.
 14. Testing is slower: a week of real use, or a replay harness feeding his real material over simulated days.
 15. Self-modification: routines are text; core code only through approved proposals (the Darwin Gödel Machine faked its test logs).
+16. **The choosing step is the most fragile part** (Isaak, 4 Nov: step 9 of the walkthrough). If the code hands it a menu and it picks, it is still answering a prompt, just a different one, and may fall back on the safest, most useful-looking item or on small busywork. Counters: it states what it wants to achieve this session and why before it starts; concrete wins are recorded; a week of real use is reviewed specifically for what it chose and whether those choices show any drive of its own. If they don't, this is where the design needs rethinking.
 
 ## 10. Cost (rough; check before building)
 - Talking to him: Opus, as now (about €0.20–0.40 a message today; less once whole rewrites stop).
@@ -167,7 +177,7 @@ Once a day, on a stronger model (Sonnet or Gemini Pro, not Opus):
 3. **Gemini Takeout import** and **the night.**
 4. **Later:** self-review, routines, the map view, the inner voice.
 
-Ends with a fresh start (archive, never delete). The current soul, boundaries, tools, debate, diagnostics, calendar and rooms stay.
+Notes for later are kept in the code where they belong (e.g. the debate mode, in `src/agent/registry.ts`). Ends with a fresh start (archive, never delete). The current soul, boundaries, tools, debate, diagnostics, calendar and rooms stay.
 
 ## 12. Open decisions for Isaak
 1. Confirm the principle refinement (§2).
