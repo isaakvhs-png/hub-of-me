@@ -116,7 +116,32 @@ export function ChatPage() {
     });
   }, [conversationId]);
 
-  useEffect(() => { bottom.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, busy]);
+  /** A turn it started itself (a wake-up, an unanswered message): shown the same way, and the thread reloads when it ends. */
+  const [background, setBackground] = useState<{ phase: string; model: string; label: string } | null>(null);
+  const wasWorking = useRef(false);
+  useEffect(() => {
+    if (busy) return;
+    let stopped = false;
+    const check = async () => {
+      try {
+        const data = await api<{ working: { phase: string; model: string; label: string } | null }>("/api/working");
+        if (stopped) return;
+        setBackground(data.working);
+        if (wasWorking.current && !data.working) {
+          if (conversationId) await loadThread(conversationId, true);
+          await loadLists();
+        }
+        wasWorking.current = Boolean(data.working);
+      } catch {
+        /* the line is a courtesy; a failed check just tries again */
+      }
+    };
+    void check();
+    const timer = setInterval(() => void check(), 4000);
+    return () => { stopped = true; clearInterval(timer); };
+  }, [busy, conversationId]);
+
+  useEffect(() => { bottom.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, busy, background]);
 
   useEffect(() => {
     const desktop = window.hubDesktop;
@@ -329,6 +354,17 @@ export function ChatPage() {
               <span>
                 {thinking ? `${thinking.phase}${thinking.model ? ` · ${modelName(thinking.model)}` : ""}` : "Waking up"}
                 {work && work.status === "running" ? ` · ${work.label}` : ""}
+              </span>
+            </div>
+          ) : background ? (
+            <div className="flex items-center gap-2 text-sm text-primary" role="status" aria-live="polite">
+              <span className="inline-flex gap-1" aria-hidden="true">
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary [animation-delay:-0.3s]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary [animation-delay:-0.15s]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary" />
+              </span>
+              <span>
+                {`${background.phase}${background.model ? ` · ${modelName(background.model)}` : ""}${background.label ? ` · ${background.label}` : ""}`}
               </span>
             </div>
           ) : null}

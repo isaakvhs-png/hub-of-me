@@ -150,7 +150,7 @@ Do not invent past thinking. If he asks what you did or why, read your records f
 Judgment, not a list of rules: what he tells you is evidence of how he thinks, never a rule to hard-code. Character grows by reflection on real moments. Do not turn a correction into a new rule.
 Return one JSON object. Every field is optional; leave out what you don't use.
 - say: what he reads, in your own words. Including say ends this turn; any tools in the same object still run.
-- think: a list of tool uses to do now, as many as you need: [{"what":"","why":"","tool":"","input":{}}]. Without say, you get their results and another step.
+- think: a list of tool uses to do now, as many as you need: [{"what":"","why":"","tool":"","input":{}}]. They all run before your next step, so tool uses that don't depend on each other (several searches, say) can go in one step; every extra step re-reads everything and costs more. Without say, you get their results and another step.
 - next_model: which model should do your next step, and start your next turn. Pick from MODELS for what the moment needs.
 - portrait: your whole portrait of him, rewritten, in your own words ("I think he is…"). Give it whenever your sense of him shifts.
 - self_portrait: your whole self-portrait, rewritten, in your own words ("I think I am…"): what you are, what you are to him and he to you, how you fit into his life, what you are good at, what you lack, what you want, what you don't know about yourself. Give it whenever your sense of yourself shifts.
@@ -260,9 +260,17 @@ export async function runAgentTurn(
 
 const PROCESS_STARTED = new Date().toISOString();
 
+/** How much of one tool result later steps of the turn see. */
+const TOOL_RESULT_CHARS = 6000;
+
 /** Messages being answered right now, so the unanswered-message check never answers one twice. */
 const inFlight = new Set<string>();
 let liveTurns = 0;
+/** What it is doing right now, per person, so the page can show it even when it started the turn itself (a wake-up, an unanswered message). */
+const working = new Map<string, { phase: string; model: string; label: string; since: string }>();
+export function workingNow(userId: string): { phase: string; model: string; label: string; since: string } | null {
+  return working.get(userId) ?? null;
+}
 
 async function turnBody(
   db: Db,
@@ -272,10 +280,19 @@ async function turnBody(
   answering: string | null,
 ): Promise<TurnResult> {
   liveTurns += 1;
+  const forward = input.onEvent;
+  working.set(userId, { phase: "Waking up", model: "", label: "", since: new Date().toISOString() });
+  const onEvent = async (event: TurnEvent) => {
+    const now = working.get(userId);
+    if (now && event.type === "thinking") working.set(userId, { ...now, phase: String(event.phase ?? now.phase), model: String(event.model ?? now.model), label: "" });
+    if (now && event.type === "work") working.set(userId, { ...now, label: event.status === "running" ? String(event.label ?? "") : "" });
+    await forward?.(event);
+  };
   try {
-    return await turnInner(db, ai, userId, input, answering);
+    return await turnInner(db, ai, userId, { ...input, onEvent }, answering);
   } finally {
     liveTurns -= 1;
+    working.delete(userId);
   }
 }
 
@@ -422,7 +439,8 @@ async function turnInner(
         const created = await db.query(`SELECT id FROM conversations WHERE user_id = $1 AND archived_at IS NULL ORDER BY created_at DESC LIMIT 1`, [userId]);
         conversationId = created.rows[0] ? String(created.rows[0].id) : conversationId;
       }
-      toolLog += `\n${use.tool}: ${result}`;
+      // What later steps see of a result is capped; the full result stays in its records (and search sources are saved).
+      toolLog += `\n${use.tool}: ${result.length > TOOL_RESULT_CHARS ? `${result.slice(0, TOOL_RESULT_CHARS)}\n…(cut at ${TOOL_RESULT_CHARS} characters; the full result is in your records)` : result}`;
       if (!spec) toolLog += "\n(that tool is not one you have)";
       await rememberSession(db, userId, what, why, use.tool, result);
       await input.onEvent?.({ type: "work", status: "done", label: what, targetId: null });
@@ -912,7 +930,10 @@ async function webSearch(db: Db, ai: Router, userId: string, query: string, mode
   }
   if (settings.provider === "mock") return `MOCK SEARCH for "${guard.query}": no real web in test mode.`;
   if (!process.env.ANTHROPIC_API_KEY?.trim()) return "Web search needs the Anthropic key, which is not set.";
-  const searcher = model.startsWith("claude-") ? model : "claude-haiku-5-5";
+  // The pages are read and summarised by Claude Haiku, whatever model it is thinking with: reading search results
+  // pulls whole pages in as input, which on Opus cost up to half a euro per search. It judges the summary itself.
+  void model;
+  const searcher = "claude-haiku-5-5";
   const text = await completeText(
     db,
     userId,

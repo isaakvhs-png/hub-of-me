@@ -14,7 +14,7 @@ import { textFromUpload } from "../src/ingest.js";
 import { assertGmailReadOnly, assertGrantedScopes, gmailAuthUrl, gmailModule } from "../src/modules/gmail.js";
 import { hashPassword, verifyPassword } from "../src/password.js";
 import { archiveNote, undoNote } from "../src/pipeline/dump.js";
-import { greetIfNeeded, runAgentTurn, type PendingFile } from "../src/agent/turn.js";
+import { greetIfNeeded, runAgentTurn, workingNow, type PendingFile } from "../src/agent/turn.js";
 import { TOOLS } from "../src/agent/registry.js";
 import { runReflection } from "../src/pipeline/debate.js";
 import { runNightly, runResearch, writeBrief } from "../src/pipeline/jobs.js";
@@ -796,6 +796,8 @@ export function createApp(db: Db) {
     });
     return c.json({ sourceId, note, closed: [] });
   });
+
+  app.get("/api/working", (c) => c.json({ working: workingNow(c.get("userId")) }));
 
   app.get("/api/tasks", async (c) => {
     const userId = c.get("userId");

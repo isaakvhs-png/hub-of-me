@@ -4,7 +4,7 @@ import { BudgetError, ValidationError } from "../errors.js";
 import { extractJson } from "../json.js";
 import { OUTPUT_CEILING, outputLimit } from "./limits.js";
 import { costUsdCents, toEurCents } from "../prices.js";
-import { getBudget, getSettings, insertUsage, spendSince } from "../repo.js";
+import { getBudget, getSettings, insertUsage, logAction, spendSince } from "../repo.js";
 import { startOfMonth } from "../time.js";
 import type { AiRequest, AiResult } from "./types.js";
 import type { Router } from "./router.js";
@@ -31,7 +31,15 @@ export async function assertCanSpend(db: Db, userId: string): Promise<void> {
 
 export async function trackedComplete(db: Db, userId: string, ai: Router, req: AiRequest, meta: TrackMeta = {}): Promise<AiResult> {
   await assertCanSpend(db, userId);
-  const result = await ai.complete(req);
+  let result: AiResult;
+  try {
+    result = await ai.complete(req);
+  } catch (error) {
+    // Kept in the action log so a failure (a provider error, no credit left) survives a restart and shows in diagnostics.
+    const message = error instanceof Error ? error.message : String(error);
+    await logAction(db, userId, { what: "model call failed", why: message.slice(0, 500) || "unknown error", source: "ai", payload: { model: req.model ?? null, role: req.role, jobKind: meta.jobKind ?? null } }).catch(() => undefined);
+    throw error;
+  }
   const settings = await getSettings(db, userId);
   const usd = costUsdCents(result.model, result.usage, settings.priceOverrides);
   const priceKnown = usd != null;
