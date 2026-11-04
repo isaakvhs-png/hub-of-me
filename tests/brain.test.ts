@@ -106,3 +106,14 @@ describe("the Mind page's data", () => {
     await db.close();
   });
 });
+
+describe("answers handed over one level deep", () => {
+  it("unwraps {\"object\": {...}} instead of reading it as an empty answer", async () => {
+    const { unwrapJson } = await import("../src/ai/tracked.js");
+    const inner = { items: [{ name: "Wetlands International" }], links: [] };
+    expect(unwrapJson({ object: inner })).toEqual(inner);
+    expect(unwrapJson({ object: JSON.stringify(inner) })).toEqual(inner);
+    expect(unwrapJson(inner)).toEqual(inner);
+    expect(unwrapJson({ say: "hi" })).toEqual({ say: "hi" });
+  });
+});

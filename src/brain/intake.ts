@@ -67,7 +67,7 @@ You file what ${name} sends into a web of small bricks. One brick is one thing: 
 
 For every thing the text mentions:
 - If a brick in THE BRICK LIST already means it, use its id as ref (do not make a duplicate; a nickname or a longer name for the same thing is the same brick).
-- Otherwise give a short, plain name (no ref).
+- Otherwise give a short, plain name that could not be mistaken for another thing (no ref): "Internship at Wetlands International", not "internship"; the full name of an organisation, not only its initials.
 - quote: his exact words where it comes up (copy them).
 - group: a number; things that come up in the same sentence or line share a group.
 - entries: what the text says about it, each as {kind, text}: kind is fact, question (something he asks or wonders), lead (something to look into or sign up for), idea, todo, feeling, or conclusion. Keep his meaning; don't add your own guesses.
@@ -122,6 +122,9 @@ export async function intake(
     } catch (error) {
       await logAction(db, userId, { what: "intake failed", why: error instanceof Error ? error.message.slice(0, 300) : "unknown", source: "intake", payload: { streamId } });
       continue;
+    }
+    if (!parsed.items.length && chunk.length > 400) {
+      await logAction(db, userId, { what: "intake found nothing", why: `part ${index + 1} of ${chunks.length} gave no bricks`, source: "intake", payload: { streamId } });
     }
     const idByKey = new Map<string, string>();
     const groups = new Map<string, string[]>();

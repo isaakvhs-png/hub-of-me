@@ -1,4 +1,5 @@
 import type { Effort } from "../ai/effort.js";
+import { BRAIN_TOOLS } from "../brain/tools.js";
 
 export interface ToolSpec {
   name: string;
@@ -11,11 +12,13 @@ export interface ToolSpec {
  * Adding one widens what it can do without changing who it is (check every new one against DESIGN.md).
  */
 export const TOOLS: ToolSpec[] = [
-  { name: "notebook_write", effort: "light", description: "Remember something particular: a fact, a plan, a source, something he said. input: { title, summary, body, folder, kind, phrase, url }. summary is one line for your map. folder is a path you choose, like \"Kyoto/Thesis ideas\"; kind is what sort of note it is, in your own word. phrase: his words, copied from his message, if it came from there. url: the source, if it came from the web." },
+  // The web and the agenda come first: they are where what it learns and what it commits to live.
+  ...BRAIN_TOOLS,
+  { name: "notebook_write", effort: "light", description: "Write a note in the Library: a document he would want to read (a summary, a plan, research written up). What you learn about him and his world goes into bricks, not notes. input: { title, summary, body, folder, kind, phrase, url }. folder is a path you choose, like \"Kyoto/Thesis ideas\". phrase: his words, if it came from his message. url: the source, if it came from the web." },
   { name: "notebook_change", effort: "light", description: "Change or archive one of your notes; the old version is kept and can be undone. input: { id, title, summary, body, folder, kind, archive_why }. Give only what changes; archive_why archives it." },
   { name: "open_notes", effort: "light", description: "Choose which notes stay open in full in your memory window, when they no longer all fit. input: { open: [ids], close: [ids] }." },
   { name: "mark", effort: "light", description: "Point at a phrase in his message and show him where it is going, for anything you did with it that has no phrase of its own. input: { phrase, destination, label }. destination is where it goes, in your own words. (What you keep with a phrase lights up on its own.)" },
-  { name: "todos", effort: "light", description: "The ledger of things to follow up. input: { action, title, why, owner, taskId, reason, phrase }. action is remember, fade (with a reason), or done (with a reason)." },
+  { name: "todos", effort: "light", description: "The old ledger, kept from before the web. Your commitments and his jobs go on your agenda (agenda_add); use this only to close or fade what is still in the ledger. input: { action, title, why, owner, taskId, reason, phrase }. action is remember, fade (with a reason), or done (with a reason)." },
   { name: "calendar", effort: "light", description: "His calendar. input: { action, id, title, starts_at, ends_at, all_day, why, phrase }. action is add, move, or archive. Times are ISO with timezone." },
   { name: "read_file", effort: "light", description: "Read one attached file. Images and textless PDFs are read by sight. input: { name }." },
   { name: "look_at_myself", effort: "light", description: "Look at yourself: how you work (the machinery, written by your builders), every part of you in detail, your recent history (what you took in, intended and said), and the list of your own design and code files. input: { file } to read one of those files instead." },

@@ -4,7 +4,7 @@ import { changeSoul } from "./soul.js";
 import { SEED_SOUL } from "./soul-seed.js";
 import { archiveBrain } from "./brain/store.js";
 
-export const FRESH_REASON = "Fresh start for the playtest, round 13 (the brick web: intake, energy, warmth, agenda, work sessions)";
+export const FRESH_REASON = "Fresh start for the playtest, round 13b (the brick web, with intake that keeps everything and the brick tools in conversation)";
 
 /** Archive the old center once. Rows stay. The account is not touched. */
 export async function freshStart(db: Db): Promise<number> {

@@ -86,6 +86,24 @@ export async function completeText(db: Db, userId: string, ai: Router, req: AiRe
   return `${result.text}${continued.text}`.trim();
 }
 
+/**
+ * Models sometimes nest the answer one level deep when they hand it over through a tool ({"object": {...}}).
+ * Lenient schemas would accept the wrapper as an empty answer and silently lose everything, so unwrap it first.
+ */
+export function unwrapJson(value: unknown): unknown {
+  let v = value;
+  for (let i = 0; i < 2; i += 1) {
+    if (!v || typeof v !== "object" || Array.isArray(v)) return v;
+    const keys = Object.keys(v as Record<string, unknown>);
+    const inner = (v as Record<string, unknown>)[keys[0]];
+    if (keys.length !== 1 || !["object", "result", "output", "json", "data", "response", "answer"].includes(keys[0])) return v;
+    if (typeof inner === "string") { try { v = JSON.parse(inner); continue; } catch { return v; } }
+    if (!inner || typeof inner !== "object") return v;
+    v = inner;
+  }
+  return v;
+}
+
 export async function completeJson<T>(
   db: Db,
   userId: string,
@@ -107,7 +125,7 @@ export async function completeJson<T>(
       continue;
     }
     try {
-      const parsed = schema.parse(extractJson(result.text));
+      const parsed = schema.parse(unwrapJson(extractJson(result.text)));
       const reason = meta.reject?.(result.text) ?? null;
       if (reason) {
         last = reason;
