@@ -11,13 +11,17 @@ import { addEntry, addMoment, addSource, addStream, createBrick, findByName, lin
  * map: it sees the list of brick names (cheap) and the new text.
  */
 
-/** Which model does a background job. Intake and sessions run on a mid-size model in the playtest (quality first, cost measured). */
+/**
+ * Which model does a background job. The cheap model by default: these run on everything that comes in, for years.
+ * BRAIN_MODEL in the environment overrides it (to compare quality, say).
+ */
 export async function brainModel(db: Db, userId: string, job: "intake" | "session" | "night"): Promise<string> {
   const settings = await getSettings(db, userId);
   if (settings.provider === "mock") return "mock-cheap";
-  if (process.env.ANTHROPIC_API_KEY?.trim()) return "claude-sonnet-5-5";
+  if (process.env.BRAIN_MODEL?.trim()) return process.env.BRAIN_MODEL.trim();
+  if (process.env.ANTHROPIC_API_KEY?.trim()) return "claude-haiku-5-5";
   void job;
-  return "gemini-2.5-flash";
+  return "gemini-2.5-flash-lite";
 }
 
 const CHUNK_CHARS = 5000;

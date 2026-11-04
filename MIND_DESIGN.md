@@ -3,7 +3,7 @@
 **Status (5 Nov 2026): the playtest core (v0) is built** (code in `src/brain/`, the Mind page in `client/src/pages/mind.tsx`). In v0:
 - intake of chat messages and files into bricks, moments, entries and links (came up together, same source, about, meaning); people get contact details from his own material;
 - conversation turns see the agenda first, the whole wall and the lit bricks in full; energy spreads with randomness; used bricks strengthen links and get warm; no whole-text rewrites (portrait, self-portrait, map, intentions are no longer written; reflection adds to its own brick "Me");
-- work sessions on "Explore now" (Sonnet; cap EUR 0.50; stops when satisfied), with agenda, open questions, thin spots and a guaranteed random revisit; one thing a day brought to the chat;
+- work sessions on "Explore now" (Haiku, the everyday model, since 5 Nov: it is meant to run for years; cap EUR 0.50; stops when satisfied), with agenda, open questions, thin spots and a guaranteed random revisit; one thing a day brought to the chat;
 - the Mind page with energy, warmth (animated, fading over hours) and age (moments coloured red to blue over its lifespan) layers, brick details, agenda and session feed.
 
 Not yet in v0: embeddings (intake reads the brick list instead), the night (summaries rebuilt from moments, merges), the Gemini Takeout import, scheduled sessions, self-review, the inner voice, debate mode on the brain.

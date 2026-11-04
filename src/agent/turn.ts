@@ -157,7 +157,7 @@ Judgment, not a list of rules: what he tells you is evidence of how he thinks, n
 Return one JSON object. Every field is optional; leave out what you don't use.
 - say: what he reads, in your own words. Including say ends this turn; any tools in the same object still run.
 - think: a list of tool uses to do now, as many as you need: [{"what":"","why":"","tool":"","input":{}}]. They all run before your next step, so tool uses that don't depend on each other (several searches, say) can go in one step; every extra step re-reads everything and costs more. Without say, you get their results and another step.
-- next_model: which model should do your next step, and start your next turn. Pick from MODELS for what the moment needs.
+- next_model: which model should do your next step in this turn. Every turn starts on the everyday model; move up when the moment needs more than it can give, since the stronger ones cost far more. Pick from MODELS.
 - used: the ids of the bricks you actually used in this step's thinking, e.g. ["b1x2y"]. Links between what you use get stronger, so be honest: only what you really used.
 - taken_in: at your first moment, what you took stock of.
 - state: {"thinking":"","curious":"","busy":"","waiting":""}.
@@ -351,9 +351,9 @@ async function turnInner(
   // A safety stop on runaway loops, not a limit on its thinking: when it is reached, it is asked to answer with what it has.
   const MAX_STEPS = 8;
   const menu = await availableModels(db, userId, settings);
-  const chosen = (await db.query(`SELECT start_model FROM inner_state WHERE user_id = $1`, [userId])).rows[0]?.start_model;
-  // It starts on the model it chose last; before it has ever chosen, on the everyday conversation model.
-  let current = menu.find((item) => item.id === chosen)?.id ?? menu.find((item) => item.everyday)?.id ?? menu[0].id;
+  // Every turn starts on the everyday model, the cheap one: it is meant to be used a lot, for a long time. It moves up
+  // to a stronger model by its own choice (next_model) when a moment needs it, for the rest of that turn only.
+  let current = menu.find((item) => item.everyday)?.id ?? menu[0].id;
   // Isaak can pin one model for every step (a testing choice in the chat). While pinned, its own model choices wait.
   const pinned = await pinnedModel(db, userId, menu);
   if (pinned) current = pinned;
@@ -924,6 +924,20 @@ export async function answerUnanswered(db: Db, ai: Router, userId: string, now =
   return true;
 }
 
+/** Average cost in euros of one conversation step per model, from its last steps; only models with at least 5 steps. */
+async function measuredStepCost(db: Db, userId: string): Promise<Record<string, number>> {
+  const rows = (await db.query(
+    `SELECT model, AVG(cost_eur_cents) AS avg, COUNT(*) AS n FROM (
+       SELECT model, cost_eur_cents, ROW_NUMBER() OVER (PARTITION BY model ORDER BY created_at DESC) AS r
+       FROM usage_records WHERE user_id = $1 AND job_kind = 'agent' AND cost_eur_cents IS NOT NULL) t
+     WHERE r <= 40 GROUP BY model`,
+    [userId],
+  )).rows;
+  const out: Record<string, number> = {};
+  for (const row of rows) if (Number(row.n) >= 5) out[String(row.model)] = Number(row.avg) / 100;
+  return out;
+}
+
 interface ModelChoice {
   id: string;
   about: string;
@@ -947,10 +961,12 @@ async function availableModels(db: Db, userId: string, settings: Settings): Prom
     if (left > 0) list.push({ id: "gemini-2.5-flash-lite", about: `Google's smallest model. Free (about ${left} calls left today). Quick and shallow.` });
   }
   if (anthropic) {
-    list.push({ id: "claude-haiku-5-5", about: "Claude's small model. About EUR 0.001 per step. Fast; takes things at face value." });
-    list.push({ id: "claude-sonnet-5-5", about: "Claude's mid-size model. About EUR 0.015 per step, roughly 15 times Haiku. Slower; reads between the lines, holds many threads, weighs a life." });
-    // Experiment (3 Nov, round 10): a turn starts on Opus until it chooses otherwise, to see whether the strongest mind reads him differently.
-    list.push({ id: "claude-opus-5-5", about: "Claude's largest model. About EUR 0.04 per step, roughly 2 to 3 times Sonnet. Slowest; the deepest judgment, best at weighing things against each other and noticing what is not said.", everyday: true });
+    // What a step really costs, measured from its own recent steps; a list-price estimate until there are enough.
+    const cost = await measuredStepCost(db, userId);
+    const eur = (id: string, estimate: number) => `About EUR ${(cost[id] ?? estimate).toFixed(3)} per step${cost[id] != null ? " (measured)" : ""}`;
+    list.push({ id: "claude-haiku-5-5", about: `Claude's small model, your everyday one. ${eur("claude-haiku-5-5", 0.002)}. Fast; good at clear tasks; takes things more at face value.`, everyday: true });
+    list.push({ id: "claude-sonnet-5-5", about: `Claude's mid-size model. ${eur("claude-sonnet-5-5", 0.035)}, roughly 20 times Haiku. Reads between the lines, holds many threads, weighs a life.` });
+    list.push({ id: "claude-opus-5-5", about: `Claude's largest model. ${eur("claude-opus-5-5", 0.11)}, roughly 3 times Sonnet. The deepest judgment, best at weighing things against each other and noticing what is not said.` });
   }
   if (gemini) list.push({ id: "gemini-2.5-pro", about: "Google's large model. About EUR 0.012 per step. A different mind from Claude; strong on long material." });
   if (!list.length) throw new Error("No AI model is available. Set ANTHROPIC_API_KEY or GEMINI_API_KEY.");
