@@ -4,6 +4,8 @@ This replaces "Hub of Me design spec v2" (the PDF). v2 described a pipeline: fil
 
 Isaak (with a K) is the person this is for. Some older code and texts say "Peter". That is a mistake, not a second user.
 
+> **4 Nov 2026:** a redesign of how the entity remembers, thinks and acts is drafted in `MIND_DESIGN.md` (not built yet). Read it after §1 and §3.
+
 ## 1. Philosophy (the only part that is not provisional)
 
 **Build someone, not something.** Hub of Me is a presence: a thoughtful friend who is getting to know him. The conversation is the product. Filing, notes, thinking and tools are what goes on in its head while you talk.
