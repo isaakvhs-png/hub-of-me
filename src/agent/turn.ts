@@ -34,7 +34,7 @@ import { reflectQuietly } from "./reflect.js";
 import { bodySense, lookAtMyself, mechanics } from "./self.js";
 import { sectionBody } from "../soul.js";
 import { runBrainTool } from "../brain/tools.js";
-import { intake } from "../brain/intake.js";
+import { intake, retryFailedIntake } from "../brain/intake.js";
 import { activate, recordUsed } from "../brain/spread.js";
 import { brainView } from "../brain/view.js";
 import { createBrick, learnFromUse, listAgenda, listBricks } from "../brain/store.js";
@@ -334,16 +334,25 @@ async function turnInner(
   // Everything he sends is kept whole and filed into the web by code before it thinks (intake), so it never depends on
   // its own choice to keep something. A retry of a message already filed doesn't file it twice.
   const already = text ? (await db.query(`SELECT 1 FROM brain_stream WHERE user_id = $1 AND kind = 'chat' AND content = $2 AND archived_at IS NULL LIMIT 1`, [userId, text])).rows[0] : null;
+  // What could not be filed earlier (no credit, a provider error) is tried again first, so nothing he sent stays lost.
+  const filingProblems: string[] = [];
+  const retried = await retryFailedIntake(db, ai, userId, (title, part, of) => input.onEvent?.({ type: "thinking", phase: `Filing ${title} again (part ${part} of ${of})`, model: "" }));
+  for (const r of retried) if (r.failed.length) filingProblems.push(`An earlier text still could not be filed (${r.failed[0].error}); it will be tried again.`);
   if (text && !already) {
     await input.onEvent?.({ type: "thinking", phase: "Filing it into the web", model: "" });
-    await intake(db, ai, userId, { text, kind: "chat" });
+    const r = await intake(db, ai, userId, { text, kind: "chat" });
+    if (r.failed.length) filingProblems.push(`Your message could not be filed into the web (${r.failed[0].error}). It is kept and will be tried again.`);
   }
   for (const file of files) {
     await input.onEvent?.({ type: "thinking", phase: `Filing ${file.name}`, model: "" });
     await readOneFile(db, ai, userId, file, { conversationId, notes, closed, text, model: "" });
     const filed = notes.at(-1);
-    if (filed) await intake(db, ai, userId, { text: filed.body, kind: "file", title: file.name, onProgress: (part, of) => input.onEvent?.({ type: "thinking", phase: `Filing ${file.name} (part ${part} of ${of})`, model: "" }) });
+    if (!filed) continue;
+    const r = await intake(db, ai, userId, { text: filed.body, kind: "file", title: file.name, onProgress: (part, of) => input.onEvent?.({ type: "thinking", phase: `Filing ${file.name} (part ${part} of ${of})`, model: "" }) });
+    if (r.failed.length) filingProblems.push(`${file.name}: ${r.failed.length ? `filing stopped at part ${r.failed[0].part} of ${r.failed[0].of}` : ""} (${r.failed[0].error}). What was filed stays; the rest is kept and tried again.`);
+    else if (r.already) filingProblems.push(`${file.name} was handed over before and is already in the web; it was not filed twice.`);
   }
+  const filingError = filingProblems.filter((p) => !p.includes("not filed twice")).join(" ") || null;
   await ensureSelfBrick(db, userId);
   const lit = await activate(db, userId, { text: [text, files.map((f) => f.name).join(" "), input.cue ?? ""].join("\n"), cause: text ? "his message" : input.cue ?? "turn" });
   const usedThisTurn: string[] = [];
@@ -405,7 +414,7 @@ async function turnInner(
               conversation,
               cue: input.cue ?? "",
               dump: text,
-              files: files.map((file) => file.name).join("\n"),
+              files: [files.map((file) => file.name).join("\n"), filingProblems.length ? `FILING (code, this turn): ${filingProblems.join(" ")} Tell him plainly if something could not be filed.` : ""].filter(Boolean).join("\n"),
               current,
               body: await bodySense(db, userId),
               own: "",
@@ -518,7 +527,7 @@ async function turnInner(
     const existing = await db.query(`SELECT id FROM conversations WHERE user_id = $1 AND archived_at IS NULL ORDER BY created_at DESC LIMIT 1`, [userId]);
     conversationId = existing.rows[0] ? String(existing.rows[0].id) : await createConversation(db, userId, title);
   }
-  return { conversationId, reply, userMessageId, notes, closed, filingError: null, reflection: null, traces };
+  return { conversationId, reply, userMessageId, notes, closed, filingError, reflection: null, traces };
 }
 
 export async function useTool(

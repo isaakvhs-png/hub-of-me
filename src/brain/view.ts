@@ -35,7 +35,7 @@ export async function wallText(db: Db, userId: string): Promise<string> {
   const lines = bricks.map((b) => {
     const tag = `${b.kind}${b.origin === "own" ? ", your thought" : b.origin === "web" ? ", from the web" : ""}`;
     const bits = [b.summary || latest.get(b.id) || ""].filter(Boolean).join(" ").slice(0, 160);
-    const extra = [`${degree.get(b.id) ?? 0} links`, open.get(b.id) ? `${open.get(b.id)} open` : "", b.warmth > 0.1 ? `warm ${b.warmth.toFixed(1)}` : "", `lit ${ago(b.lastLitAt)}`].filter(Boolean).join(", ");
+    const extra = [b.kind === "source" && b.sourceId ? `open_source ${b.sourceId}` : "", `${degree.get(b.id) ?? 0} links`, open.get(b.id) ? `${open.get(b.id)} open` : "", b.warmth > 0.1 ? `warm ${b.warmth.toFixed(1)}` : "", `lit ${ago(b.lastLitAt)}`].filter(Boolean).join(", ");
     return `[${b.id}] ${b.name} (${tag}) ${bits} {${extra}}`;
   });
   let text = lines.join("\n");

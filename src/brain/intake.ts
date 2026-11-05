@@ -89,28 +89,94 @@ function brickList(bricks: Brick[]): string {
   return bricks.map((b) => `[${b.id}] ${b.name} (${b.kind})${b.summary ? `: ${b.summary.slice(0, 90)}` : ""}`).join("\n");
 }
 
-export interface IntakeResult { sourceId: string | null; streamId: string; created: string[]; touched: string[]; links: number }
+export interface IntakeResult {
+  sourceId: string | null;
+  streamId: string;
+  created: string[];
+  touched: string[];
+  links: number;
+  /** Parts that could not be filed this time; they are kept and retried later. */
+  failed: { part: number; of: number; error: string }[];
+  /** The same file was handed over before and was already filed in full. */
+  already: boolean;
+}
+
+type Origin = "his" | "web" | "own";
+type Kind = "chat" | "file" | "gemini";
 
 export async function intake(
   db: Db,
   ai: Router,
   userId: string,
-  input: { text: string; kind: "chat" | "file" | "gemini"; title?: string; origin?: "his" | "web" | "own"; onProgress?: (part: number, of: number) => void | Promise<void> },
+  input: { text: string; kind: Kind; title?: string; origin?: Origin; onProgress?: (part: number, of: number) => void | Promise<void> },
 ): Promise<IntakeResult> {
   const text = input.text.trim();
+  // The same file handed over again is the same source: no second copy, no second filing. Parts that failed before are retried.
+  if (input.kind !== "chat" && text) {
+    const seen = (await db.query(
+      `SELECT s.id AS source_id, st.id AS stream_id, st.failed_parts FROM brain_sources s JOIN brain_stream st ON st.source_id = s.id AND st.archived_at IS NULL
+       WHERE s.user_id = $1 AND s.title = $2 AND s.body = $3 AND s.archived_at IS NULL ORDER BY s.created_at LIMIT 1`,
+      [userId, (input.title || "untitled").slice(0, 300), text],
+    )).rows[0];
+    if (seen) {
+      const failedParts = parseParts(seen.failed_parts);
+      const result: IntakeResult = { sourceId: String(seen.source_id), streamId: String(seen.stream_id), created: [], touched: [], links: 0, failed: [], already: failedParts.length === 0 };
+      if (!failedParts.length) return result;
+      return fileParts(db, ai, userId, { ...input, text, sourceId: result.sourceId, streamId: result.streamId, parts: failedParts }, result);
+    }
+  }
   const sourceId = input.kind === "chat" ? null : await addSource(db, userId, { kind: input.kind, title: input.title || "untitled", body: text });
   const streamId = await addStream(db, userId, { kind: input.kind, sourceId, content: text });
-  const result: IntakeResult = { sourceId, streamId, created: [], touched: [], links: 0 };
+  const result: IntakeResult = { sourceId, streamId, created: [], touched: [], links: 0, failed: [], already: false };
   if (!text) return result;
+  // A file gets a brick of its own; everything found in it hangs off it, weakly ("same source").
+  if (sourceId) result.created.push(await createBrick(db, userId, { name: input.title || "untitled file", kind: "source", origin: "his", summary: `${input.kind === "gemini" ? "Gemini conversation" : "File"} he handed over, ${text.length} characters.`, sourceId }));
+  return fileParts(db, ai, userId, { ...input, text, sourceId, streamId, parts: null }, result);
+}
+
+function parseParts(value: unknown): number[] {
+  try { const v = JSON.parse(String(value ?? "[]")); return Array.isArray(v) ? v.map(Number).filter((n) => Number.isInteger(n) && n >= 0) : []; } catch { return []; }
+}
+
+/** Retry the parts of earlier texts that could not be filed (no credit, a provider error). Called before each turn. */
+export async function retryFailedIntake(db: Db, ai: Router, userId: string, onProgress?: (title: string, part: number, of: number) => void | Promise<void>): Promise<IntakeResult[]> {
+  const rows = (await db.query(
+    `SELECT st.id, st.kind, st.content, st.source_id, st.failed_parts, s.title FROM brain_stream st LEFT JOIN brain_sources s ON s.id = st.source_id
+     WHERE st.user_id = $1 AND st.archived_at IS NULL AND st.failed_parts <> '[]' AND st.retries < 5 ORDER BY st.created_at`,
+    [userId],
+  )).rows;
+  const results: IntakeResult[] = [];
+  for (const row of rows) {
+    const parts = parseParts(row.failed_parts);
+    if (!parts.length) continue;
+    await db.query(`UPDATE brain_stream SET retries = retries + 1 WHERE id = $1`, [row.id]);
+    const title = row.title ? String(row.title) : "";
+    const result: IntakeResult = { sourceId: row.source_id ? String(row.source_id) : null, streamId: String(row.id), created: [], touched: [], links: 0, failed: [], already: false };
+    results.push(await fileParts(db, ai, userId, { text: String(row.content), kind: String(row.kind) as Kind, title, sourceId: result.sourceId, streamId: result.streamId, parts, onProgress: onProgress ? (p, of) => onProgress(title || "your message", p, of) : undefined }, result));
+    if (result.failed.length) break; // still failing: try again next time, without spending more calls now
+  }
+  return results;
+}
+
+async function fileParts(
+  db: Db,
+  ai: Router,
+  userId: string,
+  input: { text: string; kind: Kind; title?: string; origin?: Origin; sourceId: string | null; streamId: string; parts: number[] | null; onProgress?: (part: number, of: number) => void | Promise<void> },
+  result: IntakeResult,
+): Promise<IntakeResult> {
+  const { text, sourceId, streamId } = input;
   const who = (await db.query(`SELECT name FROM users WHERE id = $1`, [userId])).rows[0];
   const name = String(who?.name ?? "Isaak");
   const model = await brainModel(db, userId, "intake");
-  // A file gets a brick of its own; everything found in it hangs off it, weakly ("same source").
-  const sourceBrick = sourceId ? await createBrick(db, userId, { name: input.title || "untitled file", kind: "source", origin: "his", summary: `${input.kind === "gemini" ? "Gemini conversation" : "File"} he handed over, ${text.length} characters.`, sourceId }) : null;
-  if (sourceBrick) result.created.push(sourceBrick);
+  const sourceBrick = sourceId ? String((await db.query(`SELECT id FROM bricks WHERE user_id = $1 AND kind = 'source' AND source_id = $2 AND archived_at IS NULL LIMIT 1`, [userId, sourceId])).rows[0]?.id ?? "") || null : null;
   const origin = input.origin ?? "his";
   const chunks = chunkText(text);
-  for (const [index, chunk] of chunks.entries()) {
+  const todo = input.parts ?? chunks.map((_, i) => i);
+  const failedNow: number[] = [];
+  for (const index of todo) {
+    const chunk = chunks[index];
+    if (chunk == null) continue;
     // Long files take a while; telling the page keeps the connection alive and shows what is happening.
     await input.onProgress?.(index + 1, chunks.length);
     const bricks = await listBricks(db, userId);
@@ -124,8 +190,13 @@ export async function intake(
         messages: [{ role: "user", content: `THE BRICK LIST:\n${brickList(bricks)}\n\nNEW TEXT (${input.kind}${input.title ? `: ${input.title}` : ""}):\n${chunk}\nEND NEW TEXT` }],
       }, intakeSchema, { jobKind: "intake" })) as z.output<typeof intakeSchema>;
     } catch (error) {
-      await logAction(db, userId, { what: "intake failed", why: error instanceof Error ? error.message.slice(0, 300) : "unknown", source: "intake", payload: { streamId } });
-      continue;
+      const why = error instanceof Error ? error.message.slice(0, 300) : "unknown";
+      failedNow.push(index);
+      result.failed.push({ part: index + 1, of: chunks.length, error: why });
+      await logAction(db, userId, { what: "intake failed", why: `part ${index + 1} of ${chunks.length}${input.title ? ` of ${input.title}` : ""}: ${why}`, source: "intake", payload: { streamId } });
+      // The same cause (no credit, provider down) will fail the rest too: keep them all for the retry instead of spending calls.
+      for (const rest of todo.slice(todo.indexOf(index) + 1)) if (chunks[rest] != null) failedNow.push(rest);
+      break;
     }
     if (!parsed.items.length && chunk.length > 400) {
       await logAction(db, userId, { what: "intake found nothing", why: `part ${index + 1} of ${chunks.length} gave no bricks`, source: "intake", payload: { streamId } });
@@ -168,6 +239,14 @@ export async function intake(
       result.links += 1;
     }
   }
-  await logAction(db, userId, { what: "filed into the web", why: `${result.created.length} new bricks, ${result.touched.length} existing ones grew, ${result.links} links`, source: "intake", payload: { streamId, sourceId } });
+  await db.query(`UPDATE brain_stream SET failed_parts = $2, last_error = $3 WHERE id = $1`, [streamId, JSON.stringify(failedNow), result.failed[0]?.error ?? ""]);
+  if (failedNow.length) result.failed = [{ part: failedNow[0] + 1, of: chunks.length, error: result.failed[0]?.error ?? "unknown" }];
+  const filedParts = todo.length - failedNow.length;
+  await logAction(db, userId, {
+    what: failedNow.length ? "filed into the web, partly" : "filed into the web",
+    why: `${filedParts} of ${todo.length} parts filed${failedNow.length ? ` (${failedNow.length} kept for a retry)` : ""}: ${result.created.length} new bricks, ${result.touched.length} existing ones grew, ${result.links} links`,
+    source: "intake",
+    payload: { streamId, sourceId },
+  });
   return result;
 }

@@ -117,3 +117,28 @@ describe("answers handed over one level deep", () => {
     expect(unwrapJson({ say: "hi" })).toEqual({ say: "hi" });
   });
 });
+
+describe("filing that fails", () => {
+  it("keeps the parts that could not be filed, retries them later, and does not file the same file twice", async () => {
+    const { db, user, ai } = await fresh();
+    const { retryFailedIntake } = await import("../src/brain/intake.js");
+    let broke = true;
+    const flaky = { complete: async (req: Parameters<typeof ai.complete>[0]) => { if (broke) throw new Error("Your credit balance is too low to access the Anthropic API."); return ai.complete(req); } } as unknown as typeof ai;
+    const text = "Lorenzo showed a map\nWhy are dwarf mangroves relevant?";
+    const first = await intake(db, flaky, user.id, { text, kind: "file", title: "notes.txt" });
+    expect(first.failed.length).toBe(1);
+    expect(first.failed[0].error).toContain("credit");
+    expect((await listBricks(db, user.id)).filter((b) => b.kind !== "source")).toHaveLength(0);
+    // Handed over again while it still fails: the same source, not a second copy.
+    await intake(db, flaky, user.id, { text, kind: "file", title: "notes.txt" });
+    expect((await listBricks(db, user.id)).filter((b) => b.kind === "source")).toHaveLength(1);
+    broke = false;
+    const retried = await retryFailedIntake(db, flaky, user.id);
+    expect(retried[0].failed).toHaveLength(0);
+    expect((await listBricks(db, user.id)).some((b) => b.name.startsWith("Lorenzo showed"))).toBe(true);
+    const row = (await db.query(`SELECT failed_parts FROM brain_stream WHERE id = $1`, [first.streamId])).rows[0];
+    expect(String(row.failed_parts)).toBe("[]");
+    const again = await intake(db, flaky, user.id, { text, kind: "file", title: "notes.txt" });
+    expect(again.already).toBe(true);
+  });
+});

@@ -94,13 +94,16 @@ export async function memoryView(db: Db, userId: string): Promise<{ text: string
   ].join("\n\n");
 
   const notesBudget = Math.max(0, MEMORY_BUDGET_CHARS * (1 - CONVERSATION_SHARE) - always.length - own.length);
-  const all = live.map((note) => fullNote(note, pathOf(note), summaryOf.get(note.id) ?? ""));
+  // A file he handed over is kept whole as a source and filed into the web, where it lights up when it is relevant;
+  // open_source reads it in full. Carrying every file in full every step would cost the most and add nothing.
+  const inMind = live.filter((note) => note.type !== "file");
+  const all = inMind.map((note) => fullNote(note, pathOf(note), summaryOf.get(note.id) ?? ""));
   const allChars = all.reduce((sum, text) => sum + text.length + 2, 0);
   let openPart: string;
   if (allChars <= notesBudget) {
-    openPart = `OPEN NOTES: everything fits in your memory window, so all ${live.length} notes are open in full.\n\n${all.join("\n\n") || "(none)"}`;
+    openPart = `OPEN NOTES: everything fits in your memory window, so all ${inMind.length} notes are open in full (files he handed over are in your web as sources; open_source reads one whole).\n\n${all.join("\n\n") || "(none)"}`;
   } else {
-    const chosen = live.filter((note) => open.includes(note.id));
+    const chosen = inMind.filter((note) => open.includes(note.id));
     const shown: string[] = [];
     let used = 0;
     for (const note of chosen) {

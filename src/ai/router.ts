@@ -154,10 +154,24 @@ export class Router {
     } else if (resolved.provider === "anthropic") {
       const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
       if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set.");
-      const result = await anthropicComplete(withModel, apiKey, this.deps.fetchImpl);
-      text = result.text;
-      usage = result.usage;
-      stopReason = result.stopReason;
+      try {
+        const result = await anthropicComplete(withModel, apiKey, this.deps.fetchImpl);
+        text = result.text;
+        usage = result.usage;
+        stopReason = result.stopReason;
+      } catch (error) {
+        // No credit left (or rate-limited): fall back to Gemini's cheapest model rather than lose the work. The usage
+        // record shows the switch (provider gemini), so it is visible on the Health page.
+        const message = error instanceof Error ? error.message : "";
+        const geminiKey = process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim();
+        if (!(isQuotaError(message) || /credit balance|billing/i.test(message)) || !geminiKey) throw error;
+        const fallback = "gemini-3.5-flash-lite";
+        const result = await geminiComplete({ ...withModel, model: fallback }, geminiKey, this.deps.fetchImpl);
+        text = result.text;
+        usage = result.usage;
+        stopReason = result.stopReason;
+        resolved = { provider: "gemini", model: fallback };
+      }
     } else if (resolved.provider === "gemini") {
       const apiKey = process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim();
       if (!apiKey) throw new Error("GEMINI_API_KEY is not set.");

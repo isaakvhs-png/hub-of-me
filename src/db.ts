@@ -230,6 +230,10 @@ export async function migrate(db: Db): Promise<void> {
       left_off TEXT NOT NULL DEFAULT '', wins TEXT NOT NULL DEFAULT '', cost_eur_cents DOUBLE PRECISION NOT NULL DEFAULT 0,
       ended_why TEXT NOT NULL DEFAULT '', started_at TIMESTAMPTZ NOT NULL DEFAULT now(), ended_at TIMESTAMPTZ, archived_at TIMESTAMPTZ
     )`,
+    // Parts of a text that could not be filed (a provider error, no credit) are kept here and retried later.
+    `ALTER TABLE brain_stream ADD COLUMN IF NOT EXISTS failed_parts TEXT NOT NULL DEFAULT '[]'`,
+    `ALTER TABLE brain_stream ADD COLUMN IF NOT EXISTS retries INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE brain_stream ADD COLUMN IF NOT EXISTS last_error TEXT NOT NULL DEFAULT ''`,
     `CREATE TABLE IF NOT EXISTS brain_activations (
       id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), cause TEXT NOT NULL, energies TEXT NOT NULL DEFAULT '{}',
       used TEXT NOT NULL DEFAULT '[]', created_at TIMESTAMPTZ NOT NULL DEFAULT now(), archived_at TIMESTAMPTZ
