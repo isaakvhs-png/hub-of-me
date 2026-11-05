@@ -52,7 +52,7 @@ export function MindPage() {
   const closed = brain.agenda.filter((a) => a.status !== "open").slice(-6).reverse();
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+    <div className="grid gap-4">
       <section className="min-w-0 rounded-xl border border-border bg-card p-3">
         <div className="flex flex-wrap items-center gap-2 pb-2">
           <h1 className="mr-auto font-serif text-2xl italic">Mind</h1>
@@ -60,42 +60,36 @@ export function MindPage() {
             {brain.running ? "Exploring…" : "Explore now"}
           </button>
         </div>
-        <p className="pb-2 text-xs text-muted-foreground">
-          {brain.bricks.length} bricks · {brain.links.length} links
-          {brain.activation ? ` · last lit up by ${brain.activation.cause}, ${new Date(brain.activation.at).toLocaleTimeString()}` : ""}
-          {brain.running ? ` · ${brain.running.phase}${brain.running.label ? `: ${brain.running.label}` : ""}` : ""}
-        </p>
         {error ? <p className="pb-2 text-sm text-destructive">{error}</p> : null}
-        <MindMap bricks={brain.bricks} links={brain.links} activation={brain.activation} bornAt={brain.bornAt} now={brain.now} selected={selected} onSelect={setSelected} />
-        <p className="pt-2 text-xs text-muted-foreground">
-          Scroll or pinch to zoom, drag to move, click a brick to open it. Shape is where it came from: round from you, diamond its own thought, triangle found on the web, square a file. Colour is age: red came in first, blue most recently. Brighter with a glow: used recently (warmth, fading over hours). The gold wave is the current thought: it starts at what was named and runs out along the links, fainter at every step. Hover a brick to see its links, including the ones to its source file.
-        </p>
+        <div className="relative">
+          <MindMap bricks={brain.bricks} links={brain.links} activation={brain.activation} running={brain.running} selected={selected} onSelect={setSelected} />
+          {detail ? (
+            <section className="absolute bottom-2 right-2 top-2 z-10 w-[min(380px,calc(100%-16px))] overflow-y-auto rounded-xl border border-border bg-card/95 p-4 shadow-xl backdrop-blur">
+              <div className="flex items-start gap-2">
+                <h2 className="mr-auto text-lg font-semibold">{detail.brick.name}</h2>
+                <button className="text-xs text-muted-foreground" onClick={() => setSelected(null)}>Close</button>
+              </div>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">{detail.brick.kind} · {detail.brick.origin === "own" ? "its own thought" : detail.brick.origin === "web" ? "from the web" : "from you"}</p>
+              {detail.brick.summary ? <p className="mt-2 text-sm">{detail.brick.summary}</p> : null}
+              {detail.brick.contact ? <p className="mt-2 text-sm"><span className="text-muted-foreground">Contact: </span>{detail.brick.contact}</p> : null}
+              <h3 className="mt-3 text-xs uppercase tracking-wide text-muted-foreground">Moments</h3>
+              <ul className="mt-1 grid gap-1 text-sm">
+                {detail.moments.map((m, i) => <li key={i} className="border-l-2 pl-2" style={{ borderColor: m.at ? ageColor(m.at, born, now) : undefined }}>“{m.quote}” <span className="text-xs text-muted-foreground">{m.source} · {m.at ? new Date(m.at).toLocaleString() : ""}</span></li>)}
+              </ul>
+              {detail.entries.length ? <h3 className="mt-3 text-xs uppercase tracking-wide text-muted-foreground">Entries</h3> : null}
+              <ul className="mt-1 grid gap-1 text-sm">
+                {detail.entries.map((e) => <li key={e.id}><span className="text-xs text-muted-foreground">{e.kind} · {e.origin === "own" ? "its" : e.origin === "web" ? "web" : "yours"} · {e.status}</span><br />{e.text}{e.statusNote ? <span className="text-muted-foreground"> ({e.statusNote})</span> : null}</li>)}
+              </ul>
+              {detail.links.length ? <h3 className="mt-3 text-xs uppercase tracking-wide text-muted-foreground">Links</h3> : null}
+              <ul className="mt-1 grid gap-1 text-sm">
+                {detail.links.map((l) => <li key={l.id}><button className="text-left text-primary" onClick={() => setSelected(l.other)}>{l.otherName}</button> <span className="text-xs text-muted-foreground">{l.type} · {l.strength.toFixed(1)}{l.reason ? ` · ${l.reason}` : ""}</span></li>)}
+              </ul>
+            </section>
+          ) : null}
+        </div>
       </section>
 
-      <aside className="grid min-w-0 content-start gap-4">
-        {detail ? (
-          <section className="rounded-xl border border-border bg-card p-4">
-            <div className="flex items-start gap-2">
-              <h2 className="mr-auto text-lg font-semibold">{detail.brick.name}</h2>
-              <button className="text-xs text-muted-foreground" onClick={() => setSelected(null)}>Close</button>
-            </div>
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">{detail.brick.kind} · {detail.brick.origin === "own" ? "its own thought" : detail.brick.origin === "web" ? "from the web" : "from you"}</p>
-            {detail.brick.summary ? <p className="mt-2 text-sm">{detail.brick.summary}</p> : null}
-            {detail.brick.contact ? <p className="mt-2 text-sm"><span className="text-muted-foreground">Contact: </span>{detail.brick.contact}</p> : null}
-            <h3 className="mt-3 text-xs uppercase tracking-wide text-muted-foreground">Moments</h3>
-            <ul className="mt-1 grid gap-1 text-sm">
-              {detail.moments.map((m, i) => <li key={i} className="border-l-2 pl-2" style={{ borderColor: m.at ? ageColor(m.at, born, now) : undefined }}>“{m.quote}” <span className="text-xs text-muted-foreground">{m.source} · {m.at ? new Date(m.at).toLocaleString() : ""}</span></li>)}
-            </ul>
-            {detail.entries.length ? <h3 className="mt-3 text-xs uppercase tracking-wide text-muted-foreground">Entries</h3> : null}
-            <ul className="mt-1 grid gap-1 text-sm">
-              {detail.entries.map((e) => <li key={e.id}><span className="text-xs text-muted-foreground">{e.kind} · {e.origin === "own" ? "its" : e.origin === "web" ? "web" : "yours"} · {e.status}</span><br />{e.text}{e.statusNote ? <span className="text-muted-foreground"> ({e.statusNote})</span> : null}</li>)}
-            </ul>
-            {detail.links.length ? <h3 className="mt-3 text-xs uppercase tracking-wide text-muted-foreground">Links</h3> : null}
-            <ul className="mt-1 grid gap-1 text-sm">
-              {detail.links.map((l) => <li key={l.id}><button className="text-left text-primary" onClick={() => setSelected(l.other)}>{l.otherName}</button> <span className="text-xs text-muted-foreground">{l.type} · {l.strength.toFixed(1)}{l.reason ? ` · ${l.reason}` : ""}</span></li>)}
-            </ul>
-          </section>
-        ) : null}
+      <div className="grid min-w-0 content-start gap-4 md:grid-cols-2">
 
         <section className="rounded-xl border border-border bg-card p-4">
           <h2 className="text-xs uppercase tracking-wide text-muted-foreground">Agenda</h2>
@@ -130,7 +124,7 @@ export function MindPage() {
             ))}
           </ul>
         </section>
-      </aside>
+      </div>
     </div>
   );
 }

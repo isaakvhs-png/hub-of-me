@@ -6,22 +6,28 @@ import { listBricks, listLinks, norm, type Brick, type Link } from "./store.js";
  * Energy: what a message or a thought lights up. It starts at the bricks the text names, plus a small head start for
  * warm bricks, then spreads along links: stronger links pass on more, every step loses some, a little randomness keeps
  * it from always walking the same routes, and it stops where it gets too faint. It lasts one thought; warmth is what stays.
+ *
+ * 5 Nov, after the first real web (214 bricks): energy is shared out among a brick's neighbours (divided by the square
+ * root of its number of links), so a hub doesn't light everything around it, and "same source" links carry none, so
+ * naming a file doesn't light every brick in it. File bricks and the self brick are not lit by name.
  */
 
 export const SPREAD = { steps: 3, keep: 0.55, threshold: 0.08, noise: 0.15, warmHeadStart: 0.35, focus: 8, focusMin: 0.15 };
 
-const STOP = new Set(["the", "and", "for", "with", "from", "that", "this", "what", "about", "into", "your", "first", "learning", "project", "meeting"]);
+const STOP = new Set(["the", "and", "for", "with", "from", "that", "this", "what", "about", "into", "your", "first", "second", "third", "learning", "project", "meeting", "approach", "tomorrow", "today", "notes", "opening", "question", "there", "their", "where", "which", "would", "could", "should", "think", "thing", "things"]);
 
 /** Bricks the text itself names: the whole name, or a distinctive word of it (a surname, a place). */
 export function seedsFor(text: string, bricks: Brick[]): Map<string, number> {
   const t = ` ${norm(text)} `;
   const seeds = new Map<string, number>();
   for (const b of bricks) {
+    // A file is named by its file name, and "me" is in half his sentences: neither says what the thought is about.
+    if (b.kind === "source" || b.kind === "self") continue;
     const n = norm(b.name);
-    if (!n) continue;
+    if (!n || n.length < 3) continue;
     if (t.includes(` ${n} `)) { seeds.set(b.id, 1); continue; }
     const words = n.split(" ").filter((w) => w.length >= 5 && !STOP.has(w));
-    if (words.some((w) => t.includes(` ${w} `))) seeds.set(b.id, Math.max(seeds.get(b.id) ?? 0, 0.8));
+    if (words.some((w) => t.includes(` ${w} `))) seeds.set(b.id, Math.max(seeds.get(b.id) ?? 0, 0.6));
   }
   return seeds;
 }
@@ -35,6 +41,7 @@ export function spread(bricks: Brick[], links: Link[], seeds: Map<string, number
   }
   const neighbours = new Map<string, { other: string; strength: number }[]>();
   for (const l of links) {
+    if (l.type === "source") continue;
     (neighbours.get(l.a) ?? neighbours.set(l.a, []).get(l.a)!).push({ other: l.b, strength: l.strength });
     (neighbours.get(l.b) ?? neighbours.set(l.b, []).get(l.b)!).push({ other: l.a, strength: l.strength });
   }
@@ -43,8 +50,10 @@ export function spread(bricks: Brick[], links: Link[], seeds: Map<string, number
     const next: string[] = [];
     for (const from of frontier) {
       const e = energy.get(from) ?? 0;
-      for (const { other, strength } of neighbours.get(from) ?? []) {
-        const pass = e * SPREAD.keep * (strength / (strength + 1.5)) * (1 - SPREAD.noise + rand() * 2 * SPREAD.noise);
+      const out = neighbours.get(from) ?? [];
+      const share = 1 / Math.sqrt(Math.max(1, out.length / 2));
+      for (const { other, strength } of out) {
+        const pass = e * SPREAD.keep * share * (strength / (strength + 1.5)) * (1 - SPREAD.noise + rand() * 2 * SPREAD.noise);
         if (pass < SPREAD.threshold) continue;
         if (pass > (energy.get(other) ?? 0)) {
           energy.set(other, Math.min(1, pass));
