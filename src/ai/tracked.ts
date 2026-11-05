@@ -41,7 +41,8 @@ export async function trackedComplete(db: Db, userId: string, ai: Router, req: A
     throw error;
   }
   const settings = await getSettings(db, userId);
-  const usd = costUsdCents(result.model, result.usage, settings.priceOverrides);
+  // On the plan there is no price per call; the tokens are still kept, to see how much of the allowance goes where.
+  const usd = result.provider === "claude-plan" ? 0 : costUsdCents(result.model, result.usage, settings.priceOverrides);
   const priceKnown = usd != null;
   await insertUsage(db, {
     userId,

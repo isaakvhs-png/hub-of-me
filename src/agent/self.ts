@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, normalize, relative } from "node:path";
 import type { Db } from "../db.js";
+import { planAvailable, planLimited, planStatus } from "../ai/plan.js";
 import { getBudget, getSoul, listNotes, listTasks, logAction, spendSince } from "../repo.js";
 import { startOfMonth } from "../time.js";
 import { TOOLS } from "./registry.js";
@@ -110,7 +111,7 @@ export async function bodySense(db: Db, userId: string): Promise<string> {
     `- Senses: you perceive his messages and the files he attaches, and the web when you search. Not yet: his email, a calendar outside this app, anything while the server sleeps.`,
     `- Hands: ${TOOLS.length} tools (${TOOLS.map((tool) => tool.name).join(", ")}).`,
     `- How he sees you: Chat (your replies), Mind (your web: bricks, links, warmth, what lit up, your agenda and what your sessions did), Library (notes and files), Calendar, Notebook (soul, ledger, debates, change history, tools), Health (cost).`,
-    `- Rhythm: ${state.next_wake_at ? `you asked to wake ${new Date(String(state.next_wake_at)).toISOString().slice(0, 16)}Z: ${state.wake_why}` : "no wake-up set"}. Budget: EUR ${(spent / 100).toFixed(2)} of EUR ${(budget.monthlyCapEurCents / 100).toFixed(2)} used this month.`,
+    `- Rhythm: ${state.next_wake_at ? `you asked to wake ${new Date(String(state.next_wake_at)).toISOString().slice(0, 16)}Z: ${state.wake_why}` : "no wake-up set"}. Budget: EUR ${(spent / 100).toFixed(2)} of EUR ${(budget.monthlyCapEurCents / 100).toFixed(2)} used this month.${planLine()}`,
   ].join("\n");
 }
 
@@ -150,4 +151,13 @@ export async function lookAtMyself(db: Db, userId: string, input: { file?: strin
     `YOUR RECENT HISTORY (what you took in, what you intended, what was said, oldest first):\n${recent || "(nothing yet)"}`,
     `FILES OF YOUR OWN DESIGN AND CODE YOU CAN READ (look_at_myself with { file }):\n${ownFiles().join("\n")}`,
   ].join("\n\n");
+}
+
+/** How much of Hub of Me's own Claude plan is used, as the plan last reported it. */
+function planLine(): string {
+  if (!planAvailable()) return "";
+  const p = planStatus();
+  if (planLimited()) return ` Your Claude plan's allowance is used up${p?.resetsAt ? ` until ${p.resetsAt.slice(0, 16)}Z` : " for now"}; calls go to the fallback meanwhile.`;
+  if (!p || p.utilization == null) return " You run on your own Claude plan: no cost per call, a limited allowance (not measured yet).";
+  return ` You run on your own Claude plan: no cost per call; its ${p.type.replace("_", "-") || "current"} allowance is ${Math.round(p.utilization * 100)}% used${p.resetsAt ? `, resetting ${p.resetsAt.slice(0, 16)}Z` : ""}.`;
 }

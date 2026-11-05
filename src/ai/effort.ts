@@ -1,4 +1,5 @@
 import type { Db } from "../db.js";
+import { claudeAvailable } from "./plan.js";
 import type { ProviderName, Settings } from "../types.js";
 
 export interface RoutedModel {
@@ -35,7 +36,7 @@ export function chooseModel(input: {
     return { provider: "gemini", model: lite.model, why: "Light work, and Flash-Lite is inside its free quota." };
   }
   if (!input.anthropic) {
-    throw new Error("ANTHROPIC_API_KEY is not set.");
+    throw new Error("Claude is not set up: neither CLAUDE_CODE_OAUTH_TOKEN (the plan) nor ANTHROPIC_API_KEY is set.");
   }
   if (input.effort === "deep") {
     return { provider: "anthropic", model: DEEP_MODEL, why: "Deep thinking uses Sonnet." };
@@ -77,7 +78,7 @@ export async function routeEffort(db: Db, userId: string, settings: Settings, ef
   return chooseModel({
     effort,
     gemini: Boolean(process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim()),
-    anthropic: Boolean(process.env.ANTHROPIC_API_KEY?.trim()),
+    anthropic: claudeAvailable(),
     ...windows,
   });
 }

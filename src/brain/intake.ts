@@ -3,6 +3,7 @@ import type { Db } from "../db.js";
 import type { Router } from "../ai/router.js";
 import { completeJson } from "../ai/tracked.js";
 import { getSettings, logAction } from "../repo.js";
+import { planAvailable } from "../ai/plan.js";
 import { addEntry, addMoment, addSource, addStream, createBrick, findByName, linkBricks, listBricks, updateBrick, type Brick } from "./store.js";
 
 /**
@@ -19,6 +20,8 @@ export async function brainModel(db: Db, userId: string, job: "intake" | "sessio
   const settings = await getSettings(db, userId);
   if (settings.provider === "mock") return "mock-cheap";
   if (process.env.BRAIN_MODEL?.trim()) return process.env.BRAIN_MODEL.trim();
+  // On Hub of Me's own plan a call costs no money, so filing and sessions get the mid-size model; on the API, the cheap one.
+  if (planAvailable()) return "claude-sonnet-5-5";
   if (process.env.ANTHROPIC_API_KEY?.trim()) return "claude-haiku-5-5";
   void job;
   return "gemini-3.5-flash-lite";

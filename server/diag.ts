@@ -1,3 +1,4 @@
+import { planAvailable, planLimited, planStatus } from "../src/ai/plan.js";
 import { timingSafeEqual } from "node:crypto";
 import type { Context, Hono } from "hono";
 import type { Db } from "../src/db.js";
@@ -49,6 +50,7 @@ function secretValues(): string[] {
   const names = [
     "DATABASE_URL",
     "ANTHROPIC_API_KEY",
+    "CLAUDE_CODE_OAUTH_TOKEN",
     "GEMINI_API_KEY",
     "GOOGLE_API_KEY",
     "SESSION_SECRET",
@@ -154,7 +156,7 @@ export function mountDiagnostics(app: Hono<{ Variables: { userId: string } }>, d
       debater0: resolveRoleModel(settings, { role: "debater", debaterIndex: 0 }),
       debater1: resolveRoleModel(settings, { role: "debater", debaterIndex: 1 }),
     };
-    return c.json(redactSecrets({ account: userId, provider: report, models, settingsProvider: settings.provider }));
+    return c.json(redactSecrets({ account: userId, provider: report, models, settingsProvider: settings.provider, plan: { on: planAvailable(), limited: planLimited(), status: planStatus() } }));
   });
 
   app.get("/api/diag/health", async (c) => {

@@ -1,4 +1,5 @@
 import { isQuotaError } from "./effort.js";
+import { claudeAvailable, planAvailable, planComplete, planLimited, PlanLimitError } from "./plan.js";
 import { outputLimit } from "./limits.js";
 import { UnpricedModelError, UsageMissingError } from "../errors.js";
 import { isPriced } from "../prices.js";
@@ -28,7 +29,7 @@ export function parseModel(spec: string, fallback: ProviderName): ResolvedModel 
 
 export function keysPresent(): { anthropic: boolean; gemini: boolean } {
   return {
-    anthropic: Boolean(process.env.ANTHROPIC_API_KEY?.trim()),
+    anthropic: claudeAvailable(),
     gemini: Boolean(process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim()),
   };
 }
@@ -142,6 +143,7 @@ export class Router {
     let text: string;
     let usage: AiResult["usage"];
     let stopReason: string | null = null;
+    let viaPlan = false;
     if (resolved.provider === "mock") {
       if (this.settings.provider !== "mock") {
         throw new Error(`Refusing to use the mock provider while Settings selects ${this.settings.provider}.`);
@@ -153,9 +155,22 @@ export class Router {
       stopReason = result.stopReason;
     } else if (resolved.provider === "anthropic") {
       const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-      if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set.");
+      if (!apiKey && !planAvailable()) throw new Error("Claude is not set up: neither CLAUDE_CODE_OAUTH_TOKEN (the plan) nor ANTHROPIC_API_KEY is set.");
       try {
-        const result = await anthropicComplete(withModel, apiKey, this.deps.fetchImpl);
+        // The plan first (a fixed monthly price); the API key only if there is one and the plan cannot answer.
+        let result: { text: string; usage: AiResult["usage"]; stopReason: string | null } | null = null;
+        if (planAvailable() && !planLimited()) {
+          try {
+            result = await planComplete({ ...withModel, model: resolved.model });
+            viaPlan = true;
+          } catch (error) {
+            if (!(error instanceof PlanLimitError) || !apiKey) throw error;
+          }
+        }
+        if (!result) {
+          if (!apiKey) throw new PlanLimitError("The plan's allowance is used up for now.");
+          result = await anthropicComplete(withModel, apiKey, this.deps.fetchImpl);
+        }
         text = result.text;
         usage = result.usage;
         stopReason = result.stopReason;
@@ -164,7 +179,7 @@ export class Router {
         // record shows the switch (provider gemini), so it is visible on the Health page.
         const message = error instanceof Error ? error.message : "";
         const geminiKey = process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim();
-        if (!(isQuotaError(message) || /credit balance|billing/i.test(message)) || !geminiKey) throw error;
+        if (!(error instanceof PlanLimitError || isQuotaError(message) || /credit balance|billing/i.test(message)) || !geminiKey) throw error;
         const fallback = "gemini-3.5-flash-lite";
         const result = await geminiComplete({ ...withModel, model: fallback }, geminiKey, this.deps.fetchImpl);
         text = result.text;
@@ -200,7 +215,8 @@ export class Router {
     return {
       text,
       usage,
-      provider: resolved.provider,
+      // "claude-plan": answered on Hub of Me's own Claude plan, so no money per call (see plan.ts).
+      provider: viaPlan ? "claude-plan" : resolved.provider,
       model: resolved.model,
       durationMs: Date.now() - started,
       inputChars,

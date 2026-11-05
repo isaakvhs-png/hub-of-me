@@ -29,6 +29,7 @@ import type { Task } from "../repo.js";
 import { locateSpans } from "../trace.js";
 import type { Note } from "../types.js";
 import { TOOLS, toolSpec } from "./registry.js";
+import { claudeAvailable, planAvailable, planStatus } from "../ai/plan.js";
 import { conversationView, memoryView, openNoteIds, saveInner, saveMap, setOpenNotes } from "./memory.js";
 import { reflectQuietly } from "./reflect.js";
 import { bodySense, lookAtMyself, mechanics } from "./self.js";
@@ -961,7 +962,8 @@ async function availableModels(db: Db, userId: string, settings: Settings): Prom
       { id: "mock-strong", about: "test model, stronger" },
     ];
   }
-  const anthropic = Boolean(process.env.ANTHROPIC_API_KEY?.trim());
+  const anthropic = claudeAvailable();
+  const plan = planAvailable();
   const gemini = Boolean(process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim());
   const list: ModelChoice[] = [];
   if (gemini) {
@@ -969,7 +971,15 @@ async function availableModels(db: Db, userId: string, settings: Settings): Prom
     const left = Math.max(0, 500 - (usedToday["gemini-3.5-flash-lite"] ?? 0));
     if (left > 0) list.push({ id: "gemini-3.5-flash-lite", about: `Google's smallest model. Free on a free-tier key (about ${left} calls left today), otherwise roughly Sonnet's price per token at a fraction of its depth. Quick and shallow.` });
   }
-  if (anthropic) {
+  if (anthropic && plan) {
+    // On Hub of Me's own Claude plan a step costs no money; it uses the plan's allowance (a 5-hour window and a weekly
+    // cap), and the bigger the model, the faster. When the allowance runs out, calls fall back to Gemini until it resets.
+    const p = planStatus();
+    const left = p?.utilization != null ? ` The plan's ${p.type.replace("_", "-") || "current"} allowance is ${Math.round(p.utilization * 100)}% used${p.resetsAt ? `, resetting ${p.resetsAt.slice(0, 16)}Z` : ""}.` : "";
+    list.push({ id: "claude-haiku-5-5", about: `Claude's small model. On the plan: no cost per step, uses the least allowance.${left} Fast; good at clear tasks; takes things more at face value.` });
+    list.push({ id: "claude-sonnet-5-5", about: `Claude's mid-size model, your everyday one on the plan. No cost per step; uses more allowance than Haiku. Reads between the lines, holds many threads, weighs a life.`, everyday: true });
+    list.push({ id: "claude-opus-5-5", about: `Claude's largest model. No cost per step, but uses the allowance fastest, so keep it for what deserves it. The deepest judgment, best at weighing things against each other and noticing what is not said.` });
+  } else if (anthropic) {
     // What a step really costs, measured from its own recent steps; a list-price estimate until there are enough.
     const cost = await measuredStepCost(db, userId);
     const eur = (id: string, estimate: number) => `About EUR ${(cost[id] ?? estimate).toFixed(3)} per step${cost[id] != null ? " (measured)" : ""}`;
@@ -978,7 +988,7 @@ async function availableModels(db: Db, userId: string, settings: Settings): Prom
     list.push({ id: "claude-opus-5-5", about: `Claude's largest model. ${eur("claude-opus-5-5", 0.11)}, roughly 3 times Sonnet. The deepest judgment, best at weighing things against each other and noticing what is not said.` });
   }
   if (gemini) list.push({ id: "gemini-2.5-pro", about: "Google's large model. About EUR 0.012 per step. A different mind from Claude; strong on long material." });
-  if (!list.length) throw new Error("No AI model is available. Set ANTHROPIC_API_KEY or GEMINI_API_KEY.");
+  if (!list.length) throw new Error("No AI model is available. Set CLAUDE_CODE_OAUTH_TOKEN (the plan), ANTHROPIC_API_KEY or GEMINI_API_KEY.");
   return list;
 }
 
@@ -992,7 +1002,7 @@ export async function webSearch(db: Db, ai: Router, userId: string, query: strin
     return `Search refused: the query carried a ${guard.reason}. Rephrase without private details.`;
   }
   if (settings.provider === "mock") return `MOCK SEARCH for "${guard.query}": no real web in test mode.`;
-  if (!process.env.ANTHROPIC_API_KEY?.trim()) return "Web search needs the Anthropic key, which is not set.";
+  if (!claudeAvailable()) return "Web search needs Claude (the plan or an API key), which is not set up.";
   // The pages are read and summarised by Claude Haiku, whatever model it is thinking with: reading search results
   // pulls whole pages in as input, which on Opus cost up to half a euro per search. It judges the summary itself.
   void model;

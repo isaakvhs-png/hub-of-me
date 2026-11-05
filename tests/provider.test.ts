@@ -4,7 +4,7 @@ import { createDb, migrate } from "../src/db.js";
 import { getSettings, updateSettings } from "../src/repo.js";
 import { applyEnvProvider, ensureUser } from "../src/seed.js";
 
-const KEYS = ["AI_PROVIDER", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"] as const;
+const KEYS = ["AI_PROVIDER", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "GEMINI_API_KEY", "GOOGLE_API_KEY"] as const;
 const saved = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));
 
 afterEach(() => {
@@ -63,7 +63,7 @@ describe("provider selection", () => {
     delete process.env.ANTHROPIC_API_KEY;
     await expect(
       succeeding.complete({ role: "conversation", system: "Stay concrete.", messages: [{ role: "user", content: "Hello." }] }),
-    ).rejects.toThrow(/ANTHROPIC_API_KEY is not set/);
+    ).rejects.toThrow(/ANTHROPIC_API_KEY is (not )?set/);
     await db.close();
   });
 
