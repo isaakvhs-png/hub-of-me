@@ -693,7 +693,7 @@ export async function useTool(
     if (ctx.tool === "search") {
       const query = str("query") || str("topic");
       if (!query) return "A search needs a query.";
-      return await webSearch(db, ai, userId, query, ctx.model, ctx.jobId ?? undefined);
+      return await webSearch(db, ai, userId, query, ctx.model, ctx.jobId ?? undefined, str("why"));
     }
     if (ctx.tool === "ask") {
       const requestId = await insertInfoRequest(db, userId, {
@@ -976,8 +976,8 @@ async function availableModels(db: Db, userId: string, settings: Settings): Prom
     // cap), and the bigger the model, the faster. When the allowance runs out, calls fall back to Gemini until it resets.
     const p = planStatus();
     const left = p?.utilization != null ? ` The plan's ${p.type.replace("_", "-") || "current"} allowance is ${Math.round(p.utilization * 100)}% used${p.resetsAt ? `, resetting ${p.resetsAt.slice(0, 16)}Z` : ""}.` : "";
-    list.push({ id: "claude-haiku-5-5", about: `Claude's small model. On the plan: no cost per step, uses the least allowance.${left} Fast; good at clear tasks; takes things more at face value.` });
-    list.push({ id: "claude-sonnet-5-5", about: `Claude's mid-size model, your everyday one on the plan. No cost per step; uses more allowance than Haiku. Reads between the lines, holds many threads, weighs a life.`, everyday: true });
+    // Isaak (5 Nov): on the plan, Sonnet does everything; Opus stays as its own step up.
+    list.push({ id: "claude-sonnet-5-5", about: `Claude's mid-size model, your everyday one on the plan, for everything (searches too). No cost per step; uses the plan's allowance.${left} Reads between the lines, holds many threads, weighs a life.`, everyday: true });
     list.push({ id: "claude-opus-5-5", about: `Claude's largest model. No cost per step, but uses the allowance fastest, so keep it for what deserves it. The deepest judgment, best at weighing things against each other and noticing what is not said.` });
   } else if (anthropic) {
     // What a step really costs, measured from its own recent steps; a list-price estimate until there are enough.
@@ -993,7 +993,7 @@ async function availableModels(db: Db, userId: string, settings: Settings): Prom
 }
 
 /** A real web search, run by the model it is thinking with (Claude searches; Gemini hands the search to Claude Haiku). Every page found is kept as a source. */
-export async function webSearch(db: Db, ai: Router, userId: string, query: string, model: string, jobId?: string): Promise<string> {
+export async function webSearch(db: Db, ai: Router, userId: string, query: string, model: string, jobId?: string, why = ""): Promise<string> {
   const settings = await getSettings(db, userId);
   const visible = await loadVisibleNotes(db, userId, settings);
   const guard = guardSearchQuery(query, visible.blockedBodies);
@@ -1003,10 +1003,10 @@ export async function webSearch(db: Db, ai: Router, userId: string, query: strin
   }
   if (settings.provider === "mock") return `MOCK SEARCH for "${guard.query}": no real web in test mode.`;
   if (!claudeAvailable()) return "Web search needs Claude (the plan or an API key), which is not set up.";
-  // The pages are read and summarised by Claude Haiku, whatever model it is thinking with: reading search results
-  // pulls whole pages in as input, which on Opus cost up to half a euro per search. It judges the summary itself.
-  void model;
-  const searcher = "claude-haiku-5-5";
+  // On its own Claude plan the model it is thinking with reads the pages itself (Sonnet by default), told why it is
+  // searching, so it can see what matters on a page. On the pay-per-token API the pages are read by Haiku instead:
+  // whole pages as input cost up to half a euro a search on Opus.
+  const searcher = planAvailable() ? (model.startsWith("claude-") ? model : "claude-sonnet-5-5") : "claude-haiku-5-5";
   const text = await completeText(
     db,
     userId,
@@ -1015,7 +1015,7 @@ export async function webSearch(db: Db, ai: Router, userId: string, query: strin
       role: "research",
       model: searcher,
       webSearch: true,
-      system: "Search the web for what is asked. Then report what you found, plainly and briefly, with what each source says. Do not invent anything the pages do not say.",
+      system: `Search the web for what is asked. Then report what you found, plainly and briefly, with what each source says. Do not invent anything the pages do not say.${why ? `\nWhy it is being looked up (so you can see what matters on a page): ${why}` : ""}`,
       messages: [{ role: "user", content: guard.query }],
     },
     { jobKind: "search", jobId },
