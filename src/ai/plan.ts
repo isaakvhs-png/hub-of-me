@@ -4,7 +4,7 @@ import fs from "node:fs";
 import type { AiRequest, ProviderUsage } from "./types.js";
 
 /**
- * The plan route: Claude models through Isaak's separate Claude Pro plan for Hub of Me, via the Claude Agent SDK, instead
+ * The plan route: Claude models through a Claude plan (for now Isaak's own Pro plan, shared; 5 Nov), via the Claude Agent SDK, instead
  * of the pay-per-token API. Anthropic's help page "Use the Claude Agent SDK with your Claude plan" (updated Oct 2026)
  * says Agent SDK use signed in with a plan draws from that plan's limits. Isaak chose this on 5 Nov 2026: a fixed
  * monthly price instead of paying per call. It is on when CLAUDE_CODE_OAUTH_TOKEN is set (made with `claude setup-token`).
