@@ -863,12 +863,28 @@ export async function greetIfNeeded(db: Db, ai: Router, userId: string): Promise
   return job;
 }
 
+export async function archiveEmptyGreetings(db: Db, userId: string): Promise<void> {
+  await db.query(
+    `UPDATE conversations SET archived_at = now() WHERE user_id = $1 AND archived_at IS NULL AND title = 'Hello'
+     AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = conversations.id)`,
+    [userId],
+  );
+}
+
 async function greetOnce(db: Db, ai: Router, userId: string): Promise<void> {
   const fresh = await db.query(`SELECT greeted_at FROM fresh_starts WHERE user_id = $1`, [userId]);
   const row = fresh.rows[0];
   const live = await db.query(`SELECT id FROM conversations WHERE user_id = $1 AND archived_at IS NULL LIMIT 1`, [userId]);
   if ((row && row.greeted_at == null) || (row && !live.rows[0])) {
-    await runAgentTurn(db, ai, userId, { cue: "GREETING DUE" });
+    // A greeting that failed (a provider outage) leaves an empty "Hello" conversation behind; each restart made another.
+    // Those are archived first, and again if this greeting fails too.
+    await archiveEmptyGreetings(db, userId);
+    try {
+      await runAgentTurn(db, ai, userId, { cue: "GREETING DUE" });
+    } catch (error) {
+      await archiveEmptyGreetings(db, userId);
+      throw error;
+    }
     await db.query(`UPDATE fresh_starts SET greeted_at = now() WHERE user_id = $1`, [userId]);
     await db.query(
       `INSERT INTO inner_state (user_id, checked_at) VALUES ($1, now()) ON CONFLICT (user_id) DO UPDATE SET checked_at = now()`,

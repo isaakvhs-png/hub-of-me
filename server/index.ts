@@ -14,7 +14,7 @@ import { applyEnvProvider, ensureUser } from "../src/seed.js";
 import { restoreCorruptedSouls } from "../src/soul.js";
 import { reopenClosedByUpload } from "../src/tasks.js";
 import { FRESH_REASON, freshStart } from "../src/fresh.js";
-import { greetIfNeeded, wakeIfDue } from "../src/agent/turn.js";
+import { archiveEmptyGreetings, greetIfNeeded, wakeIfDue } from "../src/agent/turn.js";
 import { zonedParts } from "../src/time.js";
 import { createApp } from "./app.js";
 
@@ -38,6 +38,7 @@ for (const row of everyone.rows) {
   try {
     const settings = await getSettings(db, row.id);
     const ai = new Router(settings, { mock: settings.provider === "mock" ? new MockProvider() : undefined });
+    await archiveEmptyGreetings(db, row.id);
     await greetIfNeeded(db, ai, row.id);
   } catch (error) {
     console.error("greeting failed", error);

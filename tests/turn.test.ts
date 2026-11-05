@@ -177,3 +177,16 @@ describe("a pinned model", () => {
     expect(seen.length).toBe(2);
   });
 });
+
+describe("greetings that fail", () => {
+  it("archives the empty Hello conversations a failed greeting leaves behind", async () => {
+    const { fresh } = await import("./helpers.js");
+    const { archiveEmptyGreetings } = await import("../src/agent/turn.js");
+    const { db, user } = await fresh();
+    for (let i = 0; i < 3; i += 1) await db.query(`INSERT INTO conversations (id, user_id, title) VALUES ($1, $2, 'Hello')`, [`c${i}`, user.id]);
+    await db.query(`INSERT INTO messages (id, conversation_id, role, content) VALUES ('m1', 'c2', 'assistant', 'Hi')`);
+    await archiveEmptyGreetings(db, user.id);
+    const live = (await db.query(`SELECT id FROM conversations WHERE user_id = $1 AND archived_at IS NULL AND id LIKE 'c%'`, [user.id])).rows.map((r) => r.id);
+    expect(live).toEqual(["c2"]);
+  });
+});
