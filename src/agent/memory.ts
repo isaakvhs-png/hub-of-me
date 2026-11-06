@@ -128,8 +128,13 @@ export async function conversationView(db: Db, userId: string, maxChars: number,
   ).rows.filter((row) => String(row.id) !== skipMessageId);
   const picked: string[] = [];
   let used = 0;
-  for (const row of rows) {
-    const line = `${String(row.role) === "user" ? "HIM" : "YOU"} (${new Date(String(row.created_at)).toISOString().slice(0, 16)}): ${String(row.content)}`;
+  // rows run newest first, so rows[i - 1] is the message that came after this one.
+  for (const [i, row] of rows.entries()) {
+    // A message of his followed by another of his got no answer: a technical failure on our side (a refused or failed
+    // call), not him repeating himself. Said plainly, so a resend after an error is not read as a pattern of his.
+    const after = i > 0 ? rows[i - 1] : null;
+    const unanswered = String(row.role) === "user" && !String(row.content).startsWith("Uploaded ") && after && String(after.role) === "user" ? " [this got no answer: a technical error on your side, not him repeating himself]" : "";
+    const line = `${String(row.role) === "user" ? "HIM" : "YOU"} (${new Date(String(row.created_at)).toISOString().slice(0, 16)}): ${String(row.content)}${unanswered}`;
     if (used + line.length > maxChars) {
       picked.push(`(older messages are archived in the notebook history: ${rows.length - picked.length} more)`);
       break;

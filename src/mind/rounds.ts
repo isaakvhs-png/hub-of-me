@@ -302,7 +302,7 @@ For each intention, one act:
 - fit "person": it means reaching another person (a message, an intro, an application, a call), spending money, or deciding something only he can decide. It becomes a suggestion for him (suggestion: text, why). If an open suggestion on the agenda already says this, give its id as ref instead.
 - fit "none": no hand does it. Describe what would (gap).
 - fit "self": it is about how it works itself (its rounds, its web, how bricks are organised, its prompts): a gap describing the change.
-- fit "thought": it only means thinking or remembering something; that is already filed from its thinking. No act needed.
+- fit "thought": it only means thinking, remembering, or writing something down on its bricks (findings, labels, notes, open questions: its conclusions are filed into the web automatically after this step), or replying to him (its reply already carries that). No act needed, and never a gap.
 A gap: {"ref": an id from KNOWN GAPS if it is the same need, "name": "Needs: ..." (or "Change: ..." for self), "what": what it would do, "why": this situation, "how": how it could work}.
 Within the boundaries always. Return {"acts":[{"intention":"","fit":"","hand":"","input":{},"stopgap":false,"gap":null,"suggestion":null}]}`;
   const models = [input.model, ...(input.fallbackModels ?? []).filter((m) => m !== input.model)];

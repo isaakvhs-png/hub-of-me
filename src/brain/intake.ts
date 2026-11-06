@@ -115,7 +115,7 @@ export async function intake(
 ): Promise<IntakeResult> {
   const text = input.text.trim();
   // The same file handed over again is the same source: no second copy, no second filing. Parts that failed before are retried.
-  if (input.kind !== "chat" && text) {
+  if (input.kind !== "chat" && input.kind !== "own" && text) {
     const seen = (await db.query(
       `SELECT s.id AS source_id, st.id AS stream_id, st.failed_parts FROM brain_sources s JOIN brain_stream st ON st.source_id = s.id AND st.archived_at IS NULL
        WHERE s.user_id = $1 AND s.title = $2 AND s.body = $3 AND s.archived_at IS NULL ORDER BY s.created_at LIMIT 1`,
@@ -128,7 +128,8 @@ export async function intake(
       return fileParts(db, ai, userId, { ...input, text, sourceId: result.sourceId, streamId: result.streamId, parts: failedParts }, result);
     }
   }
-  const sourceId = input.kind === "chat" ? null : await addSource(db, userId, { kind: input.kind, title: input.title || "untitled", body: text });
+  // Its own notes are not a file he handed over: no source brick for them.
+  const sourceId = input.kind === "chat" || input.kind === "own" ? null : await addSource(db, userId, { kind: input.kind, title: input.title || "untitled", body: text });
   const streamId = await addStream(db, userId, { kind: input.kind, sourceId, content: text });
   const result: IntakeResult = { sourceId, streamId, created: [], touched: [], links: 0, failed: [], already: false };
   if (!text) return result;
