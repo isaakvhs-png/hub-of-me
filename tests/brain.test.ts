@@ -142,3 +142,30 @@ describe("filing that fails", () => {
     expect(again.already).toBe(true);
   });
 });
+
+describe("reorganising the web", () => {
+  it("merges two bricks that are one thing, and splits one that holds two, archiving instead of deleting", async () => {
+    const { fresh } = await import("./helpers.js");
+    const { runBrainTool } = await import("../src/brain/tools.js");
+    const { createBrick, addEntry, linkBricks, listBricks, listEntries, listLinks } = await import("../src/brain/store.js");
+    const { db, user } = await fresh();
+    const a = await createBrick(db, user.id, { name: "Pete", kind: "person" });
+    const b = await createBrick(db, user.id, { name: "Peter", kind: "person" });
+    const c = await createBrick(db, user.id, { name: "BirdLife model", kind: "idea" });
+    const d = await createBrick(db, user.id, { name: "Aberystwyth", kind: "place" });
+    await addEntry(db, user.id, { brickId: b, kind: "fact", text: "raised the BirdLife model", origin: "his" });
+    await linkBricks(db, user.id, { a: b, b: c, type: "about", reason: "he raised it" });
+    expect(await runBrainTool(db, user.id, "merge_bricks", { keep: a, merge: b, why: "same person" })).toContain("archived");
+    expect((await listBricks(db, user.id)).some((x) => x.id === b)).toBe(false);
+    expect((await listLinks(db, user.id)).some((l) => [l.a, l.b].includes(a) && [l.a, l.b].includes(c))).toBe(true);
+    await linkBricks(db, user.id, { a, b: d, type: "about", reason: "works there" });
+    const entry = (await listEntries(db, user.id, { brickId: a })).find((e) => e.text === "raised the BirdLife model")!;
+    const out = await runBrainTool(db, user.id, "split_brick", { id: a, name: "Pete Bunting", kind: "person", entries: [], links: [d], why: "two Petes" });
+    expect(out).toContain("1 links moved");
+    const bunting = (await listBricks(db, user.id)).find((x) => x.name === "Pete Bunting")!;
+    expect((await listLinks(db, user.id)).some((l) => [l.a, l.b].includes(bunting.id) && [l.a, l.b].includes(d))).toBe(true);
+    expect((await listEntries(db, user.id, { brickId: a })).some((e) => e.id === entry.id)).toBe(true);
+    expect(await runBrainTool(db, user.id, "relabel_link", { a, b: c, reason: "a guess: maybe the other Pete" })).toContain("a guess");
+    await db.close();
+  });
+});

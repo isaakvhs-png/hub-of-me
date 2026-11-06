@@ -52,16 +52,23 @@ export const HANDS = [
   { name: "agenda_close", what: "Close an agenda item: done, or dropped with a reason.", input: "{ id, status: \"done\"|\"dropped\", note }" },
   { name: "entry_close", what: "Mark an open question answered, a lead followed or a to-do done (listed under OPEN ON LIT BRICKS).", input: "{ id, status: \"answered\"|\"done\"|\"dropped\", note }" },
   { name: "link", what: "Lay an insight link between two bricks that matter for each other, with the reason.", input: "{ a, b, type: \"insight\", reason }" },
+  { name: "merge_bricks", what: "Merge two bricks that are the same thing; the second is archived.", input: "{ keep, merge, why }" },
+  { name: "split_brick", what: "Split a brick that holds two things: a new brick takes the named entries, quotes and links.", input: "{ id, name, kind, summary, entries: [entry ids], moments: [words from quotes], links: [brick ids], why }" },
+  { name: "relabel_link", what: "Change a link's type or reason (mark it a guess, correct it).", input: "{ a, b, type?, reason, why }" },
+  { name: "library", what: "The old Library of notes from before the brick web: list them, or read one.", input: "{ action: \"list\" } | { action: \"read\", id }" },
   { name: "wake_me", what: "Choose when to wake up and think again on its own while he is away.", input: "{ in_minutes, why }" },
   { name: "look_at_myself", what: "Read how it works (the machinery) or one of its own design files.", input: "{ file? }" },
   { name: "read_records", what: "Read its own records: what it thought and did since the fresh start.", input: "{}" },
 ] as const;
 const HAND_NAMES = new Set<string>(HANDS.map((h) => h.name));
 /** Hands whose result is information it should think with before answering. */
-const INFORMING = new Set(["search", "open_source", "look_at_myself", "read_records"]);
+const INFORMING = new Set(["search", "open_source", "look_at_myself", "read_records", "library"]);
 
 const MAX_ROUNDS = { chat: 5, own: 6 };
-const MAX_ACTS = 8;
+/** A guard against a runaway plan, not a budget: a real plan fits easily. */
+const MAX_ACTS = 40;
+/** At most this many bricks count as "used together" per run: every pair of them gets a link, so 20 would lay 190. */
+const MAX_USED = 8;
 const RESULT_CHARS = 6000;
 
 const asStr = (v: unknown) => (v == null ? "" : typeof v === "string" ? v : JSON.stringify(v));
@@ -243,7 +250,7 @@ export async function thinkInRounds(db: Db, ai: Router, userId: string, input: R
       const me = (await listBricks(db, userId)).find((b) => b.kind === "self");
       if (me) for (const p of decision.predictions) if (p.claim.trim()) await addEntry(db, userId, { brickId: me.id, kind: "prediction", text: `${p.claim.trim()}${p.by ? ` (by ${p.by})` : ""}${p.confidence != null && Number.isFinite(p.confidence) ? `, ${Math.round(p.confidence)}% sure` : ""}`, origin: "own", status: "open" });
     }
-    const usedList = [...used].filter((u) => nameOf.has(u));
+    const usedList = [...used].filter((u) => nameOf.has(u)).slice(0, MAX_USED);
     if (usedList.length) {
       await learnFromUse(db, userId, usedList, [...litEver]);
       await recordUsed(db, userId, usedList);
@@ -303,6 +310,7 @@ For each intention, one act:
 - fit "none": no hand does it. Describe what would (gap).
 - fit "self": it is about how it works itself (its rounds, its web, how bricks are organised, its prompts): a gap describing the change.
 - fit "thought": it only means thinking, remembering, or writing something down on its bricks (findings, labels, notes, open questions: its conclusions are filed into the web automatically after this step), or replying to him (its reply already carries that). No act needed, and never a gap.
+- Something to do later, or again and again ("check weekly", "remind him", "when the recording comes"): that is a commitment. Make it two acts: agenda_add (kind pursuit or job, next_step saying when) and wake_me for the first time it is due. A promise with no agenda item and no wake-up is not kept.
 A gap: {"ref": an id from KNOWN GAPS if it is the same need, "name": "Needs: ..." (or "Change: ..." for self), "what": what it would do, "why": this situation, "how": how it could work}.
 Within the boundaries always. Return {"acts":[{"intention":"","fit":"","hand":"","input":{},"stopgap":false,"gap":null,"suggestion":null}]}`;
   const models = [input.model, ...(input.fallbackModels ?? []).filter((m) => m !== input.model)];
@@ -310,6 +318,7 @@ Within the boundaries always. Return {"acts":[{"intention":"","fit":"","hand":""
   const me = bricks.find((b) => b.kind === "self");
   let informed = false;
   const results: string[] = [];
+  if (plan.acts.length > MAX_ACTS) await logAction(db, userId, { what: "plan cut short", why: `${plan.acts.length} acts planned; only the first ${MAX_ACTS} were done.`, source: "mind", payload: { runId } });
   for (const act of plan.acts.slice(0, MAX_ACTS)) {
     const rec: ActRecord = { intention: act.intention, fit: act.fit };
     const hand = act.hand?.trim() ?? "";

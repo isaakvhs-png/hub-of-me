@@ -13,6 +13,10 @@ export const BRAIN_TOOLS = [
   { name: "agenda_add", effort: "light", description: "Add to your agenda: kind \"pursuit\" (your own), \"job\" (something he asked), \"question\" (to ask him), or \"suggestion\" (something that would reach a person, for him to decide). input: { kind, text, why, next_step, brick }." },
   { name: "agenda_close", effort: "light", description: "Close an agenda item: done, or dropped with a reason. input: { id, status: \"done\"|\"dropped\", note }." },
   { name: "agenda_step", effort: "light", description: "Write the next step of an open agenda item. input: { id, next_step }." },
+  { name: "merge_bricks", effort: "light", description: "Merge two bricks that are the same thing: everything on merge (moments, entries, links) moves to keep, and merge is archived (never deleted). input: { keep, merge, why }." },
+  { name: "split_brick", effort: "light", description: "Split a brick that holds two things (two people with one name, say): a new brick gets the entries, moments and links you name, moved off the old one. input: { id, name, kind, summary, entries: [entry ids], moments: [words from the quotes to move], links: [ids of the bricks whose links move], why }." },
+  { name: "relabel_link", effort: "light", description: "Change an existing link between two bricks: its type and/or its reason (mark it a guess, correct it). input: { a, b, type?: \"about\"|\"meaning\"|\"insight\"|\"together\", reason, why }." },
+  { name: "library", effort: "light", description: "The old Library: notes written before the brick web (research write-ups, a handover, documents). input: { action: \"list\" } or { action: \"read\", id }." },
 ] as const;
 
 const NAMES: Set<string> = new Set(BRAIN_TOOLS.map((t) => t.name));
@@ -95,6 +99,60 @@ export async function runBrainTool(db: Db, userId: string, tool: string, input: 
     const status = str("status") === "dropped" ? "dropped" : "done";
     const a = await closeAgenda(db, userId, str("id"), status, str("note"));
     return a ? `Closed [${a.id}] as ${status}: ${a.text}` : `No open agenda item ${str("id")}.`;
+  }
+  if (tool === "merge_bricks") {
+    const keep = str("keep"), merge = str("merge");
+    const k = await getBrick(db, userId, keep), m = await getBrick(db, userId, merge);
+    if (!k || !m || keep === merge) return "merge_bricks needs two different bricks that exist (keep and merge).";
+    await db.query(`UPDATE brick_moments SET brick_id = $3 WHERE user_id = $1 AND brick_id = $2 AND archived_at IS NULL`, [userId, merge, keep]);
+    await db.query(`UPDATE brick_entries SET brick_id = $3 WHERE user_id = $1 AND brick_id = $2 AND archived_at IS NULL`, [userId, merge, keep]);
+    const links = (await db.query(`SELECT * FROM brick_links WHERE user_id = $1 AND archived_at IS NULL AND (a = $2 OR b = $2)`, [userId, merge])).rows;
+    for (const l of links) {
+      const other = String(l.a) === merge ? String(l.b) : String(l.a);
+      if (other !== keep) await linkBricks(db, userId, { a: keep, b: other, type: String(l.type), strength: Number(l.strength), reason: String(l.reason ?? ""), madeBy: String(l.made_by ?? "code") });
+      await db.query(`UPDATE brick_links SET archived_at = now() WHERE id = $1`, [l.id]);
+    }
+    await db.query(`UPDATE bricks SET archived_at = now() WHERE id = $1 AND user_id = $2`, [merge, userId]);
+    await addEntry(db, userId, { brickId: keep, kind: "fact", text: `Merged in "${m.name}" [${merge}]${str("why") ? `: ${str("why")}` : ""}.`, origin: "own" });
+    return `Merged ${m.name} into ${k.name}: ${links.length} link(s) moved; ${m.name} archived.`;
+  }
+  if (tool === "split_brick") {
+    const from = await getBrick(db, userId, str("id"));
+    if (!from) return `No brick ${str("id")}.`;
+    if (!str("name")) return "split_brick needs a name for the new brick.";
+    const ids = (key: string) => (Array.isArray(input[key]) ? (input[key] as unknown[]).map(String).filter(Boolean) : []);
+    const brickId = await createBrick(db, userId, { name: str("name"), kind: str("kind") || from.kind, origin: from.origin, summary: str("summary") });
+    let entries = 0, moments = 0, links = 0;
+    for (const e of ids("entries")) entries += (await db.query(`UPDATE brick_entries SET brick_id = $3 WHERE user_id = $1 AND id = $2 AND brick_id = $4 AND archived_at IS NULL RETURNING id`, [userId, e, brickId, from.id])).rows.length;
+    for (const words of ids("moments")) moments += (await db.query(`UPDATE brick_moments SET brick_id = $3 WHERE user_id = $1 AND brick_id = $4 AND archived_at IS NULL AND quote ILIKE $2 RETURNING id`, [userId, `%${words}%`, brickId, from.id])).rows.length;
+    for (const other of ids("links")) {
+      const [a, b] = [from.id, other].sort();
+      const l = (await db.query(`SELECT * FROM brick_links WHERE user_id = $1 AND a = $2 AND b = $3 AND archived_at IS NULL`, [userId, a, b])).rows[0];
+      if (!l) continue;
+      await linkBricks(db, userId, { a: brickId, b: other, type: String(l.type), strength: Number(l.strength), reason: String(l.reason ?? ""), madeBy: String(l.made_by ?? "code") });
+      await db.query(`UPDATE brick_links SET archived_at = now() WHERE id = $1`, [l.id]);
+      links += 1;
+    }
+    await linkBricks(db, userId, { a: from.id, b: brickId, type: "meaning", strength: 1, reason: `split from it${str("why") ? `: ${str("why")}` : ""}`, madeBy: "entity" });
+    return `Split [${brickId}] ${str("name")} off ${from.name}: ${entries} entries, ${moments} moments, ${links} links moved.`;
+  }
+  if (tool === "relabel_link") {
+    const [a, b] = [str("a"), str("b")].sort();
+    const l = (await db.query(`SELECT * FROM brick_links WHERE user_id = $1 AND a = $2 AND b = $3 AND archived_at IS NULL`, [userId, a, b])).rows[0];
+    if (!l) return "There is no link between those two bricks.";
+    const type = ["about", "meaning", "insight", "together"].includes(str("type")) ? str("type") : String(l.type);
+    const reason = str("reason") || String(l.reason ?? "");
+    await db.query(`UPDATE brick_links SET type = $2, reason = $3, updated_at = now() WHERE id = $1`, [l.id, type, reason.slice(0, 600)]);
+    return `Link ${a}–${b} is now ${type}${reason ? `: ${reason.slice(0, 120)}` : ""}.`;
+  }
+  if (tool === "library") {
+    if (str("action") === "read") {
+      const note = (await db.query(`SELECT * FROM notes WHERE user_id = $1 AND id = $2`, [userId, str("id")])).rows[0];
+      if (!note) return `No note ${str("id")}.`;
+      return `NOTE [${note.id}] ${note.title} (${note.type}${note.status === "archived" ? ", archived" : ""})\n${String(note.body).slice(0, 40_000)}`;
+    }
+    const notes = (await db.query(`SELECT id, title, type, status, summary, updated_at FROM notes WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 200`, [userId])).rows;
+    return notes.map((n) => `[${n.id}] ${n.title} (${n.type}${n.status === "archived" ? ", archived" : ""}, ${new Date(String(n.updated_at)).toISOString().slice(0, 10)})${n.summary ? `: ${String(n.summary).slice(0, 120)}` : ""}`).join("\n") || "The Library is empty.";
   }
   if (tool === "agenda_step") {
     return (await updateAgendaStep(db, userId, str("id"), str("next_step"))) ? `Next step set for ${str("id")}.` : `No open agenda item ${str("id")}.`;
