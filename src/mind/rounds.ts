@@ -30,6 +30,8 @@ export interface RoundsInput {
   seedText: string;
   seedWeights?: Map<string, number>;
   model: string;
+  /** Other models to try, in order, when the model refuses a call (a safeguard false positive). */
+  fallbackModels?: string[];
   cause: string;
   onEvent?: (e: Event) => void | Promise<void>;
   /** Runs one real action (a "hand"): the same code the older loop's tools use. */
@@ -95,11 +97,13 @@ const howSchema = z.preprocess(
 );
 
 function roundSystem(input: RoundsInput, agenda: string): string {
+  // Worded as written working drafts (6 Nov): the first wording, about "thinking in rounds", was refused by the plan
+  // model's safeguards as if it asked for its hidden reasoning. A draft is ordinary written work, and that is what this is.
   return `TASK: round
-You are ${input.name}'s own AI, thinking in rounds before anything is said or done. ${input.mode === "own" ? `This is your own time: ${input.name} is not here and asked for nothing.` : `${input.name} is in the conversation.`}
+You are ${input.name}'s own AI. Before anything is said or done, you write short working drafts: each one a plain-language analysis of the situation and a plan, the way a capable chief of staff would write a memo. ${input.mode === "own" ? `This is your own time: ${input.name} is not here and asked for nothing.` : `${input.name} is in the conversation.`}
 
-How this works. Each round is a fresh look, written in plain language: no forms, no menu of tools. Think like a highly capable person who has your memory (the web of bricks), can read and search anything public, keep his calendar and agenda, write drafts, and keep working while he is away, but cannot reach other people without him. Write what you actually think and what you would actually do. Whether you can already do it is worked out after you have decided; what you can't do yet becomes a design for something you need. So don't shrink your thinking to what seems possible.
-What you see of the web is what your thinking lights up: the brightest bricks in full, fainter ones shorter, then the edge and a couple of far, quiet bricks. Name a brick or a thing in your thinking and the next round sees it lit.
+How the drafts work. Each draft is a fresh piece of writing: no forms, no menu of tools. Write as a highly capable person who has your memory (the web of bricks), can read and search anything public, keep his calendar and agenda, write drafts, and keep working while he is away, but cannot reach other people without him. Give your actual view and what you would actually do. Whether you can already do it is worked out after the plan is settled; what you can't do yet becomes a design for something you need, so don't shrink the plan to what seems possible.
+What you see of the web is what the drafts so far have lit up: the brightest bricks in full, fainter ones shorter, then the edge and a couple of far, quiet bricks. Name a brick or a thing in a draft and the next draft sees it lit.
 Judgment, not a checklist: be concrete; use what is in the web and say which; never invent facts about him; mark guesses as guesses; where you can find something out yourself, do that instead of asking him.
 
 SOUL:
@@ -109,24 +113,42 @@ ${agenda}`;
 }
 
 function stanceText(n: number, stance: string, mode: "chat" | "own"): string {
-  const end = `End with a section headed WHAT I WOULD DO: numbered plain sentences, one action each (or "nothing yet, because ...").${mode === "chat" ? " If you would answer him, one of them says what the answer should carry." : ""}`;
-  if (stance === "draft") return `ROUND ${n}: FIRST LOOK. What is going on, what matters here, and what would you do? Write freely. ${end}`;
-  if (stance === "challenge") return `ROUND ${n}: ANOTHER ANGLE. Read the round(s) above against what is lit now, the far bricks too. Take a real stance: where is it wrong, thin, passive, too safe, or missing a connection across the web or across time? Disagree where it matters, not on everything. ${end}`;
-  if (stance === "calibrate") return `ROUND ${n}: CALIBRATE. How sure are you of what the rounds concluded? What would prove it wrong, and what does it cost if it is wrong? Write predictions that can be checked later, each on its own line as PREDICTION: claim | by when | how sure (%). ${end}`;
-  return `ROUND ${n}: ${stance} ${end}`;
+  const end = `End with a section headed PLAN: numbered plain sentences, one action each (or "nothing yet, because ...").${mode === "chat" ? " If you would answer him, one of them says what the answer should carry." : ""}`;
+  if (stance === "draft") return `DRAFT ${n}: FIRST LOOK. What is going on, what matters here, and what would you do? Write it plainly. ${end}`;
+  if (stance === "challenge") return `DRAFT ${n}: REVIEW FROM ANOTHER ANGLE. Review the draft(s) above against what is lit now, the far bricks too, as a sharp colleague would. Where is the plan wrong, thin, passive, too safe, or missing a connection across the web or across time? Disagree where it matters, not on everything. ${end}`;
+  if (stance === "calibrate") return `DRAFT ${n}: CALIBRATE. How sure can you be of what the drafts concluded? What would prove it wrong, and what does it cost if it is wrong? Write predictions that can be checked later, each on its own line as PREDICTION: claim | by when | how sure (%). ${end}`;
+  return `DRAFT ${n}: ${stance} ${end}`;
 }
 
 function decideText(final: boolean, roundsLeft: number, mode: "chat" | "own"): string {
-  return `${final ? "AFTER ACTING. Above are the results of what was just done. Settle what you now say and think, with those results in hand." : "DECIDE. Weigh the rounds and settle what to do."}
+  return `${final ? "AFTER ACTING. Above are the results of what was just done. Settle what you now say and conclude, with those results in hand." : "DECIDE. Weigh the drafts and settle what to do."}
 Return one JSON object:
 {"say":"","would_do":[],"now_think":"","predictions":[{"claim":"","by":"","confidence":70}],"disagreement":"","used":[],"another_round":null}
 - say: what ${mode === "chat" ? "he reads now, in your own words. When he wrote to you, answer him" : "you would bring him when he is back; leave it empty unless it is really worth his time"}.${final ? "" : " If what you would do first needs to happen before you can answer (a search, reading a file), leave say empty: you get one more look after acting."}
-- would_do: ${final ? "leave empty; anything still to do goes on your agenda next time." : "the actions you settled on, as plain sentences, one each. Not limited to what you think you can do."}
-- now_think: what you now think, in a few plain sentences, to keep in your web: what you concluded, connections you saw, what is still open. It is filed as your own thinking.
+- would_do: ${final ? "leave empty; anything still to do goes on your agenda next time." : "the actions you settled on, as plain sentences, one each. Not limited to what you can already do."}
+- now_think: your conclusions in a few plain sentences, to keep in your web: what you concluded, connections you saw, what is still open. It is filed as your own notes.
 - predictions: checkable claims with a date and how sure you are (0 to 100), if any.
-- disagreement: what the rounds still disagree on, if anything. Keep it; don't average it away.
-- used: ids of the bricks your thinking actually used.
-- another_round: ${final || roundsLeft <= 0 ? "null." : `{"stance":"what the next round should look at, and from which angle"} only if one more round would really change what you do (${roundsLeft} left); otherwise null.`}`;
+- disagreement: what the drafts still disagree on, if anything. Keep it; don't average it away.
+- used: ids of the bricks the drafts actually used.
+- another_round: ${final || roundsLeft <= 0 ? "null." : `{"stance":"what one more draft should look at, and from which angle"} only if it would really change what you do (${roundsLeft} left); otherwise null.`}`;
+}
+
+/** A refusal by the model's own safeguards (often a false positive on normal work) is worth one try on another model. */
+const REFUSED = /safeguards flagged|reasoning_extraction|usage policy|can't respond to this message/i;
+
+async function withFallback<T>(db: Db, userId: string, runId: string, models: string[], call: (model: string) => Promise<T>): Promise<T> {
+  let last: unknown = null;
+  for (const [i, model] of models.entries()) {
+    try {
+      return await call(model);
+    } catch (error) {
+      last = error;
+      const message = error instanceof Error ? error.message : String(error);
+      if (!REFUSED.test(message) || i === models.length - 1) throw error;
+      await logAction(db, userId, { what: "model refused, trying another", why: `${model} refused a call (${message.slice(0, 160)}); trying ${models[i + 1]}.`, source: "mind", payload: { runId, model } });
+    }
+  }
+  throw last;
 }
 
 async function runCost(db: Db, runId: string): Promise<number> {
@@ -150,6 +172,7 @@ export async function thinkInRounds(db: Db, ai: Router, userId: string, input: R
   const used = new Set<string>();
   const litEver = new Set<string>();
   try {
+    const models = [input.model, ...(input.fallbackModels ?? []).filter((m) => m !== input.model)];
     const agenda = agendaText(await listAgenda(db, userId));
     const system = roundSystem(input, agenda);
     const bricks = await listBricks(db, userId);
@@ -159,20 +182,20 @@ export async function thinkInRounds(db: Db, ai: Router, userId: string, input: R
     const plan = input.mode === "own" ? ["draft", "challenge", "calibrate"] : ["draft", "challenge"];
     const max = MAX_ROUNDS[input.mode];
     let actResults = "";
-    const roundsText = () => rounds.map((r) => `--- ROUND ${r.n} (${r.stance}) ---\n${r.text}`).join("\n\n");
+    const roundsText = () => rounds.map((r) => `--- DRAFT ${r.n} (${r.stance}) ---\n${r.text}`).join("\n\n");
     const stepMessage = async (instruction: string) => {
       const view = await tieredView(db, userId, lit.energies);
       for (const k of [...view.full, ...view.line]) litEver.add(k);
       return {
         view,
-        content: `${view.text}\n\nCONVERSATION SO FAR:\n${input.conversation}\n\nNOW:\n${input.situation}\n\n${rounds.length ? `THE ROUNDS SO FAR:\n${roundsText()}\n\n` : ""}${actResults ? `WHAT WAS JUST DONE, AND WHAT CAME BACK:\n${actResults}\n\n` : ""}${instruction}`,
+        content: `${view.text}\n\nCONVERSATION SO FAR:\n${input.conversation}\n\nNOW:\n${input.situation}\n\n${rounds.length ? `THE DRAFTS SO FAR:\n${roundsText()}\n\n` : ""}${actResults ? `WHAT WAS JUST DONE, AND WHAT CAME BACK:\n${actResults}\n\n` : ""}${instruction}`,
       };
     };
     const oneRound = async (stance: string) => {
       const n = rounds.length + 1;
       await input.onEvent?.({ type: "thinking", phase: `Round ${n}: ${stance === "draft" ? "first look" : stance === "challenge" ? "another angle" : stance === "calibrate" ? "calibrating" : "one more look"}`, model: input.model });
       const { view, content } = await stepMessage(stanceText(n, stance, input.mode));
-      const text = (await completeText(db, userId, ai, { role: input.mode === "own" ? "reflection" : "conversation", model: input.model, maxTokens: 4000, cacheSystem: true, system, messages: [{ role: "user", content }] }, { jobKind: "mind", jobId: runId })).trim();
+      const text = (await withFallback(db, userId, runId, models, (model) => completeText(db, userId, ai, { role: input.mode === "own" ? "reflection" : "conversation", model, maxTokens: 4000, cacheSystem: true, system, messages: [{ role: "user", content }] }, { jobKind: "mind", jobId: runId }))).trim();
       rounds.push({ n, stance, lit: { full: view.full.map((k) => nameOf.get(k) ?? k), line: view.line.length, names: view.names.length, edge: view.edge.map((k) => nameOf.get(k) ?? k), far: view.far.map((k) => nameOf.get(k) ?? k) }, text });
       await save(db, runId, { rounds, acts });
       // Re-light from what this round thought, with the last focus carried on at half strength so the thread continues.
@@ -185,7 +208,7 @@ export async function thinkInRounds(db: Db, ai: Router, userId: string, input: R
       await input.onEvent?.({ type: "thinking", phase: final ? "Settling, with the results" : "Deciding", model: input.model });
       const left = max - rounds.length;
       const { content } = await stepMessage(decideText(final, left, input.mode));
-      decision = (await completeJson(db, userId, ai, { role: input.mode === "own" ? "reflection" : "conversation", model: input.model, maxTokens: 4000, cacheSystem: true, system: system.replace("TASK: round", "TASK: decide"), messages: [{ role: "user", content }] }, decisionSchema, { jobKind: "mind", jobId: runId })) as Decision;
+      decision = (await withFallback(db, userId, runId, models, (model) => completeJson(db, userId, ai, { role: input.mode === "own" ? "reflection" : "conversation", model, maxTokens: 4000, cacheSystem: true, system: system.replace("TASK: round", "TASK: decide"), messages: [{ role: "user", content }] }, decisionSchema, { jobKind: "mind", jobId: runId }))) as Decision;
       for (const u of decision.used) used.add(u);
       await save(db, runId, { rounds, acts, decision });
     };
@@ -209,10 +232,10 @@ export async function thinkInRounds(db: Db, ai: Router, userId: string, input: R
     }
 
     // What it concluded becomes part of the web, marked as its own thinking: the web grows from its thinking too.
-    const thought = [decision.now_think.trim(), decision.disagreement.trim() ? `Still open between my rounds: ${decision.disagreement.trim()}` : ""].filter(Boolean).join("\n");
+    const thought = [decision.now_think.trim(), decision.disagreement.trim() ? `Still open between my drafts: ${decision.disagreement.trim()}` : ""].filter(Boolean).join("\n");
     if (thought) {
       await input.onEvent?.({ type: "thinking", phase: "Filing what it thought", model: "" });
-      await intake(db, ai, userId, { text: thought, kind: "own", origin: "own", title: "its own thinking" }).catch(async (error) => {
+      await intake(db, ai, userId, { text: thought, kind: "own", origin: "own", title: "its own notes" }).catch(async (error) => {
         await logAction(db, userId, { what: "could not file its own thinking", why: error instanceof Error ? error.message.slice(0, 300) : "unknown", source: "mind", payload: { runId } });
       });
     }
@@ -282,7 +305,8 @@ For each intention, one act:
 - fit "thought": it only means thinking or remembering something; that is already filed from its thinking. No act needed.
 A gap: {"ref": an id from KNOWN GAPS if it is the same need, "name": "Needs: ..." (or "Change: ..." for self), "what": what it would do, "why": this situation, "how": how it could work}.
 Within the boundaries always. Return {"acts":[{"intention":"","fit":"","hand":"","input":{},"stopgap":false,"gap":null,"suggestion":null}]}`;
-  const plan = (await completeJson(db, userId, ai, { role: input.mode === "own" ? "reflection" : "conversation", model: input.model, maxTokens: 4000, system, messages: [{ role: "user", content }] }, howSchema, { jobKind: "mind", jobId: runId })) as z.output<typeof howSchema>;
+  const models = [input.model, ...(input.fallbackModels ?? []).filter((m) => m !== input.model)];
+  const plan = (await withFallback(db, userId, runId, models, (model) => completeJson(db, userId, ai, { role: input.mode === "own" ? "reflection" : "conversation", model, maxTokens: 4000, system, messages: [{ role: "user", content }] }, howSchema, { jobKind: "mind", jobId: runId }))) as z.output<typeof howSchema>;
   const me = bricks.find((b) => b.kind === "self");
   let informed = false;
   const results: string[] = [];

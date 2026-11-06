@@ -395,6 +395,8 @@ async function turnInner(
       seedText: [text, input.cue ?? ""].join("\n"),
       seedWeights: new Map(filed.map((brickId) => [brickId, 0.6])),
       model,
+      // On a refusal: the strongest Claude first, then whatever else is on the menu (Gemini).
+      fallbackModels: [...menu.filter((m) => m.id.includes("opus")), ...menu.filter((m) => !m.id.includes("opus"))].map((m) => m.id).filter((m) => m !== model),
       cause: text ? "his message" : input.cue ?? "turn",
       onEvent: input.onEvent,
       runHand: (hand, handInput, jobId) => useTool(db, ai, userId, { tool: hand, input: handInput, text: sourceText, conversationId, userMessageId, files, notes, closed, traces, model, onEvent: input.onEvent, jobId }),

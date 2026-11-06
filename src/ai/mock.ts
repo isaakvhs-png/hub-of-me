@@ -23,6 +23,8 @@ export class MockProvider {
   calls: AiRequest[] = [];
   hedgeOnRole: Partial<Record<Role, number>> = {};
   invalidOnRole: Partial<Record<Role, number>> = {};
+  /** Refuse this many drafting calls the way a model's safeguards do (a false positive), to test falling back to another model. */
+  refuseDrafts = 0;
   planMissingUncomfortable = 0;
   judgeAverages = 0;
   criticRejects = 0;
@@ -34,6 +36,10 @@ export class MockProvider {
     if ((this.hedgeOnRole[req.role] ?? 0) > 0) {
       this.hedgeOnRole[req.role] = (this.hedgeOnRole[req.role] ?? 1) - 1;
       return { text: "It depends. On the one hand this, on the other hand that.", usage, provider: "mock", model: req.model, stopReason: "end_turn" };
+    }
+    if (this.refuseDrafts > 0 && req.system.includes("TASK: round")) {
+      this.refuseDrafts -= 1;
+      throw new Error("Claude Code returned an error result: API Error: Sonnet 5.5's safeguards flagged this message. Details: `[reasoning_extraction]`");
     }
     if ((this.invalidOnRole[req.role] ?? 0) > 0) {
       this.invalidOnRole[req.role] = (this.invalidOnRole[req.role] ?? 1) - 1;
@@ -331,8 +337,8 @@ function heWrote(blob: string): string {
 }
 function roundMock(blob: string): string {
   const wrote = heWrote(blob);
-  const n = (blob.match(/ROUND (\d+):/g) ?? []).length;
-  return `Round thinking ${n}: ${wrote ? `he wrote "${wrote.slice(0, 60)}"` : "nothing new from him"}.\nWHAT I WOULD DO:\n1. Answer him plainly.`;
+  const n = (blob.match(/DRAFT (\d+):/g) ?? []).length;
+  return `Round thinking ${n}: ${wrote ? `he wrote "${wrote.slice(0, 60)}"` : "nothing new from him"}.\nPLAN:\n1. Answer him plainly.`;
 }
 function decideMock(blob: string): string {
   const wrote = heWrote(blob).toLowerCase();

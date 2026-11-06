@@ -65,4 +65,14 @@ describe("thinking in rounds", () => {
     expect(own.rows.length).toBe(1);
     await db.close();
   });
+
+  it("tries another model when one refuses a draft, instead of failing the turn", async () => {
+    const { db, user, ai, mock } = await rounds();
+    mock.refuseDrafts = 1;
+    const result = await runAgentTurn(db, ai, user.id, { text: "How did my first week go?" });
+    expect(result.reply).toBe("I thought it through in rounds.");
+    const refused = await db.query(`SELECT why FROM action_log WHERE user_id = $1 AND what = 'model refused, trying another'`, [user.id]);
+    expect(refused.rows).toHaveLength(1);
+    await db.close();
+  });
 });
