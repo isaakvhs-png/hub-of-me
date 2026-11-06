@@ -105,7 +105,7 @@ export interface IntakeResult {
 }
 
 type Origin = "his" | "web" | "own";
-type Kind = "chat" | "file" | "gemini";
+type Kind = "chat" | "file" | "gemini" | "own";
 
 export async function intake(
   db: Db,
@@ -189,7 +189,7 @@ async function fileParts(
         role: "filing",
         model,
         maxTokens: 12_000,
-        system: intakePrompt(name),
+        system: input.kind === "own" ? `${intakePrompt(name)}\n\nTHIS TEXT IS THE AI'S OWN THINKING, not ${name}'s words. File it the same way, but nothing in it is evidence about him: quotes are its own words, and entries are its conclusions, guesses and open questions.` : intakePrompt(name),
         messages: [{ role: "user", content: `THE BRICK LIST:\n${brickList(bricks)}\n\nNEW TEXT (${input.kind}${input.title ? `: ${input.title}` : ""}):\n${chunk}\nEND NEW TEXT` }],
       }, intakeSchema, { jobKind: "intake" })) as z.output<typeof intakeSchema>;
     } catch (error) {

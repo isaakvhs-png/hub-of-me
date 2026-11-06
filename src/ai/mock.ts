@@ -44,6 +44,9 @@ export class MockProvider {
 
   private canned(req: AiRequest): string {
     const blob = `${req.system}\n${req.messages.map((m) => m.content).join("\n")}`;
+    if (req.system.includes("TASK: round")) return roundMock(blob);
+    if (req.system.includes("TASK: decide")) return decideMock(blob);
+    if (req.system.includes("TASK: how")) return howMock(blob);
     if (req.system.includes("TASK: agent")) return agentTurn(blob);
     if (req.system.includes("TASK: intake")) return intakeMock(blob);
     if (req.system.includes("TASK: session")) return sessionMock(blob);
@@ -320,4 +323,34 @@ function duties(blob: string): string {
     drafts: [{ to: "", subject: "Draft only", body: "This draft stays in the app. It is not sent." }],
     archives: [],
   });
+}
+
+/** Thinking in rounds, in test mode: plain text rounds, a decision, and a strict how step, driven by his words. */
+function heWrote(blob: string): string {
+  return (blob.split("He just wrote:\n")[1] ?? "").split("\n\n")[0] ?? "";
+}
+function roundMock(blob: string): string {
+  const wrote = heWrote(blob);
+  const n = (blob.match(/ROUND (\d+):/g) ?? []).length;
+  return `Round thinking ${n}: ${wrote ? `he wrote "${wrote.slice(0, 60)}"` : "nothing new from him"}.\nWHAT I WOULD DO:\n1. Answer him plainly.`;
+}
+function decideMock(blob: string): string {
+  const wrote = heWrote(blob).toLowerCase();
+  const would: string[] = [];
+  if (wrote.includes("look up")) would.push(`Look up ${wrote.split("look up")[1].trim()} on the web`);
+  if (wrote.includes("tell ")) would.push(`Write to ${wrote.split("tell ")[1].trim()}`);
+  if (wrote.includes("inbox")) would.push("Read his email inbox");
+  const final = blob.includes("AFTER ACTING");
+  const say = blob.includes("GREETING DUE") ? "Hello. I have been thinking about where you are going." : blob.includes("You woke up on your own") ? "" : final ? "I looked it up and thought it through." : would.some((w) => w.startsWith("Look up")) ? "" : wrote ? "I thought it through in rounds." : "";
+  return JSON.stringify({ say, would_do: final ? [] : would, now_think: wrote ? `He brought up: ${wrote.slice(0, 80)}` : "", predictions: wrote.includes("predict") ? [{ claim: "He will answer within a week", by: "next week", confidence: 60 }] : [], disagreement: "", used: [], another_round: null });
+}
+function howMock(blob: string): string {
+  const intentions = (blob.split("INTENTIONS (what it decided it would do):\n")[1] ?? "").split("\n\n")[0].split("\n").map((l) => l.replace(/^\d+\.\s*/, "").trim()).filter(Boolean);
+  const gapRef = (blob.match(/\[(b[a-z0-9]+)\] Needs: read his email/) ?? [])[1];
+  return JSON.stringify({ acts: intentions.map((intention) => {
+    if (intention.startsWith("Look up")) return { intention, fit: "full", hand: "search", input: { query: intention.replace(/^Look up /, "").replace(/ on the web$/, ""), why: "he asked" } };
+    if (intention.startsWith("Write to")) return { intention, fit: "person", suggestion: { text: intention, why: "It reaches another person." } };
+    if (intention.includes("inbox")) return { intention, fit: "none", gap: { ref: gapRef ?? "", name: "Needs: read his email", what: "Read his inbox, read only.", why: "He asked about his inbox.", how: "A Gmail connection, read and draft only." } };
+    return { intention, fit: "thought" };
+  }) });
 }

@@ -73,10 +73,12 @@ export interface Activation {
 }
 
 /** Light up the web for a text and keep the result, so he can see what it was thinking with. */
-export async function activate(db: Db, userId: string, input: { text: string; cause: string; extraSeeds?: string[] }): Promise<Activation> {
+export async function activate(db: Db, userId: string, input: { text: string; cause: string; extraSeeds?: string[]; weights?: Map<string, number> }): Promise<Activation> {
   const [bricks, links] = await Promise.all([listBricks(db, userId), listLinks(db, userId)]);
   const seeds = seedsFor(input.text, bricks);
   for (const extra of input.extraSeeds ?? []) if (bricks.some((b) => b.id === extra)) seeds.set(extra, 1);
+  // Starting points with their own strength: what was just filed, or the last round's focus carried on at half.
+  for (const [extra, w] of input.weights ?? []) if (bricks.some((b) => b.id === extra)) seeds.set(extra, Math.max(seeds.get(extra) ?? 0, Math.min(1, w)));
   const energies = spread(bricks, links, seeds);
   const focus = [...energies.entries()].filter(([, e]) => e >= SPREAD.focusMin).sort((a, b) => b[1] - a[1]).slice(0, SPREAD.focus).map(([k]) => k);
   await db.query(`INSERT INTO brain_activations (id, user_id, cause, energies) VALUES ($1,$2,$3,$4)`, [id(), userId, input.cause.slice(0, 200), JSON.stringify(Object.fromEntries(energies))]);

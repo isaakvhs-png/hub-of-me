@@ -12,6 +12,9 @@ interface Link { id: string; a: string; b: string; type: string; strength: numbe
 interface Agenda { id: string; kind: string; text: string; why: string; nextStep: string; status: string; closeNote: string; createdAt: string; closedAt: string | null }
 interface Session { id: string; goal: string; wins: string; leftOff: string; endedWhy: string; costEurCents: number; startedAt: string; endedAt: string | null; log: { step: number; thought: string; tools: { tool: string; what: string; result: string }[] }[] }
 interface Brain { bornAt: string | null; now: string; bricks: Brick[]; links: Link[]; agenda: Agenda[]; sessions: Session[]; activation: { cause: string; energies: Record<string, number>; used: string[]; at: string } | null; running: { phase: string; label: string } | null }
+interface Round { n: number; stance: string; lit: { full: string[]; line: number; names: number; edge: string[]; far: string[] }; text: string }
+interface Act { intention: string; fit: string; hand?: string; stopgap?: boolean; result?: string; gap?: string; suggestion?: string }
+interface Run { id: string; cause: string; mode: string; rounds: Round[]; decision: { say?: string; would_do?: string[]; now_think?: string; disagreement?: string; predictions?: { claim: string; by?: string; confidence?: number }[] }; acts: Act[]; say: string; error: string; startedAt: string; endedAt: string | null }
 interface Detail { brick: Brick; moments: { quote: string; at: string | null; source: string }[]; entries: { id: string; kind: string; text: string; origin: string; status: string; statusNote: string }[]; links: (Link & { other: string; otherName: string })[] }
 
 /** Red for the oldest moment of its life, blue for the newest. */
@@ -21,15 +24,21 @@ function ageColor(at: string, born: number, now: number): string {
 }
 
 
+const FIT: Record<string, string> = { full: "done", partial: "partly", person: "for you", none: "can't yet", self: "change to itself", thought: "thought" };
+
 export function MindPage() {
   const [brain, setBrain] = useState<Brain | null>(null);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [openSession, setOpenSession] = useState<string | null>(null);
+  const [runs, setRuns] = useState<Run[]>([]);
+  const [loop, setLoop] = useState("rounds");
+  const [openRun, setOpenRun] = useState<string | null>(null);
 
   async function load() {
     try { setBrain(await api<Brain>("/api/brain")); setError(""); } catch (err) { setError(err instanceof Error ? err.message : "Could not load the web."); }
+    try { const r = await api<{ loop: string; runs: Run[] }>("/api/mind/runs?limit=12"); setRuns(r.runs); setLoop(r.loop); } catch { /* the web still shows */ }
   }
   useEffect(() => { void load(); }, []);
   useEffect(() => {
@@ -40,6 +49,10 @@ export function MindPage() {
     if (!selected) { setDetail(null); return; }
     api<Detail>(`/api/brain/bricks/${selected}`).then(setDetail).catch(() => setDetail(null));
   }, [selected, brain?.bricks.length, brain?.links.length]);
+
+  async function switchLoop() {
+    try { const r = await api<{ loop: string }>("/api/mind/loop", { method: "POST", body: JSON.stringify({ loop: loop === "rounds" ? "steps" : "rounds" }) }); setLoop(r.loop); } catch (err) { setError(err instanceof Error ? err.message : "Could not switch."); }
+  }
 
   async function explore() {
     try { await api("/api/brain/explore", { method: "POST", body: "{}" }); await load(); } catch (err) { setError(err instanceof Error ? err.message : "Could not start."); }
@@ -87,6 +100,48 @@ export function MindPage() {
             </section>
           ) : null}
         </div>
+      </section>
+
+
+      <section className="min-w-0 rounded-xl border border-border bg-card p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="mr-auto text-xs uppercase tracking-wide text-muted-foreground">How it thought</h2>
+          <button className="rounded-md border border-border px-2 py-1 text-xs" onClick={() => void switchLoop()} title="Switch how conversation turns think, to compare">
+            {loop === "rounds" ? "Thinking in rounds · switch to old steps" : "Old steps · switch to rounds"}
+          </button>
+        </div>
+        <ul className="mt-2 grid gap-3 text-sm">
+          {runs.length === 0 ? <li className="text-muted-foreground">No runs yet. Send it a message.</li> : null}
+          {runs.map((r) => (
+            <li key={r.id} className="min-w-0">
+              <button className="w-full text-left" onClick={() => setOpenRun(openRun === r.id ? null : r.id)}>
+                <span className="text-xs text-muted-foreground">{new Date(r.startedAt).toLocaleString()} · {r.mode === "own" ? "its own time" : r.cause} · {r.rounds.length} rounds · {r.acts.length} acts{r.error ? " · failed" : r.endedAt ? "" : " · running"}</span><br />
+                <span>{r.say || r.decision.now_think || (r.error ? r.error : "(said nothing)")}</span>
+              </button>
+              {r.acts.length ? (
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {r.acts.map((a, i) => <span key={i} className={`rounded px-1.5 py-0.5 text-xs ${a.fit === "full" ? "bg-primary/15" : a.fit === "person" ? "bg-amber-500/15" : a.fit === "thought" ? "bg-muted" : "bg-destructive/15"}`} title={a.result ?? a.gap ?? a.suggestion ?? ""}>{FIT[a.fit] ?? a.fit}{a.stopgap ? " (stopgap)" : ""}: {a.intention.slice(0, 70)}</span>)}
+                </div>
+              ) : null}
+              {openRun === r.id ? (
+                <div className="mt-2 grid gap-3 border-l border-border pl-3 text-xs">
+                  {r.rounds.map((round) => (
+                    <div key={round.n} className="min-w-0">
+                      <b>Round {round.n} · {round.stance}</b>
+                      <p className="text-muted-foreground">In focus: {round.lit.full.join(", ") || "nothing"}{round.lit.line ? ` · +${round.lit.line} one line` : ""}{round.lit.names ? ` · +${round.lit.names} names` : ""}{round.lit.far.length ? ` · far: ${round.lit.far.join(", ")}` : ""}</p>
+                      <p className="whitespace-pre-wrap">{round.text}</p>
+                    </div>
+                  ))}
+                  {r.decision.would_do?.length ? <div><b>Decided to do</b><ul className="list-disc pl-4">{r.decision.would_do.map((w, i) => <li key={i}>{w}</li>)}</ul></div> : null}
+                  {r.acts.length ? <div><b>How</b><ul className="grid gap-1">{r.acts.map((a, i) => <li key={i}><span className="text-muted-foreground">{FIT[a.fit] ?? a.fit}{a.hand ? ` · ${a.hand}` : ""}:</span> {a.intention}{a.gap ? <span className="block text-muted-foreground">→ {a.gap}</span> : null}{a.suggestion ? <span className="block text-muted-foreground">→ {a.suggestion}</span> : null}{a.result ? <span className="block whitespace-pre-wrap text-muted-foreground">→ {a.result.slice(0, 400)}{a.result.length > 400 ? "…" : ""}</span> : null}</li>)}</ul></div> : null}
+                  {r.decision.now_think ? <div><b>Filed as its own thinking</b><p className="whitespace-pre-wrap">{r.decision.now_think}</p></div> : null}
+                  {r.decision.disagreement ? <div><b>Still disagreeing</b><p>{r.decision.disagreement}</p></div> : null}
+                  {r.decision.predictions?.length ? <div><b>Predictions</b><ul className="list-disc pl-4">{r.decision.predictions.map((p, i) => <li key={i}>{p.claim}{p.by ? ` (by ${p.by})` : ""}{p.confidence != null ? `, ${p.confidence}%` : ""}</li>)}</ul></div> : null}
+                </div>
+              ) : null}
+            </li>
+          ))}
+        </ul>
       </section>
 
       <div className="grid min-w-0 content-start gap-4 md:grid-cols-2">

@@ -37,6 +37,7 @@ import { sectionBody } from "../soul.js";
 import { runBrainTool } from "../brain/tools.js";
 import { intake, retryFailedIntake } from "../brain/intake.js";
 import { activate, recordUsed } from "../brain/spread.js";
+import { thinkInRounds } from "../mind/rounds.js";
 import { brainView } from "../brain/view.js";
 import { createBrick, learnFromUse, listAgenda, listBricks } from "../brain/store.js";
 import { archiveEvent, getBudget, getNote, insertEvent, insertSource, reviseNote, spendSince } from "../repo.js";
@@ -337,24 +338,69 @@ async function turnInner(
   const already = text ? (await db.query(`SELECT 1 FROM brain_stream WHERE user_id = $1 AND kind = 'chat' AND content = $2 AND archived_at IS NULL LIMIT 1`, [userId, text])).rows[0] : null;
   // What could not be filed earlier (no credit, a provider error) is tried again first, so nothing he sent stays lost.
   const filingProblems: string[] = [];
+  // The bricks filing just made or added to: in rounds they are where its first look starts.
+  const filed: string[] = [];
   const retried = await retryFailedIntake(db, ai, userId, (title, part, of) => input.onEvent?.({ type: "thinking", phase: `Filing ${title} again (part ${part} of ${of})`, model: "" }));
   for (const r of retried) if (r.failed.length) filingProblems.push(`An earlier text still could not be filed (${r.failed[0].error}); it will be tried again.`);
   if (text && !already) {
     await input.onEvent?.({ type: "thinking", phase: "Filing it into the web", model: "" });
     const r = await intake(db, ai, userId, { text, kind: "chat" });
+    filed.push(...r.created, ...r.touched);
     if (r.failed.length) filingProblems.push(`Your message could not be filed into the web (${r.failed[0].error}). It is kept and will be tried again.`);
   }
   for (const file of files) {
     await input.onEvent?.({ type: "thinking", phase: `Filing ${file.name}`, model: "" });
     await readOneFile(db, ai, userId, file, { conversationId, notes, closed, text, model: "" });
-    const filed = notes.at(-1);
-    if (!filed) continue;
-    const r = await intake(db, ai, userId, { text: filed.body, kind: "file", title: file.name, onProgress: (part, of) => input.onEvent?.({ type: "thinking", phase: `Filing ${file.name} (part ${part} of ${of})`, model: "" }) });
+    const filedNote = notes.at(-1);
+    if (!filedNote) continue;
+    const r = await intake(db, ai, userId, { text: filedNote.body, kind: "file", title: file.name, onProgress: (part, of) => input.onEvent?.({ type: "thinking", phase: `Filing ${file.name} (part ${part} of ${of})`, model: "" }) });
+    filed.push(...r.created, ...r.touched);
     if (r.failed.length) filingProblems.push(`${file.name}: ${r.failed.length ? `filing stopped at part ${r.failed[0].part} of ${r.failed[0].of}` : ""} (${r.failed[0].error}). What was filed stays; the rest is kept and tried again.`);
     else if (r.already) filingProblems.push(`${file.name} was handed over before and is already in the web; it was not filed twice.`);
   }
   const filingError = filingProblems.filter((p) => !p.includes("not filed twice")).join(" ") || null;
   await ensureSelfBrick(db, userId);
+  const loop = String((await db.query(`SELECT mind_loop FROM settings WHERE user_id = $1`, [userId])).rows[0]?.mind_loop ?? "rounds");
+  if (loop === "rounds") {
+    // Thinking first (6 Nov): rounds in plain language, then a separate step works out what can be done. See src/mind/rounds.ts.
+    const menu = await availableModels(db, userId, settings);
+    const model = (await pinnedModel(db, userId, menu)) ?? menu.find((item) => item.everyday)?.id ?? menu[0].id;
+    const soul = await getSoul(db, userId);
+    const own = Boolean(input.cue?.startsWith("WAKE"));
+    const firstMoment = input.cue === "GREETING DUE" && !(await listAgenda(db, userId)).length;
+    const memory = await memoryView(db, userId);
+    const conversation = await conversationView(db, userId, memory.conversationChars, userMessageId);
+    const situation = [
+      text ? `He just wrote:\n${text}` : "",
+      files.length ? `He handed over: ${files.map((f) => f.name).join(", ")}. They were filed into the web just now; what was filed is lit up.` : "",
+      filingProblems.length ? `FILING (code, this turn): ${filingProblems.join(" ")} Tell him plainly if something could not be filed.` : "",
+      firstMoment ? `This is your very first moment since a fresh start; he has not said anything yet. Read your Nature and how you work (below), work out what you are for, and decide your first pursuits. What you say is your greeting when he arrives.\n\nHOW YOU WORK:\n${mechanics()}` : input.cue === "GREETING DUE" ? "He just arrived." : "",
+      own ? `You woke up on your own (${input.cue?.slice(5).trim()}). He is away. Use the time on where he is going; speak only if it is worth his time when he is back.` : "",
+      input.cue === "CHECK IN" ? "A check-in: speak only if something is worth saying." : "",
+      await (async () => {
+        const rows = (await db.query(`SELECT title, starts_at FROM calendar_events WHERE user_id = $1 AND archived_at IS NULL AND ends_at > now() AND starts_at < now() + interval '21 days' ORDER BY starts_at LIMIT 20`, [userId])).rows;
+        return `His calendar, next three weeks: ${rows.map((r) => `${new Date(String(r.starts_at)).toISOString().slice(0, 16)} ${r.title}`).join("; ") || "(empty)"}`;
+      })(),
+      `Now: ${new Date().toISOString()}`,
+      `Your body: ${await bodySense(db, userId)}`,
+      `Budget: ${budget}`,
+    ].filter(Boolean).join("\n\n");
+    const run = await thinkInRounds(db, ai, userId, {
+      mode: own ? "own" : "chat",
+      name,
+      soul: soul?.content ?? "",
+      boundaries: sectionBody(soul?.content ?? "", "Boundaries"),
+      situation,
+      conversation,
+      seedText: [text, input.cue ?? ""].join("\n"),
+      seedWeights: new Map(filed.map((brickId) => [brickId, 0.6])),
+      model,
+      cause: text ? "his message" : input.cue ?? "turn",
+      onEvent: input.onEvent,
+      runHand: (hand, handInput, jobId) => useTool(db, ai, userId, { tool: hand, input: handInput, text: sourceText, conversationId, userMessageId, files, notes, closed, traces, model, onEvent: input.onEvent, jobId }),
+    });
+    reply = run.say;
+  } else {
   const lit = await activate(db, userId, { text: [text, files.map((f) => f.name).join(" "), input.cue ?? ""].join("\n"), cause: text ? "his message" : input.cue ?? "turn" });
   const usedThisTurn: string[] = [];
 
@@ -514,6 +560,7 @@ async function turnInner(
   if (usedThisTurn.length) {
     await learnFromUse(db, userId, usedThisTurn, lit.focus);
     await recordUsed(db, userId, usedThisTurn);
+  }
   }
   if (reply) {
     if (!conversationId && input.cue) {

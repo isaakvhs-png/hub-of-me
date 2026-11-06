@@ -17,6 +17,7 @@ import { archiveNote, undoNote } from "../src/pipeline/dump.js";
 import { greetIfNeeded, runAgentTurn, workingNow, type PendingFile } from "../src/agent/turn.js";
 import { brickDetail, listAgenda, listBricks, listLinks } from "../src/brain/store.js";
 import { listSessions, runSession, sessionNow } from "../src/brain/session.js";
+import { listRuns } from "../src/mind/rounds.js";
 import { TOOLS } from "../src/agent/registry.js";
 import { runReflection } from "../src/pipeline/debate.js";
 import { runNightly, runResearch, writeBrief } from "../src/pipeline/jobs.js";
@@ -827,6 +828,23 @@ export function createApp(db: Db) {
       activation: row ? { cause: String(row.cause), energies: parse(row.energies, {}), used: parse(row.used, []), at: new Date(String(row.created_at)).toISOString() } : null,
       running: sessionNow(userId),
     });
+  });
+
+  // Thinking in rounds: every run round by round, the acts and the gaps, so a turn can be diagnosed.
+  app.get("/api/mind/runs", async (c) => {
+    const userId = c.get("userId");
+    const limit = Math.min(30, Math.max(1, Number(c.req.query("limit") ?? 10) || 10));
+    const loop = String((await db.query(`SELECT mind_loop FROM settings WHERE user_id = $1`, [userId])).rows[0]?.mind_loop ?? "rounds");
+    return c.json({ loop, runs: await listRuns(db, userId, limit) });
+  });
+
+  app.post("/api/mind/loop", async (c) => {
+    const userId = c.get("userId");
+    const body = (await c.req.json().catch(() => ({}))) as { loop?: string };
+    const loop = body.loop === "steps" ? "steps" : "rounds";
+    await db.query(`UPDATE settings SET mind_loop = $2 WHERE user_id = $1`, [userId, loop]);
+    await logAction(db, userId, { what: "changed how it thinks", why: `Isaak set the conversation loop to ${loop}.`, source: "user", payload: { loop } });
+    return c.json({ loop });
   });
 
   app.get("/api/brain/bricks/:id", async (c) => {

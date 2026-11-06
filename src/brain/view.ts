@@ -65,6 +65,54 @@ export async function focusText(db: Db, userId: string, ids: string[], energies?
   return `IN FOCUS: the bricks this lit up, in full.\n\n${parts.join("\n\n")}`;
 }
 
+export const TIERS = { full: 12, line: 40, names: 100, edge: 20, far: 2, minFull: 0.12 };
+
+export interface TieredView { text: string; full: string[]; line: string[]; names: string[]; edge: string[]; far: string[] }
+
+/**
+ * What a round of thinking sees of the web (6 Nov): detail that fades with energy instead of a fixed 8 plus the whole wall.
+ * The brightest bricks in full, the next ones as one line, the rest of what is lit as names, then the edge: what lies
+ * next to the focus, and a couple of far, quiet bricks, so something unexpected is always in view.
+ */
+export async function tieredView(db: Db, userId: string, energies: Map<string, number>, rand: () => number = Math.random): Promise<TieredView> {
+  const [bricks, links, entries] = await Promise.all([listBricks(db, userId), listLinks(db, userId), listEntries(db, userId, { status: "open" })]);
+  const byId = new Map(bricks.map((b) => [b.id, b]));
+  const lit = [...energies.entries()].filter(([k]) => byId.has(k) && byId.get(k)!.kind !== "source").sort((a, b) => b[1] - a[1]);
+  const full = lit.filter(([, e]) => e >= TIERS.minFull).slice(0, TIERS.full).map(([k]) => k);
+  const rest = lit.filter(([k]) => !full.includes(k));
+  const line = rest.slice(0, TIERS.line).map(([k]) => k);
+  const names = rest.slice(TIERS.line, TIERS.line + TIERS.names).map(([k]) => k);
+  const seen = new Set([...full, ...line, ...names]);
+  const edgeSet = new Set<string>();
+  for (const l of links) {
+    if (l.type === "source") continue;
+    for (const [from, to] of [[l.a, l.b], [l.b, l.a]]) if (full.includes(from) && !seen.has(to) && byId.get(to)?.kind !== "source") edgeSet.add(to);
+  }
+  const edge = [...edgeSet].slice(0, TIERS.edge);
+  const quiet = bricks
+    .filter((b) => !seen.has(b.id) && !edgeSet.has(b.id) && b.kind !== "source" && b.kind !== "self")
+    .sort((a, b) => new Date(a.lastRevisitedAt ?? a.lastLitAt ?? a.createdAt).getTime() - new Date(b.lastRevisitedAt ?? b.lastLitAt ?? b.createdAt).getTime())
+    .slice(0, 12);
+  const far: string[] = [];
+  while (far.length < TIERS.far && quiet.length) far.push(quiet.splice(Math.floor(rand() * quiet.length), 1)[0].id);
+  const openOn = new Map<string, string>();
+  for (const e of entries) if (!openOn.has(e.brickId)) openOn.set(e.brickId, `${e.kind}: ${e.text}`);
+  const full_text = await focusText(db, userId, full, energies);
+  const lineText = line.map((k) => { const b = byId.get(k)!; return `[${k}] ${b.name} (${b.kind}) energy ${energies.get(k)!.toFixed(2)}${b.summary ? `: ${b.summary.slice(0, 140)}` : ""}${openOn.get(k) ? ` | open ${openOn.get(k)!.slice(0, 120)}` : ""}`; }).join("\n");
+  const nameText = names.map((k) => `[${k}] ${byId.get(k)!.name}`).join(" · ");
+  const edgeText = edge.map((k) => `[${k}] ${byId.get(k)!.name}`).join(" · ");
+  const farText = far.map((k) => { const b = byId.get(k)!; return `[${k}] ${b.name} (${b.kind}, quiet since ${(b.lastRevisitedAt ?? b.lastLitAt ?? b.createdAt).slice(0, 10)})${b.summary ? `: ${b.summary.slice(0, 120)}` : ""}`; }).join("\n");
+  const text = [
+    full.length ? full_text.replace("IN FOCUS: the bricks this lit up, in full.", "IN FOCUS, IN FULL: the brightest bricks right now.") : "IN FOCUS: nothing lit up strongly.",
+    line.length ? `ALSO LIT, ONE LINE EACH:\n${lineText}` : "",
+    names.length ? `FAINTLY LIT (names only):\n${nameText}` : "",
+    edge.length ? `THE EDGE (next to the focus, not lit):\n${edgeText}` : "",
+    far.length ? `FAR AWAY AND QUIET (picked at random, worth a glance: does it matter for what you are thinking?):\n${farText}` : "",
+    `(${bricks.length} bricks in the web. Anything not shown is still there; name a brick in your thinking and it lights up next round.)`,
+  ].filter(Boolean).join("\n\n");
+  return { text, full, line, names, edge, far };
+}
+
 export async function brainView(db: Db, userId: string, focus: { ids: string[]; energies?: Map<string, number> }): Promise<{ agenda: string; wall: string; focus: string }> {
   const [agenda, wall, f] = await Promise.all([listAgenda(db, userId), wallText(db, userId), focusText(db, userId, focus.ids, focus.energies)]);
   return { agenda: agendaText(agenda), wall, focus: f };

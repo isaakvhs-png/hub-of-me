@@ -102,7 +102,7 @@ describe("the Mind page's data", () => {
     const res = await app.request("/api/brain", { headers: { cookie } });
     const body = await res.json() as { bricks: { name: string; moments: string[] }[]; activation: { cause: string } | null };
     expect(body.bricks.some((b) => b.name.startsWith("Lorenzo showed") && b.moments.length === 1)).toBe(true);
-    expect(body.activation?.cause).toBe("his message");
+    expect(body.activation?.cause.startsWith("his message")).toBe(true);
     await db.close();
   });
 });

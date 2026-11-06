@@ -291,7 +291,7 @@ export async function brickDetail(db: Db, userId: string, brickId: string) {
   if (!brick) return null;
   const [moments, entries, links, bricks] = await Promise.all([
     db.query(
-      `SELECT m.quote, m.created_at, s.title AS source_title, s.kind AS source_kind, m.source_id FROM brick_moments m LEFT JOIN brain_sources s ON s.id = m.source_id
+      `SELECT m.quote, m.created_at, s.title AS source_title, s.kind AS source_kind, m.source_id, st.kind AS stream_kind FROM brick_moments m LEFT JOIN brain_sources s ON s.id = m.source_id LEFT JOIN brain_stream st ON st.id = m.stream_id
        WHERE m.user_id = $1 AND m.brick_id = $2 AND m.archived_at IS NULL ORDER BY m.created_at`,
       [userId, brickId],
     ),
@@ -302,7 +302,7 @@ export async function brickDetail(db: Db, userId: string, brickId: string) {
   const nameOf = new Map(bricks.map((b) => [b.id, b.name]));
   return {
     brick,
-    moments: moments.rows.map((r) => ({ quote: String(r.quote), at: iso(r.created_at), source: r.source_title ? String(r.source_title) : "chat", sourceKind: r.source_kind ? String(r.source_kind) : "chat", sourceId: r.source_id ? String(r.source_id) : null })),
+    moments: moments.rows.map((r) => ({ quote: String(r.quote), at: iso(r.created_at), source: r.source_title ? String(r.source_title) : r.stream_kind === "own" ? "its own thinking" : "chat", sourceKind: r.source_kind ? String(r.source_kind) : r.stream_kind === "own" ? "own" : "chat", sourceId: r.source_id ? String(r.source_id) : null })),
     entries,
     links: links.rows.map(mapLink).map((l) => ({ ...l, other: l.a === brickId ? l.b : l.a, otherName: nameOf.get(l.a === brickId ? l.b : l.a) ?? "?" })),
   };
@@ -310,7 +310,7 @@ export async function brickDetail(db: Db, userId: string, brickId: string) {
 
 /** Archive the whole web for a fresh start. Rows stay. */
 export async function archiveBrain(db: Db, userId: string): Promise<void> {
-  for (const table of ["brain_sources", "brain_stream", "bricks", "brick_moments", "brick_entries", "brick_links", "agenda", "brain_sessions", "brain_activations"]) {
+  for (const table of ["brain_sources", "brain_stream", "bricks", "brick_moments", "brick_entries", "brick_links", "agenda", "brain_sessions", "brain_activations", "mind_runs"]) {
     await db.query(`UPDATE ${table} SET archived_at = COALESCE(archived_at, now()) WHERE user_id = $1 AND archived_at IS NULL`, [userId]);
   }
 }

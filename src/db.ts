@@ -234,6 +234,15 @@ export async function migrate(db: Db): Promise<void> {
     `ALTER TABLE brain_stream ADD COLUMN IF NOT EXISTS failed_parts TEXT NOT NULL DEFAULT '[]'`,
     `ALTER TABLE brain_stream ADD COLUMN IF NOT EXISTS retries INTEGER NOT NULL DEFAULT 0`,
     `ALTER TABLE brain_stream ADD COLUMN IF NOT EXISTS last_error TEXT NOT NULL DEFAULT ''`,
+    // Thinking in rounds (6 Nov): every run is kept whole, round by round, so Isaak and the builders can see what it did and why.
+    `CREATE TABLE IF NOT EXISTS mind_runs (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), cause TEXT NOT NULL DEFAULT '', mode TEXT NOT NULL DEFAULT 'chat',
+      rounds TEXT NOT NULL DEFAULT '[]', decision TEXT NOT NULL DEFAULT '{}', acts TEXT NOT NULL DEFAULT '[]', say TEXT NOT NULL DEFAULT '',
+      error TEXT NOT NULL DEFAULT '', cost_eur_cents DOUBLE PRECISION NOT NULL DEFAULT 0,
+      started_at TIMESTAMPTZ NOT NULL DEFAULT now(), ended_at TIMESTAMPTZ, archived_at TIMESTAMPTZ
+    )`,
+    // Which way a conversation turn thinks: "rounds" (thinking first) or "steps" (the older tool-by-tool loop), for comparing.
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS mind_loop TEXT NOT NULL DEFAULT 'rounds'`,
     `CREATE TABLE IF NOT EXISTS brain_activations (
       id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), cause TEXT NOT NULL, energies TEXT NOT NULL DEFAULT '{}',
       used TEXT NOT NULL DEFAULT '[]', created_at TIMESTAMPTZ NOT NULL DEFAULT now(), archived_at TIMESTAMPTZ
