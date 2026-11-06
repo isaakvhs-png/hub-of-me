@@ -136,3 +136,19 @@ export async function undoSoul(db: Db, userId: string): Promise<SoulVersion> {
     via: "user",
   });
 }
+
+/**
+ * Isaak's new Nature lines (6 Nov, agreed in the chat with Claude): a live soul that still carries the old lines gets the
+ * new Nature section, as a new soul version in his name. Everything else in the soul stays as it is. Runs once: after
+ * that the old lines are gone and nothing matches.
+ */
+export async function adoptNature(db: Db, userId: string): Promise<boolean> {
+  const { SEED_SOUL, OLD_NATURE_MARK } = await import("./soul-seed.js");
+  const current = await getSoul(db, userId);
+  if (!current || !current.content.includes(OLD_NATURE_MARK)) return false;
+  const oldBody = sectionBody(current.content, "Nature");
+  const newBody = sectionBody(SEED_SOUL, "Nature");
+  if (!oldBody.trim() || !newBody.trim() || !current.content.includes(oldBody)) return false;
+  await changeSoul(db, userId, { content: current.content.replace(oldBody, newBody), reason: "Isaak's new Nature lines 1, 2, 3 and 6 (6 Nov): career direction and its own time, growing through what comes in, find out and act rather than ask, connecting dots across time.", via: "user" });
+  return true;
+}

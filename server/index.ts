@@ -11,7 +11,7 @@ import { runNightly } from "../src/pipeline/jobs.js";
 import { scheduleFeedbackDrain } from "../src/feedback.js";
 import { getSettings, settleStuckDebates } from "../src/repo.js";
 import { applyEnvProvider, ensureUser } from "../src/seed.js";
-import { restoreCorruptedSouls } from "../src/soul.js";
+import { adoptNature, restoreCorruptedSouls } from "../src/soul.js";
 import { reopenClosedByUpload } from "../src/tasks.js";
 import { FRESH_REASON, freshStart } from "../src/fresh.js";
 import { archiveEmptyGreetings, greetIfNeeded, wakeIfDue } from "../src/agent/turn.js";
@@ -39,6 +39,7 @@ for (const row of everyone.rows) {
     const settings = await getSettings(db, row.id);
     const ai = new Router(settings, { mock: settings.provider === "mock" ? new MockProvider() : undefined });
     await archiveEmptyGreetings(db, row.id);
+    if (await adoptNature(db, row.id)) console.log(`New Nature lines adopted for ${row.id}`);
     await greetIfNeeded(db, ai, row.id);
   } catch (error) {
     console.error("greeting failed", error);

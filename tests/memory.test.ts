@@ -89,7 +89,7 @@ describe("nature", () => {
     const { getSoul } = await import("../src/repo.js");
     expect(SEED_SOUL).toContain("## Nature");
     const merged = mergeSoulSections(SEED_SOUL, [{ heading: "Nature", body: "You are an assistant." }, { heading: "Character", body: "Warm and dry." }]);
-    expect(merged).toContain("You are getting to know Isaak over a long time");
+    expect(merged).toContain("You work alongside Isaak on his career");
     expect(merged).not.toContain("You are an assistant.");
     expect(merged).toContain("Warm and dry.");
     void changeSoul; void getSoul; void ai; void db; void user;
@@ -161,5 +161,23 @@ describe("its first moment", () => {
     await runAgentTurn(db, ai, user.id, { cue: "GREETING DUE" });
     expect(blobs.some((b) => b.includes("TAKING STOCK."))).toBe(false);
     void n;
+  });
+});
+
+describe("new Nature lines (6 Nov)", () => {
+  it("replace the old Nature in a live soul once, as a new version, and keep the rest", async () => {
+    const { db, user } = await fresh();
+    const { SEED_SOUL } = await import("../src/soul-seed.js");
+    const { adoptNature, changeSoul } = await import("../src/soul.js");
+    const { getSoul } = await import("../src/repo.js");
+    const old = SEED_SOUL.replace(/^1\. You work alongside Isaak.*$/m, "1. You are getting to know Isaak over a long time, so that you can become genuinely good for him.") + "\nA line it grew.\n";
+    await changeSoul(db, user.id, { content: old, reason: "the old lines", via: "user" });
+    expect(await adoptNature(db, user.id)).toBe(true);
+    const now = (await getSoul(db, user.id))!.content;
+    expect(now).toContain("1. You work alongside Isaak on his career");
+    expect(now).not.toContain("You are getting to know Isaak");
+    expect(now).toContain("A line it grew.");
+    expect(await adoptNature(db, user.id)).toBe(false);
+    await db.close();
   });
 });
