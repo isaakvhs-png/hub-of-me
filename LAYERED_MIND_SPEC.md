@@ -1,6 +1,6 @@
 # Hub of Me: the layered mind (design spec v1, 7 Nov 2026)
 
-Written by Claude (session of 4–7 Nov, on the account headq@me.com) for whoever builds next: Isaak's own Claude account, Grok, Cursor, or anyone else. It is meant to be complete enough that you need nothing from that session. Where it disagrees with `DESIGN.md` or `MIND_DESIGN.md`, this file is current. Read `DESIGN.md` §1 (philosophy) and §3 (boundaries) first, then this.
+Written by Claude (session of 4–7 Nov, on the Claude account Isaak is leaving) for whoever builds next: Isaak's own Claude account, Grok, Cursor, or anyone else. It is meant to be complete enough that you need nothing from that session. Where it disagrees with `DESIGN.md` or `MIND_DESIGN.md`, this file is current. Read `DESIGN.md` §1 (philosophy) and §3 (boundaries) first, then this.
 
 Nothing in Part C is built yet. Part B describes what exists today, exactly.
 
@@ -42,7 +42,7 @@ Nothing in Part C is built yet. Part B describes what exists today, exactly.
 | The entity's view of itself | `src/agent/HOW_YOU_WORK.md` |
 | Older designs | `DESIGN.md` (v3, 2 Nov), `MIND_DESIGN.md` (4 Nov) |
 
-Artifacts made in the old account (the explainer "Inside Hub of Me", the worklist doc) live in that account and are private. This file replaces them for building.
+Artifacts made in the old account (the explainer "Inside Hub of Me", the worklist doc) live in that account and are private. This file replaces them for building. **This repo is public:** keep personal details about Isaak (people, relationships, emails, health) out of it; they belong in the app's database and in his private project docs (the handover file he carries, `HANDOVER_PRIVATE.md`).
 
 ---
 
@@ -58,7 +58,7 @@ Artifacts made in the old account (the explainer "Inside Hub of Me", the worklis
 ### B2. Models
 
 - `src/ai/router.ts` routes in this order: **plan**, then API key, then Gemini.
-  - **Plan** (`src/ai/plan.ts`): the Claude Agent SDK `query()` with no tools (or WebSearch/WebFetch for searches), `maxTurns 1`, `settingSources []`, `persistSession false`, `ANTHROPIC_API_KEY` stripped from its env. One call at a time: a promise queue at `plan.ts:31`. It reads `rate_limit_event` for the allowance. Auth: env var `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`). **Today this token belongs to his dad's account headq@me.com; it must move to Isaak's own account (C10).** Calls are recorded as provider `claude-plan` at €0.
+  - **Plan** (`src/ai/plan.ts`): the Claude Agent SDK `query()` with no tools (or WebSearch/WebFetch for searches), `maxTurns 1`, `settingSources []`, `persistSession false`, `ANTHROPIC_API_KEY` stripped from its env. One call at a time: a promise queue at `plan.ts:31`. It reads `rate_limit_event` for the allowance. Auth: env var `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`). **Today this token belongs to the account Isaak is leaving; it must move to his own account (D1).** Calls are recorded as provider `claude-plan` at €0.
   - **API key**: removed for now.
   - **Gemini**: `gemini-3.5-flash-lite` with a key in Render (`GEMINI_API_KEY`). It is the fallback when the plan is used up or refuses.
 - Sonnet 5.5 does everything by default; it can move itself to Opus 5.5.
@@ -81,7 +81,7 @@ Tables (all have `user_id`, `created_at`, `archived_at`; nothing is ever deleted
 - `brain_activations`: what each thought lit (energies JSON, used).
 - Legacy, still present: `notes` (the old Library), `tasks` (ledger), `info_requests` (held questions), portrait/picture tables, debates, `trace_events`. These come from the pre-brick memory and are still in the old loop's prompt.
 
-On 7 Nov the web had about **280 bricks**. The bricks Isaak put in come from 5 files: the opening dump, the notes of days 1–3, and the Lammert & Lorenzo meeting. One known mess: **379 "used" links** were laid in one evening, when every pair of used bricks got linked. The cap is now 8 bricks per run. Ask Isaak whether to archive the 379.
+On 7 Nov the web had about **280 bricks**. The bricks Isaak put in come from 5 files: the opening dump, the notes of days 1–3, and one meeting with his supervisors. One known mess: **379 "used" links** were laid in one evening, when every pair of used bricks got linked. The cap is now 8 bricks per run. Ask Isaak whether to archive the 379.
 
 ### B4. Intake (`src/brain/intake.ts`)
 
@@ -174,7 +174,7 @@ Speed: 5–8 sequential calls at ~25 s each, so 2–8 minutes per reply includin
 8. Energy reaches one hop.
 9. The plan queue is first come, first served, so his message can wait behind a session.
 10. The keep-awake ping runs ~every 45–50 min, so wake-ups are up to ~45 min late.
-11. The token is his dad's (C10).
+11. The token is on the account he is leaving (D1).
 
 ---
 
@@ -189,7 +189,7 @@ Speed: 5–8 sequential calls at ~25 s each, so 2–8 minutes per reply includin
             ┌────────────────┼────────────────┐
        Career/work      Personal life      Its own work      ring 1: themes (sectors)
             │                │                │
-   Internship at WI     Tunisia & her     Gaps it needs      ring 2…n: summaries,
+   Internship at WI     Travel, plans     Gaps it needs      ring 2…n: summaries,
    Kyoto thesis         Training, body    How it works       as many levels as the
    Intro week (3 days)  ...               ...                material wants
             │
@@ -266,7 +266,7 @@ Seed on first run: it writes the index plus the themes it sees (career, personal
 
 Isaak: "the map needs to be continuously reviewed, and the linking of individual bricks in the outer layer will help nudge it to bricks which may be updated."
 
-- **Marking stale (code, immediate):** when a member brick gets a new entry, moment or link, a changed summary or name, or is merged, split or archived, every summary it is a member of is marked `stale`. The reason ("brick X: new entry 'Lammert is my supervisor'") goes into `stale_reasons`, and the staleness propagates upward with the reason chained. Cheap: no model call.
+- **Marking stale (code, immediate):** when a member brick gets a new entry, moment or link, a changed summary or name, or is merged, split or archived, every summary it is a member of is marked `stale`. The reason ("brick X: new entry 'X is my supervisor'") goes into `stale_reasons`, and the staleness propagates upward with the reason chained. Cheap: no model call.
 - **Nudges through links (code):** a new link between two bricks in different summaries adds a "connection" reason to both summaries' lowest common ancestor (or the index). That is how the outer web tells the rings that two themes touch. An insight link between far summaries is a candidate for a cross-reference or a new parent.
 - **Rewriting (entity, own time):** the stale queue is processed lowest level first, so children are fresh before parents. Each rewrite is one written draft plus one JSON write. It sees the old body, the `stale_reasons`, the changed members in full, and the fresh children's bodies, and writes a new version with a change note, or marks the summary fresh with "nothing that matters changed" (also logged). No rewrites happen during a reply (too slow); replies read the stale text with a "(stale: N changes below)" marker.
 - **Spot-check review (entity, own time):** each own-time run reviews 1–2 fresh summaries picked at random, weighted towards the oldest `reviewed_at`. It reopens the cited bricks and checks that the text still holds. This is the counter to drift (summaries of summaries lose detail and can harden a wrong guess).
@@ -433,7 +433,7 @@ Every round:
 ### D1. Moving to Isaak's own account
 
 1. Isaak makes his own Claude account and plan (Pro is enough to start; watch the weekly allowance).
-2. Make a new token: on a machine with Claude Code, run `claude setup-token` while signed in to **his** account. Beware: on 5 Nov the web sign-in landed on a different, free account with a similar email (headq@mac.com vs headq@me.com); check which account the token is for. In Render → hub-of-me → Environment, replace `CLAUDE_CODE_OAUTH_TOKEN`, then deploy. Check `/api/diag/config`: `plan.on: true` and a fresh `utilization`.
+2. Make a new token: on a machine with Claude Code, run `claude setup-token` while signed in to **his** account. Beware: on 5 Nov the web sign-in landed on a different, free account with a near-identical email; check which account the token is for. In Render → hub-of-me → Environment, replace `CLAUDE_CODE_OAUTH_TOKEN`, then deploy. Check `/api/diag/config`: `plan.on: true` and a fresh `utilization`.
 3. Give the new builder repo access (Claude GitHub app on his GitHub account, or a builder session with the repo added), the `DIAGNOSTICS_TOKEN` (privately, then consider rotating it in Render), and this file.
 4. The claude.ai project "Isaak all projects" (CORE_INSTRUCTIONS.md, NOTES.md and the other project docs) lives in the old account. Export the docs he wants to keep (at least `claude/CORE_INSTRUCTIONS.md` and `claude/personal-assistant/NOTES.md`) and recreate the project in his account.
 5. Nothing in the app's data depends on the account. The web, soul and history stay in Neon.
