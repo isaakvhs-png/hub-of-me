@@ -152,7 +152,9 @@ export async function tick(ctx: Ctx): Promise<{ work: Promise<void> } | null> {
     const r = await ctx.db.query(`SELECT 1 FROM runs WHERE user_id=$1 AND trigger='you' AND status='running' LIMIT 1`, [ctx.userId]);
     if (r.rows.length) return null;
   }
-  await ctx.db.query(`UPDATE runs SET status='running' WHERE id=$1 AND status IN ('queued','paused')`, [next.id]);
+  // Claim it atomically: the clock's tick and a route's tick may race for the same run.
+  const claimed = await ctx.db.query(`UPDATE runs SET status='running' WHERE id=$1 AND status IN ('queued','paused') RETURNING id`, [next.id]);
+  if (!claimed.rows.length) return null;
   const work = runOne(ctx, next).finally(() => { if (running.get(ctx.userId) === work) running.delete(ctx.userId); });
   running.set(ctx.userId, work);
   return { work }; // wrapped: awaiting tick() must not wait for the run itself

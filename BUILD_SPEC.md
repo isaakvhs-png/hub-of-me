@@ -244,6 +244,22 @@ Old step loop and `settings.mind_loop`; work sessions (`brain_sessions`) → run
 - Repo is private since 7 Nov; Render deploys still work. GitHub Actions ping to be retired for the outside pinger.
 - After go-live: optional daily outside check (a scheduled task on Isaak's account reading diagnostics), if he wants it. Rotate the diagnostics token and the Claude token (both were pasted in a chat on 7 Nov).
 
+## 13c. Build status (7 Nov, evening): what exists, and where it differs from the text above
+
+**Built, on branch `rebuild`, all eight steps.** Code map: `README.md`. Bench: `npm test` (36 tests; 21 stress-test cases with the mock model, all passing). Everything before the rebuild is archived under `legacy/` (not compiled, not deleted); old data is archived by the fresh start.
+
+Where the build differs from the text, and why:
+- `sources` and `bricks` existed; they are extended in place (new columns), not new tables. The fresh start archives their old rows.
+- A few columns the text does not list, needed by the code: `stream.filed_at` and `run_id`; `runs.job`, `input`, `error`, `why`; `bench.target`, `origin`, `his_note`; `requests.live_at`; `page_versions.run_id`; a small `core_meta` table for code's own markers (fresh start done, review queued today).
+- The fresh start runs automatically, once, at the first start of the rebuild (`npm run fresh-start -- --undo` brings back exactly what it archived).
+- Similar meaning: Gemini embeddings when `GEMINI_API_KEY` is set (model `gemini-embedding-001`, overridable with `GEMINI_EMBED_MODEL`; **the model name is not verified live**), plus a word-hash vector always (no network; catches shared words, not meaning).
+- Knobs added (rhythm by code): `upkeepEveryMin` 30, `ownTimeEveryMin` 180, `bigUploadReceiptChars` 5,000, and `guidesNeedHisYes` false for the open decision in §14 (it may revise its guides; every change shows in the nightly report). One number is still in code, not a knob: the first-pages goal starts after a first intake of at least 15 bricks.
+- Self-guides are not seeded: they start empty and it writes them (filing reads "How I file" once it exists).
+- "Whether the server runs the latest commit" reports the running commit only; comparing with the latest needs a GitHub read token (a request it can make).
+- Attention signals: time the Workshop tab and each workshop section is open.
+
+Not verified yet (needs Isaak's token or Render): the real model's judgment (`scripts/judgment-bench.ts` runs six stress tests against the live models in a throwaway database), streaming through the real Agent SDK (tested with a fake), reply time on the plan, a Render deploy (Render builds `main`; the rebuild must be merged first), and whether running the app on his Pro token is fine under Anthropic's terms (§11a).
+
 ## 14. Open decisions (Isaak's)
 
 - May it revise its own self-guides without his yes? (open)

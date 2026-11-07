@@ -3,15 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "desktop/main.cjs",
   "scripts": {
     "dev": "concurrently -k -n api,web \"HUB_PORT=43124 tsx watch server/index.ts\" \"vite\"",
     "start": "NODE_ENV=production tsx server/index.ts",
     "build": "vite build",
     "test": "vitest run",
+    "bench": "vitest run tests/bench",
     "typecheck": "tsc --noEmit",
-    "desktop": "electron desktop/main.cjs",
-    "desktop:pack": "electron-builder --dir",
+    "how-you-work": "tsx scripts/how-you-work.ts",
+    "fresh-start": "tsx scripts/fresh-start.ts",
     "icons": "node scripts/icons.mjs"
   },
   "dependencies": {
@@ -41,8 +41,6 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "concurrently": "^9.2.1",
-    "electron": "^33.4.11",
-    "electron-builder": "^25.1.8",
     "lucide-react": "^0.468.0",
     "pdf-lib": "^1.17.1",
     "postcss": "^8.5.6",
@@ -55,32 +53,5 @@
     "vite": "^6.4.1",
     "vite-plugin-pwa": "^0.21.2",
     "vitest": "^3.2.4"
-  },
-  "build": {
-    "appId": "me.hubof.app",
-    "productName": "Hub of Me",
-    "directories": {
-      "output": "desktop-dist"
-    },
-    "files": [
-      "desktop/**/*",
-      "package.json"
-    ],
-    "linux": {
-      "target": [
-        "AppImage"
-      ],
-      "category": "Utility"
-    },
-    "mac": {
-      "target": [
-        "dmg"
-      ]
-    },
-    "win": {
-      "target": [
-        "nsis"
-      ]
-    }
   }
 }

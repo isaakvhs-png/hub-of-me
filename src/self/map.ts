@@ -18,14 +18,14 @@ export const SYSTEM_MAP: MapNode = {t:"Hub of Me",d:"The whole system. Twelve pa
 kids:{
  sources:{t:"Sources",k:"w",s:"everything, kept whole",d:"Ring 0 of the memory. Everything that comes in is kept whole and never changed: both sides of every conversation, files, pages it read, digested video, contacts, its own notes. Append-only.",
   kids:{
-   conv:{t:"The conversation",k:"w",s:"both sides",d:"Each of your messages and each of its replies, in order, in brain_stream. Exists today."},
-   files:{t:"Files",k:"w",s:"notes, papers, slides",d:"Anything you drop in, kept whole (text up to 60,000 characters today). Exists."},
-   pages:{t:"Web pages it read",k:"w",s:"from its searches",d:"Every page a search or a read pulled in is kept as a source. Exists."},
-   own:{t:"Its own notes",k:"w",s:"marked as its own",d:"Its thoughts and conclusions, filed as sources of kind 'own': never treated as evidence about you. Exists."},
+   conv:{t:"The conversation",k:"w",s:"both sides",d:"Each of your messages and each of its replies, in order, in the stream table. Each message carries the id the app gave it, so a gap or a duplicate shows up in the health checks."},
+   files:{t:"Files",k:"w",s:"notes, papers, slides",d:"Anything you drop in, kept whole (text up to 200,000 characters; original and stored size are both recorded, so a cut-off shows)."},
+   pages:{t:"Web pages it read",k:"w",s:"from its searches",d:"Every web search it runs is kept whole as a source of kind web."},
+   own:{t:"Its own notes",k:"w",s:"marked as its own",d:"Its thoughts and conclusions, filed as sources of kind 'own' and entries of origin 'own': never treated as evidence about you."},
    media:{t:"Video and audio",k:"w",s:"once it asks for it",d:"The file, plus a transcript and what's on screen (a model that can watch video, such as Gemini). Not in the seed: it should ask for this itself when it meets something it can't take in."},
-   contacts:{t:"Contact records",k:"w",s:"a person's details",d:"A person's contact details as a source; the person's brick links to it. New."},
+   contacts:{t:"Contact records",k:"w",s:"a person's details",d:"A person's contact details as a source; the person's brick links to it. Not in the seed: arrives when it asks for it."},
    gemini:{t:"Gemini chats",k:"w",s:"later",d:"You start a fresh Gemini account now; the big archive is imported once the web has grown. Stored and searchable, filed only when a run pulls one in."},
-   store:{t:"Stored whole",k:"c",s:"append-only tables",d:"brain_stream (every message) and brain_sources (files, pages, transcripts, contacts). Nothing is ever edited or deleted."},
+   store:{t:"Stored whole",k:"c",s:"append-only tables",d:"stream (every message) and sources (files, web results, its own notes). Nothing is ever edited or deleted."},
    sentwith:{t:"Sent together",k:"c",s:"message ↔ file",d:"A file sent with a message is linked to it. Your words become a quote on the file's source brick, so the file always carries how you framed it ('the methods part matters')."},
    srcbrick:{t:"Source brick",k:"w",s:"one per source",d:"Each source gets a brick in ring 1. Hovering it shows the bricks it spawned; opening it shows the full text. Every quote on a brick records where in the source it sits (char start and end), so you can jump to the exact lines."}
   },
@@ -33,7 +33,7 @@ kids:{
 
  intake:{t:"Intake",k:"c",s:"reads every brick, links",d:"How a source becomes bricks and links. One filing call per part, reading the index of every brick; code stores, adds cheap links, and marks what was touched.",
   kids:{
-   arrive:{t:"A source arrives",k:"c",s:"message or file",d:"From Sources. If it's big (a dump), a one-line receipt goes to the chat at once: 'Got it, filing now, about 3 minutes.'"},
+   arrive:{t:"A source arrives",k:"c",s:"message or file",d:"From Sources. If it's big (over the knob bigUploadReceiptChars), a one-line receipt goes to the chat at once: 'Got it, filing now, about 3 minutes.' The conversation itself is filed in batches once you have gone quiet."},
    split:{t:"Split into parts",k:"c",s:"≤5,000 chars",d:"At paragraph breaks, so each answer fits and a failure stays small."},
    index:{t:"The brick index",k:"c",s:"every brick, one line",d:"Name, kind and one-line summary of every brick (~25k characters at 280 bricks). Read whole while under ~60k characters (a knob); beyond that code pre-selects by shared words and similar meaning. Updated after each part, so part 5 sees bricks made in part 2."},
    guideF:{t:"Self-guide: How I file",k:"w",s:"its notes on filing",d:"Its own page of notes on filing, each line citing evidence (merges it had to do, your revisions). Every filing call reads it. Revised by the daily review."},
@@ -48,12 +48,12 @@ kids:{
     },
     edges:[["reads","things"],["reads","entries"],["reads","jlinks"],["reads","updates"],["reads","fnote"]]},
    stored:{t:"Code stores it",k:"c",s:"match, make, quote positions",d:"Matches things by id (or identical name), makes new bricks, stores entries, finds each quote in the source and keeps its position."},
-   clinks:{t:"Code's own links",k:"c",s:"together · words · meaning",d:"Cheap links added by code: said together, shared distinctive words, similar meaning (to bricks the model didn't mention), same source."},
+   clinks:{t:"Computed relations",k:"c",s:"source · words · meaning",d:"Not stored: same source, same page, shared distinctive words and similar meaning (vectors) are computed when a run or upkeep needs them. Only links the model judged, with a reason, are stored."},
    touched:{t:"Touched bricks",k:"c",s:"recorded",d:"Every brick that got something new in this intake (entry, quote, link, changed name or summary)."},
    super:{t:"Superseded entries",k:"c",s:"kept, marked",d:"Old entries an update replaces. Never deleted."},
    noteuse:{t:"Filing note used",k:"c",s:"question · candidate · evidence",d:"A doubt becomes an open question on the bricks and a merge candidate; something it couldn't capture becomes evidence on a request."},
    digest:{t:"Intake digest",k:"c",s:"for big dumps",d:"Per theme: what's new, what was updated, which new clusters have no home. Goes into the reply run's context pack, so the reply covers the whole dump."},
-   retry:{t:"Failed parts retried",k:"c",s:"on the next message",d:"Kept in failed_parts and retried. Exists."}
+   retry:{t:"Failed parts retried",k:"c",s:"on the next run",d:"A part that fails (a refusal, a timeout, an answer that isn't JSON) is kept in the source's failed_parts and retried on the next run that starts from your message."}
   },
   edges:[["@sources","arrive","new source"],["arrive","split"],["split","fcall"],["index","fcall"],["guideF","fcall"],["fcall","stored"],["fcall","retry","if it failed"],["stored","clinks"],["stored","touched"],["stored","index","next part sees it"],["fcall","super","updates"],["fcall","noteuse","filing note"],["stored","digest"],["touched","@web","bricks, links"],["super","@web",""],["clinks","@web",""],["noteuse","@requests","evidence"],["digest","@run","into the pack"]]},
 
@@ -70,13 +70,13 @@ kids:{
     },edges:[["bname","bentries"],["bentries","bquotes"],["bname","blinks"],["blinks","breach"],["bentries","breach"]]},
    links:{t:"Links",k:"w",s:"eight kinds",d:"Every link has a kind, a reason, a strength and who made it. Code-found links are cheap and many; model-found links carry the why.",
     kids:{
-     lsrc:{t:"Same source",k:"c",s:"code, at filing",d:"Every brick from a file ↔ its source brick."},
-     ltog:{t:"Said together",k:"c",s:"code, at filing",d:"From the filing call's groups: things in one sentence or passage."},
-     lwords:{t:"Shared words",k:"c",s:"code",d:"Distinctive terms in common ('restoration potential', 'Moni1000'), not common words."},
-     lmean:{t:"Similar meaning",k:"c",s:"code (embeddings)",d:"'Soil carbon stocks' ↔ 'SOC workflow' with no shared words. New."},
-     lpage:{t:"Same page or theme",k:"c",s:"from membership",d:"Both are part of the same page."},
-     lrel:{t:"Relevant to",k:"m",s:"the model, with a reason",d:"With a relation: answers a need, supports, contradicts, causes, part of, involves, updates. Found in filing, in 'link the newcomers', in any run."},
-     lused:{t:"Used together",k:"c",s:"from runs, capped",d:"Both were actually used in the same reply."},
+     lsrc:{t:"Source brick",k:"c",s:"one per source",d:"Every source has a brick (kind source); entries point at the source they quote, with the position."},
+     ltog:{t:"Same source",k:"c",s:"computed",d:"Bricks with entries from the same source. Computed, not stored."},
+     lwords:{t:"Shared words",k:"c",s:"computed",d:"Distinctive terms in common ('restoration potential'), not common words. Computed when needed."},
+     lmean:{t:"Similar meaning",k:"c",s:"vectors",d:"'Soil carbon stocks' ↔ 'SOC workflow' with no shared words. Gemini embeddings when the key is set; a word-hash vector always (it catches shared words, not meaning)."},
+     lpage:{t:"Same page or theme",k:"c",s:"from membership",d:"Both are members of the same page. Computed."},
+     lrel:{t:"Judged links",k:"m",s:"stored, with a reason",d:"With a relation: answers a need, supports, contradicts, causes, part of, involves, updates, insight. Made in filing, in brick upkeep, in any run (the link hand). The only links that are stored."},
+     lused:{t:"Used together",k:"c",s:"in each pack",d:"Not a link: each run's pack records what the drafts actually used (cited). Retired as a link kind on 7 Nov."},
      lins:{t:"Insight",k:"m",s:"its own thinking",d:"A connection it worked out: 'his deer idea and the GMW gap are the same question'."}
     },edges:[]},
    r2:{t:"Ring 2: pages",k:"w",s:"made of bricks",d:"Narrative pages citing their bricks. Each states its purpose (why it's worth having). Many-to-many: the same bricks feed several pages; a page can sit in two themes. Every version kept.",
@@ -96,7 +96,7 @@ kids:{
   },
   edges:[["@intake","r1","bricks, links"],["r0","r1","spawn"],["r1","links"],["r1","r2","members"],["r2","r3"],["r3","life"],["guides","r2","are pages"],["track","r2","is a page"],["@upkeep","r2","rewrites"],["@hands","r1","results, thoughts"],["@you","r2","revise"],["@review","guides","revisions"],["@review","track",""],["r2","@upkeep","stale marks"],["life","@run","gathered"],["r2","@run",""],["r1","@run",""]]},
 
- upkeep:{t:"Upkeep",k:"c",s:"stale · triage · budget",d:"Noticing what changed and how far to follow it: six routes mark pages stale, a fast model triages, a good model rewrites, and a daily budget stops the ripple running forever.",
+ upkeep:{t:"Upkeep",k:"c",s:"stale · triage · rewrite",d:"Noticing what changed and how far to follow it: six routes mark pages stale, a fast model triages, a good model rewrites, only a changed claim goes up, and the background share plus one rewrite per page per root cause per day stop the ripple running forever.",
   kids:{
    routes:{t:"Six stale routes",k:"c",s:"how it notices",d:"Six independent ways a page gets marked stale, each with a reason.",
     kids:{
@@ -109,7 +109,7 @@ kids:{
      mark:{t:"Marked stale",k:"c",s:"with a reason",d:"Into the stale queue."}
     },edges:[["rmem","mark"],["rflag","mark"],["rment","mark"],["rtime","mark"],["rspot","mark"],["ryou","mark"]]},
    squeue:{t:"Stale queue",k:"c",s:"by importance",d:"Ordered: your revisions first, then pages near the life document and near what's active."},
-   budget:{t:"Daily budget",k:"c",s:"a knob (20%?)",d:"A share of the day's allowance for upkeep. When used up, the rest waits until tomorrow."},
+   budget:{t:"Background share",k:"c",s:"knob: 50% of the week",d:"Background work (upkeep, own time, reviews) may use only this share of the plan's weekly allowance (backgroundShareOfWeek), and stops when the plan says it is past it. Your turns always go first."},
    once:{t:"Once per root cause",k:"c",s:"per page per day",d:"One root cause rewrites a page at most once a day."},
    triage:{t:"Triage",k:"m",s:"fast model",d:"For each stale page: 'does this change matter here? yes / no, one line why'."},
    no:{t:"No: logged",k:"c",s:"stops here",d:"Most 'no' answers end the ripple on that branch."},
@@ -135,28 +135,28 @@ kids:{
   },
   edges:[["@workshop","decide","proposals"],["send","@sources","sends"],["send","@queue","speaks"],["revise","discuss"],["discuss","@web","applied"],["revise","@upkeep",""],["decide","@build","yes"],["protect","decide"],["bounds","@hands","checked by code"],["deploy","@build",""]]},
 
- queue:{t:"Run queue",k:"c",s:"you first · its schedule",d:"Every run to do, in one table, with a trigger and a purpose. A small scheduler starts the next one when the model is free. Replaces today's five separate routes and the single wake-up slot.",
+ queue:{t:"Run queue",k:"c",s:"you first · its schedule",d:"Every run to do, in one table, with a trigger and a purpose. A small scheduler (every 2 seconds) starts the next one; rhythm code (every minute) queues filing, upkeep, own time and the 23:30 review.",
   kids:{
    tyou:{t:"You speak",k:"y",s:"priority now",d:"Purpose: answer and act."},
-   tsched:{t:"Its schedule",k:"m",s:"promises, checks, wake_me",d:"Any number of wake-ups, each with a why. Today there is only one slot, and a new wake-up overwrites the old."},
-   tupk:{t:"Upkeep jobs",k:"c",s:"within the budget",d:"Stale pages, candidates, spot-checks."},
+   tsched:{t:"Its schedule",k:"m",s:"promises, goals, schedule_run",d:"Any number of scheduled runs, each with a time and a why (the schedule_run hand). Promises in a reply with no scheduled run are caught by code, which schedules a follow-up. Open goals get own-time runs (knob ownTimeEveryMin)."},
+   tupk:{t:"Upkeep jobs",k:"c",s:"within the background share",d:"Stale pages, candidates, spot-checks."},
    trev:{t:"Review",k:"c",s:"23:30 daily, Sunday weekly",d:"The mirror."},
    table:{t:"runs table",k:"c",s:"trigger · purpose · priority · time",d:"Holds everything to do, with status queued, running, paused, done, and where it left off."},
    sched:{t:"Scheduler",k:"c",s:"one at a time",d:"Starts the next run when the model is free; yours always first."},
    pause:{t:"Pause",k:"c",s:"save where it was",d:"A background run finishes its current call, saves left_off, waits."},
    resume:{t:"Resume",k:"c",s:"after ~10 min quiet",d:"A knob."},
-   pinger:{t:"Outside pinger",k:"c",s:"keeps the server awake",d:"So the queue actually moves on time (Render free tier sleeps after ~15 minutes)."}
+   pinger:{t:"Outside pinger",k:"c",s:"keeps the server awake",d:"cron-job.org calling /api/healthz every 10 minutes, so the queue moves on time (Render's free tier sleeps after ~15 minutes). The heartbeat (a row a minute) shows every gap. Set up by Isaak; the GitHub Actions ping is retired."}
   },
-  edges:[["@you","tyou","speaks"],["@hands","tsched","wake_me"],["@upkeep","tupk",""],["tyou","table"],["tsched","table"],["tupk","table"],["trev","table"],["table","sched"],["pinger","sched","awake"],["tyou","pause","background pauses"],["pause","resume"],["resume","sched"],["sched","@run","starts"],["trev","@review",""]]},
+  edges:[["@you","tyou","speaks"],["@hands","tsched","schedule_run"],["@upkeep","tupk",""],["tyou","table"],["tsched","table"],["tupk","table"],["trev","table"],["table","sched"],["pinger","sched","awake"],["tyou","pause","background pauses"],["pause","resume"],["resume","sched"],["sched","@run","starts"],["trev","@review",""]]},
 
  run:{t:"A run",k:"m",s:"gather → A → reply → B",d:"Every run, whatever started it, goes the same way: gather what it needs, draft and reply, then grade, act and file.",
   kids:{
-   starter:{t:"Starter",k:"c",s:"always",d:"The life document, its self-guides, the conversation so far, what was just filed (and the intake digest), bricks your words name."},
-   gather:{t:"Gather call",k:"m",s:"fast model (your A0)",d:"'What do I need to look at?' It chooses its own routes.",
+   starter:{t:"Starter",k:"c",s:"always",d:"The life document (whole under the knob, else its opening and headings), its self-guides, the conversation so far, the intake digest when it just filed something, and the bricks your words name."},
+   gather:{t:"Gather call",k:"m",s:"fast model",d:"'What do I need to look at?' It chooses its own routes, and whether the draft needs the deep model.",
     kids:{
      gfind:{t:"find",k:"c",s:"by words",d:"Across bricks, pages and sources."},
      gsim:{t:"similar",k:"c",s:"by meaning",d:"Meaning-similarity search."},
-     gnear:{t:"near",k:"c",s:"along links",d:"What's linked to a brick or page; energy spreading is one way to do this."},
+     gnear:{t:"near",k:"c",s:"along links",d:"What's linked to a brick or page: judged links strongest first, then the computed relations (same source, same page, shared words, similar meaning)."},
      gopen:{t:"open",k:"c",s:"a page, brick or source",d:"In full."},
      gweb:{t:"web",k:"c",s:"the internet",d:"A web search."},
      gplan:{t:"Its list",k:"m",s:"what and why",d:"A short list of what to look at."}
@@ -166,7 +166,7 @@ kids:{
    callA:{t:"Call A",k:"m",s:"draft + reply, streamed",d:"'What would a highly capable person with your memory and a computer actually do now, including what you'd need to do it well and to discuss it with Isaak?' Then the reply."},
    more:{t:"OPEN: once more",k:"m",s:"if something's missing",d:"One more gather, once."},
    reply:{t:"Reply",k:"s",s:"~30–40 s (estimate)",d:"You see it as it's written."},
-   callB:{t:"Call B",k:"m",s:"decide and grade",d:"After the reply. Grades every intention against the hands.",
+   callB:{t:"Grading",k:"m",s:"call A's tail, else call B",d:"After the reply, every intention is graded against the hands. Call A ends with a structured list; only when that list is malformed does a separate call B grade the draft.",
     kids:{
      done:{t:"done",k:"m",s:"a hand fits",d:"Carried out."},
      partly:{t:"partly",k:"m",s:"stopgap + request",d:"Done as far as possible; the rest becomes a request."},
@@ -175,7 +175,7 @@ kids:{
      change:{t:"change to itself",k:"m",s:"a request",d:"Something about how it works."},
      thought:{t:"a thought",k:"m",s:"filed",d:"Its conclusion, filed as its own note."}
     },edges:[]},
-   acts:{t:"Acts",k:"c",s:"through hands",d:"Searches, calendar, agenda, links, pages, bench."},
+   acts:{t:"Acts",k:"c",s:"through hands",d:"Searches, calendar, goals, scheduled runs, links, pages, the bench: each through the boundaries check."},
    thoughts:{t:"Thoughts filed",k:"c",s:"as its own",d:"Entries and bricks marked 'own'; they light up in later runs and can make pages stale."},
    gaps:{t:"Gaps",k:"c",s:"→ requests",d:"New request or evidence on an existing one."},
    record:{t:"Run record",k:"c",s:"everything, timed",d:"The pack and what it actually used, the drafts, every call with its time, the acts and results. The mirror reads these."}
@@ -185,23 +185,23 @@ kids:{
  hands:{t:"Hands",k:"c",s:"it asks for new ones",d:"What it can do. The seed has only what it needs to notice what it lacks; everything else it asks for itself.",
   kids:{
    bcheck:{t:"Boundaries check",k:"c",s:"code",d:"Every act checked against your boundaries before it runs."},
-   hlook:{t:"Looking",k:"c",s:"find, similar, near, open, web",d:"In the seed."},
+   hlook:{t:"Looking",k:"c",s:"find, similar, near, open, web",d:"In the seed. web refuses private details in a query (code checks)."},
    hweb:{t:"Web work",k:"c",s:"link, merge, split, relabel, pages",d:"In the seed."},
-   hcal:{t:"Calendar, agenda, wake me",k:"c",s:"",d:"In the seed. wake_me queues a run."},
-   hself:{t:"Its records, its design",k:"c",s:"read_records, look_at_myself",d:"In the seed. How it sees itself."},
+   hcal:{t:"Calendar, goals, schedule",k:"c",s:"calendar_*, goal_*, schedule_run",d:"In the seed. schedule_run queues a run of its own (any number)."},
+   hself:{t:"Looking at itself",k:"c",s:"inspect · audit_file · trace_run · read_code · explain",d:"In the seed, read-only: query its own records, set a source next to its bricks, replay a past gather with hindsight, read any file of its own code and this map, and explain parts of itself with map references the view lights up."},
    hbench:{t:"Put on your bench",k:"c",s:"drafts, suggestions, questions",d:"In the seed."},
    hasked:{t:"Hands it asked for",k:"c",s:"pages, video, email, coding…",d:"Not in the seed. Each arrives through a request it made, with evidence."},
    hown:{t:"Its own makings",k:"w",s:"revise or retire",d:"Pages and views it makes are its own: it updates or retires them when they stop being useful, and says so."}
   },
-  edges:[["@run","bcheck","acts"],["@you","bcheck","boundaries"],["bcheck","hlook"],["bcheck","hweb"],["bcheck","hcal"],["bcheck","hself"],["bcheck","hbench"],["bcheck","hasked"],["@build","hasked","new hand"],["hasked","hown"],["hweb","@web","results"],["hlook","@sources","pages read"],["hcal","@queue","wake_me"],["hbench","@workshop","drafts"]]},
+  edges:[["@run","bcheck","acts"],["@you","bcheck","boundaries"],["bcheck","hlook"],["bcheck","hweb"],["bcheck","hcal"],["bcheck","hself"],["bcheck","hbench"],["bcheck","hasked"],["@build","hasked","new hand"],["hasked","hown"],["hweb","@web","results"],["hlook","@sources","pages read"],["hcal","@queue","schedule_run"],["hbench","@workshop","drafts"]]},
 
  workshop:{t:"Workshop",k:"s",s:"Now · bench · proposals",d:"Where it works and where you meet it. Plain in the seed; how it looks, and every other room of the app, arrive as its requests.",
   kids:{
-   wnow:{t:"Now",k:"s",s:"the live run and the queue",d:"Its own space: purpose, draft, which hands, progress; the queue. It pauses when you talk."},
+   wnow:{t:"Now",k:"s",s:"the live map itself",d:"There is no separate column: the map lights up as it works, the strip under it says what is happening and for how long. Background work pauses when you talk."},
    wbench:{t:"Your bench",k:"s",s:"for you, and yours",d:"Drafts, suggestions, its questions; your own notes and to-dos."},
    wprops:{t:"Proposals",k:"s",s:"ready first",d:"Each with evidence, design, cost, prediction, your buttons and a discussion thread."},
    wrep:{t:"Reports",k:"s",s:"daily, weekly",d:"And what went live and whether it helped."},
-   wbacklog:{t:"Upkeep backlog",k:"s",s:"",d:"How many pages wait, and the budget used."},
+   wbacklog:{t:"Upkeep backlog",k:"s",s:"in the workshop",d:"How many pages wait, and the queue."},
    attn:{t:"Attention signals",k:"c",s:"what you open",d:"What you open and for how long: so 'did this help him?' has evidence. Nothing leaves the app."}
   },
   edges:[["@run","wnow","live"],["@hands","wbench","drafts"],["@requests","wprops","proposals"],["@review","wrep","reports"],["@upkeep","wbacklog",""],["wbench","@you",""],["wprops","@you",""],["wrep","@you",""],["wnow","attn"],["wbench","attn"],["wprops","attn"],["attn","@review","signal"]]},
@@ -269,7 +269,7 @@ kids:{
 
  build:{t:"Build",k:"c",s:"the stairs",d:"From your yes to a new hand, and the path to it changing its own code. It never merges or deploys live.",
   kids:{
-   st1:{t:"Stage 1: builder builds",k:"c",s:"first",d:"A builder (me now) builds from its spec, tests, pushes; you deploy."},
+   st1:{t:"Stage 1: builder builds",k:"c",s:"now",d:"A builder builds from the spec, runs the bench, pushes; you deploy."},
    st2:{t:"Stage 2: it writes the spec",k:"m",s:"",d:"Files, change, test, live check. The builder reviews and finishes."},
    st3:{t:"Stage 3: its pull request",k:"m",s:"",d:"A coding run (Claude Code through the Agent SDK it already uses, on a copy of the repo) makes a branch, the change and tests. You review, merge, deploy."},
    st4:{t:"Stage 4: tries it itself",k:"m",s:"maybe",d:"Deploys its branch to a test copy, runs the bench, shows before and after. You promote it."},
@@ -277,9 +277,9 @@ kids:{
    bench:{t:"The bench",k:"c",s:"the stress tests as cases",d:"Run before and after a change to show nothing was lost."},
    cmap:{t:"Code map",k:"w",s:"it can read",d:"Which file does what, kept true in every commit."},
    versions:{t:"Every version kept",k:"c",s:"",d:""},
-   deploy:{t:"You deploy",k:"y",s:"",d:"By hand on Render, today."},
+   deploy:{t:"You deploy",k:"y",s:"",d:"By hand on Render."},
    live:{t:"Live",k:"c",s:"a new hand",d:"Joins the catalogue that call B checks against."},
-   today:{t:"Today's code",k:"c",s:"keep · change · retire",d:"Keep: stream and sources, bricks/entries/quotes/links, intake's core, calls A/B and gap bricks, boundaries, diagnostics, the plan route. Change: turn.ts → the run engine; one wake-up slot → the queue; first-come model queue → you first; energy as the way of gathering → one option; 5–8 calls per reply → reply first; calls timed. Retire (data archived): the old step loop and sessions, ledger, held questions, old notes Library, portrait, fixed-role debates, the 3 a.m. job, old pages."}
+   today:{t:"Before the rebuild",k:"c",s:"archived in legacy/",d:"Retired on 7 Nov 2026, code kept under legacy/ and old data archived (archived_at): the old step loop and work sessions, energy spreading and warmth, used links, gap bricks (now requests), moments (now quotes on entries), the agenda (now goals and the bench), mind_runs and trace events (now run_steps), soul Purpose/Values/Character (now self-guides), money budgets and prices, the ledger and tasks, info requests, the old notes Library, the portrait, fixed-role debates, the 3 a.m. job, the old pages, the desktop wrapper and the GitHub Actions ping."}
   },
   edges:[["@you","st1","yes"],["@requests","st1","spec"],["st1","st2","later"],["st2","st3"],["st3","st4"],["cmap","st2"],["st1","tests"],["tests","bench"],["bench","versions"],["versions","deploy"],["deploy","live"],["live","@hands","new hand"],["live","@requests","verify"]]}
  },
