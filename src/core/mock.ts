@@ -63,7 +63,7 @@ export class MockModels implements Models {
       case "triage": return JSON.stringify({ matters: true, why: "mock: a member changed" });
       case "rewrite": {
         const body = section(p, "\nPAGE ", /\n\nWHY\n/).split("\n").slice(1).join("\n");
-        const ids = [...p.matchAll(/\[\[b:([a-z0-9]+)\]\]/g)].map((m) => m[1]).slice(0, 3);
+        const ids = [...p.matchAll(/\[\[b:([a-z0-9]{10})\]\]/g)].map((m) => m[1]).slice(0, 3);
         return JSON.stringify({ body: `${body}\n\nUpdated: ${ids.map((i) => `[[b:${i}]]`).join(" ")}`.trim(), change_note: "mock: added what changed", claim_changed: false });
       }
       case "web": return `Mock web result for "${section(p, "Query:", /$^/)}". Nothing real was searched.\nSOURCES:\n- Example — https://example.org`;
@@ -112,12 +112,12 @@ export class MockModels implements Models {
     const message = section(p, "ISAAK'S MESSAGE:", /\n\n(?:Parts of yourself|YOUR DRAFT|MATERIAL CODE)/) || section(p, "YOUR OWN TIME. Purpose:", /\n\n/);
     const extra = section(p, "MATERIAL CODE HANDED THIS RUN:", /\n\nParts of yourself/);
     const looks: { how: string; what: string; why: string }[] = [];
-    const ids = [...`${message}\n${extra}`.matchAll(/\[\[([bp]):([a-z0-9]+)\]\]/g)].map((m) => `${m[1]}:${m[2]}`);
+    const ids = [...`${message}\n${extra}`.matchAll(/\[\[([bp]):([a-z0-9]{10})\]\]/g)].map((m) => `${m[1]}:${m[2]}`);
     for (const id of ids.slice(0, 6)) looks.push({ how: "open", what: id, why: "named" });
     if (message) looks.push({ how: "find", what: message.slice(0, 200), why: "his words" }, { how: "similar", what: message.slice(0, 300), why: "same meaning" });
     if (/how (do|does) (you|it)|how you work|yourself|your own|diagnose you/i.test(message)) looks.push({ how: "open", what: "map:upkeep", why: "a question about how I work" });
     if (/\b(search|online|look up|on the web|internet)\b/i.test(message)) looks.push({ how: "web", what: message.slice(0, 120), why: "he asked for the web" });
-    if (/first pages|life document|brick upkeep/i.test(message + extra)) for (const m of [...p.matchAll(/\[\[p:([a-z0-9]+)\]\]/g)].slice(0, 4)) looks.push({ how: "open", what: `p:${m[1]}`, why: "a theme" });
+    if (/first pages|life document|brick upkeep/i.test(message + extra)) for (const m of [...p.matchAll(/\[\[p:([a-z0-9]{10})\]\]/g)].slice(0, 4)) looks.push({ how: "open", what: `p:${m[1]}`, why: "a theme" });
     return JSON.stringify({ looks, model: "main", why_model: "mock" });
   }
 
@@ -126,8 +126,8 @@ export class MockModels implements Models {
     const purpose = section(p, "Purpose:", /\n/);
     const pack = section(p, "=== THE CONTEXT PACK (what you chose to look at) ===", /\n=== HOW TO ANSWER ===/);
     const starterText = section(p, "=== THE STARTER ===", /\n=== THE CONTEXT PACK/);
-    const bricks = [...new Set([...pack.matchAll(/\[\[b:([a-z0-9]+)\]\]/g), ...starterText.matchAll(/\[\[b:([a-z0-9]+)\]\]/g)].map((m) => m[1]))];
-    const pages = [...new Set([...pack.matchAll(/\[\[p:([a-z0-9]+)\]\] PAGE/g)].map((m) => m[1]))];
+    const bricks = [...new Set([...pack.matchAll(/\[\[b:([a-z0-9]{10})\]\]/g), ...starterText.matchAll(/\[\[b:([a-z0-9]{10})\]\]/g)].map((m) => m[1]))];
+    const pages = [...new Set([...pack.matchAll(/\[\[p:([a-z0-9]{10})\]\] PAGE/g)].map((m) => m[1]))];
     const intentions: Record<string, unknown>[] = [];
     let reply = message ? `(mock) I read your message${bricks.length ? ` next to what I hold: ${bricks.slice(0, 3).map((b) => `[[b:${b}]]`).join(", ")}` : ""}.` : `(mock) Own time: ${purpose}`;
     const refs: string[] = [];

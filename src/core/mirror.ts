@@ -54,7 +54,7 @@ export async function computeSignals(ctx: Ctx, from: Date, to: Date): Promise<Si
   const revs = (await ctx.db.query(`SELECT target_kind FROM revisions WHERE user_id=$1 AND created_at >= $2 AND created_at < $3`, p)).rows;
   const byKind: Record<string, number> = {};
   for (const r of revs) byKind[String(r.target_kind)] = (byKind[String(r.target_kind)] ?? 0) + 1;
-  const bench = (await ctx.db.query(`SELECT kind, title, status, created_at FROM bench WHERE user_id=$1 AND created_at < $3 AND origin='its'`, p)).rows;
+  const bench = (await ctx.db.query(`SELECT kind, title, status, created_at FROM bench WHERE user_id=$1 AND $2::timestamptz IS NOT NULL AND created_at < $3 AND origin='its'`, p)).rows;
   const inPeriod = bench.filter((b) => iso(b.created_at) >= p[1]);
   const ignored = bench.filter((b) => b.status === "open" && to.getTime() - new Date(iso(b.created_at)).getTime() > 3 * 86_400_000).length;
   const props = (await ctx.db.query(`SELECT status, his_decision FROM proposals WHERE user_id=$1`, [ctx.userId])).rows;

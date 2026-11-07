@@ -25,7 +25,8 @@ export async function bench(start = "2026-11-09T09:00:00Z"): Promise<Bench> {
   resetQueueForTests();
   const db = await createDb({ memory: true });
   const clock = { t: new Date(start).getTime() };
-  const now = () => new Date(clock.t);
+  // Each reading moves the clock by a millisecond, so records keep their order the way a real clock would.
+  const now = () => new Date((clock.t += 1));
   const { userIds } = await bootCore(db, { now });
   const mock = new MockModels();
   const ctx: Ctx = { db, userId: userIds[0], ai: mock, now };

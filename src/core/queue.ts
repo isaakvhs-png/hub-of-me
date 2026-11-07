@@ -140,10 +140,10 @@ export async function checkpoint(ctx: RunCtx, leftOff: () => unknown): Promise<v
 }
 
 /**
- * The scheduler's tick: start the next run if none is running for this user. Returns the run started (tests await it).
+ * The scheduler's tick: start the next run if none is running for this user. Returns the started run's promise (wrapped).
  * One run per user at a time; Isaak's run does not wait for a background run to finish its whole job, only its call.
  */
-export async function tick(ctx: Ctx): Promise<Promise<void> | null> {
+export async function tick(ctx: Ctx): Promise<{ work: Promise<void> } | null> {
   const busy = running.get(ctx.userId);
   const next = await nextRun(ctx);
   if (!next) return null;
@@ -155,21 +155,21 @@ export async function tick(ctx: Ctx): Promise<Promise<void> | null> {
   await ctx.db.query(`UPDATE runs SET status='running' WHERE id=$1 AND status IN ('queued','paused')`, [next.id]);
   const work = runOne(ctx, next).finally(() => { if (running.get(ctx.userId) === work) running.delete(ctx.userId); });
   running.set(ctx.userId, work);
-  return work;
+  return { work }; // wrapped: awaiting tick() must not wait for the run itself
 }
 
 /** Run everything that may run now, one after another (tests and the bench use this instead of the clock). */
 export async function drain(ctx: Ctx, max = 50): Promise<number> {
   let n = 0;
   for (; n < max; n += 1) {
-    const work = await tick(ctx);
-    if (!work) {
+    const started = await tick(ctx);
+    if (!started) {
       const busy = running.get(ctx.userId);
       if (!busy) break;
       await busy;
       continue;
     }
-    await work;
+    await started.work;
   }
   return n;
 }
