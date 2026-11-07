@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 40 14% 5%;
+  --foreground: 40 33% 94%;
+  --card: 36 14% 8%;
+  --card-foreground: 40 33% 94%;
+  --primary: 46 92% 53%;
+  --primary-foreground: 36 40% 8%;
+  --secondary: 36 10% 13%;
+  --secondary-foreground: 40 20% 90%;
+  --muted: 36 8% 13%;
+  --muted-foreground: 40 8% 64%;
+  --accent: 46 30% 14%;
+  --accent-foreground: 46 90% 72%;
+  --destructive: 6 72% 56%;
+  --border: 40 10% 18%;
+  --input: 40 10% 18%;
+  --ring: 46 92% 53%;
+  --radius: 0.9rem;
+}
+
+* { box-sizing: border-box; }
+
+@keyframes trace-flash {
+  0%, 100% { opacity: 1; }
+  40% { opacity: 0.25; }
+}
+.trace-flash { animation: trace-flash 0.7s ease-in-out 3; }
+.trace-pop { animation: trace-flash 0.7s ease-in-out 3, trace-hide 0.2s ease 2.1s forwards; }
+@keyframes trace-hide { to { opacity: 0; pointer-events: none; } }
+.trace-anchor:hover .trace-pop, .trace-anchor:focus-within .trace-pop { animation: none; opacity: 1; pointer-events: auto; }
+
+html, body, #root { min-height: 100%; }
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(900px 420px at -10% -20%, rgba(245, 197, 24, 0.09), transparent 55%),
+    #0c0b09;
+  color: hsl(var(--foreground));
+  font-family: Outfit, ui-sans-serif, system-ui, sans-serif;
+}
+
+button, input, textarea { font: inherit; }
+
+::selection { background: #f5c518; color: #1a1503; }
+
+.ledger { font-variant-numeric: tabular-nums; }

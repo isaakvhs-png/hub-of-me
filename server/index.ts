@@ -1,74 +1,26 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { join, normalize } from "node:path";
 import { loadEnv } from "./env.js";
 
 loadEnv();
-import { join, normalize } from "node:path";
-import { serve } from "@hono/node-server";
-import { createDb, migrate } from "../src/db.js";
-import { MockProvider } from "../src/ai/mock.js";
-import { Router } from "../src/ai/router.js";
-import { runNightly } from "../src/pipeline/jobs.js";
-import { scheduleFeedbackDrain } from "../src/feedback.js";
-import { getSettings, settleStuckDebates } from "../src/repo.js";
-import { applyEnvProvider, ensureUser } from "../src/seed.js";
-import { adoptNature, restoreCorruptedSouls } from "../src/soul.js";
-import { reopenClosedByUpload } from "../src/tasks.js";
-import { FRESH_REASON, freshStart } from "../src/fresh.js";
-import { archiveEmptyGreetings, greetIfNeeded, wakeIfDue } from "../src/agent/turn.js";
-import { zonedParts } from "../src/time.js";
-import { createApp } from "./app.js";
+const { serve } = await import("@hono/node-server");
+const { createDb } = await import("../src/db.js");
+const { bootCore, ctxFor } = await import("../src/core/index.js");
+const { listUserIds } = await import("../src/core/accounts.js");
+const { startClock } = await import("../src/core/rhythm.js");
+const { createApp } = await import("./app.js");
 
 const port = Number(process.env.PORT ?? process.env.HUB_PORT ?? (process.env.NODE_ENV === "production" ? 43123 : 43124));
 const db = await createDb();
-await migrate(db);
-await ensureUser(db);
-await applyEnvProvider(db);
-await settleStuckDebates(db);
-await restoreCorruptedSouls(db);
-await reopenClosedByUpload(db);
-// Google retired Gemini 2.5 Flash-Lite for new keys (5 Nov 2026); move saved choices to 3.5 Flash-Lite.
-await db.query(
-  `UPDATE settings SET alternate_model = 'gemini:gemini-3.5-flash-lite' WHERE alternate_model LIKE '%gemini-2.5-flash%'`,
-);
-await db.query(`UPDATE settings SET pinned_model = 'gemini-3.5-flash-lite' WHERE pinned_model = 'gemini-2.5-flash-lite'`);
-const fresh = await freshStart(db);
-if (fresh) console.log(`Fresh start archived the previous center for ${fresh} account(s). Reason: ${FRESH_REASON}`);
-const everyone = await db.query<{ id: string }>(`SELECT id FROM users`);
-for (const row of everyone.rows) {
-  try {
-    const settings = await getSettings(db, row.id);
-    const ai = new Router(settings, { mock: settings.provider === "mock" ? new MockProvider() : undefined });
-    await archiveEmptyGreetings(db, row.id);
-    if (await adoptNature(db, row.id)) console.log(`New Nature lines adopted for ${row.id}`);
-    await greetIfNeeded(db, ai, row.id);
-  } catch (error) {
-    console.error("greeting failed", error);
-  }
-}
-await db.query(`UPDATE debate_feedback SET status = 'pending' WHERE status = 'running'`);
-const queuedFeedback = await db.query<{ user_id: string }>(`SELECT DISTINCT user_id FROM debate_feedback WHERE status = 'pending'`);
-for (const row of queuedFeedback.rows) {
-  const userId = String(row.user_id);
-  scheduleFeedbackDrain(db, userId, async () => {
-    const settings = await getSettings(db, userId);
-    return new Router(settings, { mock: settings.provider === "mock" ? new MockProvider() : undefined });
-  });
-}
+const { fresh } = await bootCore(db);
+if (fresh.done) console.log(`Fresh start: the old web was archived at ${fresh.at}:`, fresh.tables);
 
 const app = createApp(db);
 const dist = join(process.cwd(), "client", "dist");
 const types: Record<string, string> = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".svg": "image/svg+xml",
-  ".png": "image/png",
-  ".webmanifest": "application/manifest+json",
-  ".json": "application/json",
-  ".woff2": "font/woff2",
-  ".ico": "image/x-icon",
+  ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml",
+  ".png": "image/png", ".webmanifest": "application/manifest+json", ".json": "application/json", ".woff2": "font/woff2", ".ico": "image/x-icon",
 };
-
 if (process.env.NODE_ENV === "production") {
   app.get("*", async (c, next) => {
     if (c.req.path.startsWith("/api")) return next();
@@ -82,56 +34,10 @@ if (process.env.NODE_ENV === "production") {
   });
 }
 
-let lastNight = "";
-const timer = setInterval(() => {
-  const parts = zonedParts(new Date(), "Europe/Amsterdam");
-  const key = `${parts.year}-${parts.month}-${parts.day}`;
-  if (parts.hour !== 3 || lastNight === key) return;
-  lastNight = key;
-  void runNightlyForEveryone();
-}, 60_000);
+// The clock: the rhythm every minute (heartbeat, filing, upkeep, own time, the 23:30 review) and the scheduler every 2 s.
+const stop = startClock(async () => Promise.all((await listUserIds(db)).map((id) => ctxFor(db, id))), process.env.RENDER_GIT_COMMIT ?? "");
 
-async function runNightlyForEveryone(): Promise<void> {
-  const users = await db.query<{ id: string }>(`SELECT id FROM users`);
-  for (const row of users.rows) {
-    try {
-      const settings = await getSettings(db, row.id);
-      const ai = new Router(settings, { mock: settings.provider === "mock" ? new MockProvider() : undefined });
-      await runNightly(db, ai, row.id);
-    } catch (error) {
-      console.error("nightly failed", error);
-    }
-  }
-}
-
-/* Its life between conversations: every minute, check whether it asked to wake (or the fallback alarm is due).
-   This only runs while the server is awake; on Render's free tier that needs an outside pinger (see DESIGN.md). */
-let waking = false;
-const wakeTimer = setInterval(() => {
-  if (waking) return;
-  waking = true;
-  void (async () => {
-    const users = await db.query<{ id: string }>(`SELECT id FROM users`);
-    for (const row of users.rows) {
-      try {
-        const settings = await getSettings(db, row.id);
-        const ai = new Router(settings, { mock: settings.provider === "mock" ? new MockProvider() : undefined });
-        await wakeIfDue(db, ai, row.id);
-      } catch (error) {
-        console.error("wake failed", error);
-      }
-    }
-  })().finally(() => {
-    waking = false;
-  });
-}, 60_000);
-
-serve({ fetch: app.fetch, port }, () => {
-  console.log(`Hub of Me API on http://127.0.0.1:${port}`);
-});
-
-process.on("SIGTERM", () => {
-  clearInterval(timer);
-  clearInterval(wakeTimer);
-  void db.close();
-});
+const server = serve({ fetch: app.fetch, port }, () => console.log(`Hub of Me on http://127.0.0.1:${port}`));
+const shutdown = () => { stop(); server.close(); void db.close().finally(() => process.exit(0)); };
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
