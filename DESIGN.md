@@ -4,6 +4,8 @@ This replaces "Hub of Me design spec v2" (the PDF). v2 described a pipeline: fil
 
 Isaak (with a K) is the person this is for. Some older code and texts say "Peter". That is a mistake, not a second user.
 
+> **7 Nov 2026:** `LAYERED_MIND_SPEC.md` describes the system as it is now (rounds, the brick web, new Nature lines) and the layered design to build next. It is current wherever it disagrees with this file or MIND_DESIGN.md. The Nature description in §1 below is outdated (changed 6 Nov).
+>
 > **4–5 Nov 2026:** a redesign of how the entity remembers, thinks and acts is in `MIND_DESIGN.md`. Its playtest core (v0) is built: see the status block there. Where this file and MIND_DESIGN.md disagree about memory, turns or what it sees, MIND_DESIGN.md is current. Read it after §1 and §3.
 
 ## 1. Philosophy (the only part that is not provisional)
