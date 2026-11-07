@@ -6,7 +6,7 @@ services:
     name: hub-of-me
     runtime: node
     plan: free
-    branch: main
+    branch: main  # the rebuild lives on branch rebuild until Isaak merges it
     buildCommand: npm install --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /api/healthz
@@ -27,21 +27,21 @@ services:
         sync: false
       - key: CLAUDE_CODE_OAUTH_TOKEN
         sync: false
+      - key: CLAUDE_TOKEN_CREATED
+        sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: GEMINI_API_KEY
         sync: false
-      - key: USD_TO_EUR
+      - key: GEMINI_EMBED_MODEL
         sync: false
-      - key: MONTHLY_CAP_EUR_CENTS
+      - key: MODEL_FAST
         sync: false
-      - key: PUBLIC_URL
+      - key: MODEL_MAIN
         sync: false
-      - key: GOOGLE_CLIENT_ID
+      - key: MODEL_DEEP
         sync: false
-      - key: GOOGLE_CLIENT_SECRET
-        sync: false
-      - key: SEARCH_ENABLED
+      - key: MODEL_REVIEW
         sync: false
       - key: DIAGNOSTICS_TOKEN
         sync: false

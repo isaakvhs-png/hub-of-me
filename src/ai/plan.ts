@@ -94,6 +94,7 @@ export async function planComplete(req: AiRequest & { model: string }): Promise<
         persistSession: false,
         cwd: workDir(),
         env,
+        ...(req.onDelta ? { includePartialMessages: true } : {}),
       },
     })) {
       if (message.type === "rate_limit_event") {
@@ -106,6 +107,10 @@ export async function planComplete(req: AiRequest & { model: string }): Promise<
         if (error === "rate_limit" || error === "billing_error") limitedUntil = Math.max(limitedUntil, Date.now() + 15 * 60 * 1000);
         const content = ((message.message as { content?: { type: string; text?: string }[] })?.content ?? []);
         for (const block of content) if (block.type === "text" && block.text) text = block.text; // the last text is the answer
+      }
+      if (message.type === "stream_event" && req.onDelta) {
+        const event = message.event as { type?: string; delta?: { type?: string; text?: string } } | undefined;
+        if (event?.type === "content_block_delta" && event.delta?.type === "text_delta" && event.delta.text) req.onDelta(event.delta.text);
       }
       if (message.type === "result") result = message;
     }
