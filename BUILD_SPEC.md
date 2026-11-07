@@ -227,6 +227,23 @@ Old step loop and `settings.mind_loop`; work sessions (`brain_sessions`) → run
 7. Bench of stress tests with the mock model; diagnostics additions; fresh-start script; generated HOW_YOU_WORK.md.
 8. Delete nothing; retire per §12; update `CLAUDE.md` and this file.
 
+## 13a. Companion files
+
+- `docs/STRESS_TESTS.md`: every scenario run through the design (the bench).
+- `docs/FAILURE_MODES.md`: 48 things that can go wrong, the evidence for each, how it diagnoses them.
+- Visual references (Isaak's claude.ai account): the design pages, the full flowchart ("everything open", also as a diagrams.net file), and the single-view mock-up, which is the target for the screen.
+
+## 13b. Decisions log, 7 Nov (so nothing lives only in a chat)
+
+- Fresh start: archive the old web, re-feed his files; the old conversation is not re-fed (little context there).
+- Hub of Me is not fed builder documents or CORE_INSTRUCTIONS; its knowledge of itself is built in (§9). Isaak's own first messages (the birth message, his goals, the week-one tests, "you need a backup") come after the build is simulated and reported.
+- Gemini embeddings are fine (privacy accepted). Shared Pro allowance is a non-issue. Dictation noise is a non-issue.
+- One build, delivered whole, not in rounds; checkpoints stay on the builder's side (commit and push after every piece; bench before handing over).
+- Replay: every step visible (steady 1.6 s minimum, or real time capped), real duration shown. The view shows every box open at once; zoom and follow.
+- Isaak wants to be able to ask it how it works and see the map point at the answer.
+- Repo is private since 7 Nov; Render deploys still work. GitHub Actions ping to be retired for the outside pinger.
+- After go-live: optional daily outside check (a scheduled task on Isaak's account reading diagnostics), if he wants it. Rotate the diagnostics token and the Claude token (both were pasted in a chat on 7 Nov).
+
 ## 14. Open decisions (Isaak's)
 
 - May it revise its own self-guides without his yes? (open)
