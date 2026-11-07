@@ -16,8 +16,6 @@ export interface Ctx {
 /** A context inside one run: every step it takes is written to run_steps under this id. */
 export interface RunCtx extends Ctx {
   runId: string;
-  /** Set when Isaak speaks during a background run: the run finishes its current call, saves where it was, and pauses. */
-  shouldPause?: () => boolean;
 }
 
 export type StepKind = "call" | "act" | "event";

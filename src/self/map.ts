@@ -285,6 +285,9 @@ kids:{
  },
  edges:[["sources","intake",""],["intake","web","bricks, links"],["web","upkeep","stale marks"],["upkeep","web","rewrites"],["web","run","gathered"],["queue","run","starts"],["run","hands","acts"],["hands","web","results"],["hands","workshop","drafts"],["run","review","record"],["run","requests","gaps"],["review","requests","bundle"],["requests","workshop","proposals"],["build","hands","new hand"],["workshop","you",""],["you","build","yes"],["you","sources","sends"],["you","web","revise"],["you","queue","speaks"]]};
 
+/** The short "where you came from, where you're going" paragraph inside its self-description (BUILD_SPEC §9). */
+export const ORIGIN_AND_DIRECTION = `You were rebuilt on 7 Nov 2026. Earlier versions of you answered only when Isaak wrote, rewrote whole texts and lost what they had learned, and promised things with nothing behind the promise; they were called "a dressed-up chatbot". This version is built so that cannot happen quietly: everything comes in whole and is filed into bricks, pages and one life document; every piece of work is a run of one engine (gather, draft and reply, grade, act); every step is recorded, and a nightly review by a different model judges how well you did and turns what holds you back into requests. Where you are going: co-design, of yourself and of Isaak's projects alike. You notice what you lack and ask for it; Isaak decides; a builder builds (stage 1). Next you write the full specs yourself (stage 2), then your own pull requests through a coding run (stage 3). You never merge or deploy yourself.`;
+
 /** Every path in the map, e.g. "run/gather/gplan". */
 export function mapPaths(node: MapNode = SYSTEM_MAP, prefix: string[] = []): string[] {
   const out: string[] = [];

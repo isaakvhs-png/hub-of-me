@@ -13,5 +13,10 @@ export const KNOBS = {
   resumeAfterQuietMin: 10,            // background work resumes after Isaak has been quiet this long
   replaySteadyMs: 1_600,              // the view: each replayed step stays lit at least this long
   replayRealCapMs: 6_000,             // the view, real-time replay: long steps capped at this
+  // Added by the builder on 7 Nov (rhythm by code; not in the spec's table, so Isaak should look at them):
+  upkeepEveryMin: 30,                 // at most one upkeep run this often, when there is something stale or due
+  ownTimeEveryMin: 180,               // an open goal with nothing scheduled gets an own-time run at most this often
+  bigUploadReceiptChars: 5_000,       // uploads bigger than this get a one-line receipt in the chat at once
+  guidesNeedHisYes: false,            // BUILD_SPEC §14, open: may it revise its own self-guides without Isaak's yes? (false = it may; he sees each change)
 } as const;
 export type Knobs = typeof KNOBS;
