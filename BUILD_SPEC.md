@@ -1,4 +1,4 @@
-# Hub of Me: build spec (draft 6, 7 Nov 2026)
+# Hub of Me: build spec (draft 7, 7 Nov 2026)
 
 **This file is the source of truth for the rebuild.** It replaces `LAYERED_MIND_SPEC.md` (now background) wherever they differ. `DESIGN.md` §1 (philosophy) and §3 (boundaries) still hold. Written for whoever builds: start here, then read the code.
 
@@ -9,6 +9,9 @@ Rule for this repo: nothing personal about Isaak goes in it (people, relationshi
 ## 1. What we are building, in one paragraph
 
 A personal AI that takes in anything (messages, files, later audio and video), grows a memory of rings from it (everything kept whole → bricks → pages → one life document), and works in its own time. Every piece of work is **a run** of one engine: gather what it needs, draft and reply, then grade its intentions against its hands and act. A **mirror** sits on top: every run is recorded, a nightly review (by a different model) judges how effective it was and why, and what holds it back becomes a **request** it makes itself. Isaak decides in the workshop; a builder builds; later it writes its own pull requests. Everything is shown live in **one view**: the full system map with the memory rings, lighting up as it works, with chat, workshop and calendar beside it.
+
+### Co-design has two targets (draft 7)
+Co-design is the core feature, for **its own design and for Isaak's projects** alike (his internship workflow, his thesis, anything he works on). The same machinery serves both: requests, proposals, goals, bench drafts and pages all carry a **target**: `self` or a project (a page of kind `project` in the web). The workshop shows proposals per target.
 
 ## 2. Principles (unchanged from DESIGN.md, plus two)
 
@@ -47,7 +50,7 @@ links         (id, a, b, relation (answers a need|supports|contradicts|causes|pa
 embeddings    (brick_id | page_id | source_chunk_id, vector)   -- for similar-meaning search
 
 -- Rings 2..n and the centre
-pages         (id, kind 'page'|'life'|'guide'|'track', title, purpose, body (cites [[s:]] [[b:]] [[p:]]), level (computed),
+pages         (id, kind 'page'|'life'|'guide'|'track'|'project', title, purpose, body (cites [[s:]] [[b:]] [[p:]]), level (computed),
                status fresh|stale|writing, version, origin own|his, reviewed_at)
 page_members  (page_id, member_kind brick|page|source, member_id, weight, added_by)
 page_versions (page_id, version, title, body, change_note, claim_changed bool, reason_chain, at)
@@ -59,12 +62,12 @@ runs          (id, trigger you|schedule|upkeep|review, purpose, priority, due_at
                status queued|running|paused|done|failed, left_off, parent_goal_id NULL)
 run_steps     (id, run_id, node (map path, e.g. 'run/gather/gplan'), kind call|act|event, label, model NULL,
                ms, chars_in, chars_out, ok, detail JSON, at)          -- ONE log: feeds the live map, diagnostics and the review
-packs         (run_id, contents JSON, used JSON)                      -- what a run pulled in, and what it used
-goals         (id, text, why, status, next_run_id)                    -- its ongoing work (replaces agenda pursuits/jobs)
+packs         (run_id, contents JSON, used JSON)                      -- references (ids + char ranges), never copies of the text: storage stays small
+goals         (id, text, why, target 'self'|project_page_id, status, next_run_id)   -- its ongoing work (replaces agenda pursuits/jobs)
 bench         (id, kind draft|suggestion|question|checkin|report, title, body, status, refs JSON)  -- everything addressed to Isaak
-requests      (id, title, kind, problem, proposal, spec JSON, prediction, depends_on JSON, unblocks JSON, status,
+requests      (id, target 'self'|project_page_id, title, kind, problem, proposal, spec JSON, prediction, depends_on JSON, unblocks JSON, status,
                evidence_runs JSON, evidence_count, protected bool, his_decision, his_why, built_in, proof_run, merged_into)
-proposals     (id, title, why, request_ids JSON, status, his_decision, his_why)
+proposals     (id, target, title, why, request_ids JSON, status, his_decision, his_why)
 reports       (id, scale day|week, period, body, signals JSON)
 review_actions(id, report_id, type, payload JSON, applied bool)
 attention     (id, what, ms, at)                                      -- what Isaak opens in the workshop
@@ -123,7 +126,7 @@ Kept from today: `calendar` (as is), `users`, `settings`, the soul's **Nature** 
 
 ### 5.8 Workshop (a tab beside Chat and Calendar)
 - **Your bench**: everything addressed to Isaak (drafts, suggestions, questions, check-ins), plus his own notes and to-dos.
-- **Proposals**: ready first, each with evidence, spec, prediction, cost; buttons yes / not now / no, because… / revise / discuss; a thread.
+- **Proposals**, per target (itself, or one of Isaak's projects): ready first, each with evidence, spec, prediction, cost; buttons yes / not now / no, because… / revise / discuss; a thread.
 - **Reports**: nightly and weekly; what went live and whether it helped.
 - "Now" is the live map itself (no separate column). Attention signals record what Isaak opens.
 
@@ -168,7 +171,7 @@ One screen: **the full system map with the memory rings** in the middle row, a *
 | brick index read whole while under | 60,000 chars |
 | context pack | ~60,000 chars |
 | filing part size | 5,000 chars |
-| background share of weekly allowance | 30% |
+| background share of weekly allowance | 50% (Isaak: shared allowance is a non-issue) |
 | rewrites per page per root cause per day | 1 |
 | spot-checks per day | 3 |
 | request ready after | 2 runs, or when blocking |
@@ -178,6 +181,8 @@ One screen: **the full system map with the memory rings** in the middle row, a *
 
 ## 9. One self-description
 
+It does not get handover documents as input (they would mix builder talk into its memory). What it needs to know about itself is built in: the system map data below, `read_code`, and a short "where you came from, where you're going" paragraph inside the self-description.
+
 `src/self/map.ts` holds the system map: every part and step, with kind (code/model/memory/you/workshop), a one-line summary, a description, and edges. It is the single source for: the view, the `explain` and `read_code` hands, and `HOW_YOU_WORK.md` (generated from it). A test fails if a `run_steps.node` path is not in the map.
 
 ## 10. Diagnostics
@@ -186,9 +191,26 @@ One screen: **the full system map with the memory rings** in the middle row, a *
 - An **export this run** button in the view (one JSON file to hand to any AI).
 - The 48 failure modes and how each is diagnosed are listed in the design page ("What can go wrong"); each maps to a signal, a health check, a deep check, or an inspection hand above.
 
+## 11a. Before go-live
+
+- Run the bench with the mock model (plumbing), **and** a handful of stress tests against the real model (judgment), then report to Isaak.
+- Check that running the app on his Pro plan token is fine under Anthropic's terms.
+- Measure reply time; if plan calls are slow because each starts a fresh Claude Code process, try keeping one session warm.
+
+## 11b. The week-one tests (a file Isaak feeds it at the start; to finalise with him)
+
+It files the file like any source: one brick per test in its own corner, plus a goal "week one". Each nightly review adds a dated result entry to each test brick (entries accumulate, nothing is rewritten) and a page "Week one: how I'm doing" (purpose: are the tests passing?) summarises them, versioned. Draft tests:
+1. After the re-feed, the life document rings true to Isaak.
+2. "What should I prepare for <meeting>?" is answered with sources, in under a minute.
+3. It never asks something its own memory already holds.
+4. At least one useful thing a day that nobody asked for.
+5. Its nightly reports find real problems.
+
+Backups: not pre-built. Isaak tells it early that its data needs a backup; it should request the means (private storage, never the repo).
+
 ## 11. Fresh start
 
-Archive the current web (bricks, links, entries, moments, pages-in-notes, agenda, sessions) by setting `archived_at`; keep calendar, users, soul Nature lines. Start empty. Isaak re-feeds his files. On a big first intake its first goals are: write the first pages, then the life document, within the background share.
+Archive the current web (bricks, links, entries, moments, pages-in-notes, agenda, sessions, old conversation) by setting `archived_at`; keep calendar, users, soul Nature lines. Start empty. Isaak re-feeds his files (the old conversation is not re-fed: little context there). On a big first intake its first goals are: write the first pages, then the life document, within the background share.
 
 ## 12. Retire (data archived, removed from code paths and prompts)
 
@@ -208,5 +230,5 @@ Old step loop and `settings.mind_loop`; work sessions (`brain_sessions`) → run
 ## 14. Open decisions (Isaak's)
 
 - May it revise its own self-guides without his yes? (open)
+- Settled 7 Nov: Gemini embeddings are fine; the shared Pro allowance is a non-issue (Hub of Me becomes his main AI workspace); dictation noise is a non-issue.
 - The daily outside check (a scheduled task on his account): after go-live, if he wants it.
-- Background share of the allowance: start at 30%?
