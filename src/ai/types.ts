@@ -24,6 +24,8 @@ export interface AiRequest {
   webSearch?: boolean;
   /** Mark the system prompt as cacheable: repeated steps of one turn then read it at a fraction of the price. */
   cacheSystem?: boolean;
+  /** Streamed text as it is written (the plan route asks the SDK for partial messages). */
+  onDelta?: (text: string) => void;
 }
 
 export interface ProviderUsage {
