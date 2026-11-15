@@ -124,7 +124,34 @@ async function gist(summaryIds: string[]): Promise<{ id: string; title: string; 
   return r.rows.map((row) => ({ id: row.id, title: row.title, gist: plain(row.body).slice(0, 280), inputs: Number(row.n) }));
 }
 
-/** A body without its markers, for the models' reading. */
+const ORIGIN_TAG: Record<string, string> = { isaak: "from Isaak", web: "from the web/outside", self: "from your own earlier message", session: "from a work session" };
+
+/**
+ * A body as the models read it: every marker becomes a readable tag saying where that statement came from, so a model
+ * sees what the colours show Isaak (Isaak, 15 Nov: the colour "should be visible to the AI, obviously, too").
+ * A statement with no tag is a model's own earlier thought.
+ */
+export async function annotate(body: string): Promise<string> {
+  if (!body) return "";
+  const ids = [...new Set([...body.matchAll(/\[\[(s|m|img):([^\]]+)\]\]/g)].map((m) => `${m[1]}:${m[2]}`))];
+  const tags = new Map<string, string>();
+  for (const key of ids) {
+    const [t, rid] = [key.slice(0, key.indexOf(":")), key.slice(key.indexOf(":") + 1)];
+    if (t === "m") {
+      const row = (await db().query<{ title: string; kind: string }>(`SELECT title, kind FROM summaries WHERE id = $1`, [rid])).rows[0];
+      tags.set(key, row ? `[from the summary "${row.title}", mostly ${ORIGIN_TAG[row.kind === "project" ? "session" : await originOf(rid)] ?? "its own thoughts"}]` : "[from a summary that is gone]");
+    } else {
+      const row = (await db().query<{ origin: string; kind: string; title: string; file_name: string | null }>(`SELECT origin, kind, title, file_name FROM sources WHERE id = $1`, [rid])).rows[0];
+      tags.set(key, t === "img" ? `[picture: ${row?.file_name ?? row?.title ?? "gone"}]` : row ? `[${ORIGIN_TAG[row.origin] ?? row.origin}${row.kind === "reply" ? " in the chat" : row.kind === "file" ? `, file ${row.file_name ?? ""}` : ""}]` : "[from a source that is gone]");
+    }
+  }
+  return body
+    .replace(/\[\[(s|m|img):([^\]]+)\]\]/g, (_m, t, rid) => ` ${tags.get(`${t}:${rid}`) ?? ""}`)
+    .replace(/\{\{isaak\}\}([\s\S]*?)\{\{\/isaak\}\}/g, (_m, inner) => `[typed by Isaak himself:] ${inner}`)
+    .trim();
+}
+
+/** A body without its markers (for matching his edits and short previews). */
 export function plain(body: string): string {
   return body.replace(/\[\[(?:s|m|img):[^\]]+\]\]/g, "").replace(/\{\{\/?isaak\}\}/g, "").replace(/[ \t]+\n/g, "\n").trim();
 }
@@ -143,9 +170,8 @@ You look at the web one level at a time, starting at the centre. For the source 
 - "fits": ids of the summaries shown that this source should feed directly (often several);
 - "descend": ids of summaries shown whose inputs you want to see next, because the source may fit deeper there;
 - "new": new summaries to make for angles that are missing, each with "title" and "under" (ids of shown summaries the new one should feed into);
-- "instruction": true if the source is Isaak telling you how he wants you to behave or how to organise the web;
-- "status": true if (part of) the source is talk about the system itself: whether a model is down or back, what isn't placed yet, errors, what it is busy with. Status talk goes into its own summary of status talk, never into summaries about Isaak's life. A source that also says something about Isaak still fits where that belongs.
-Answer with one JSON object: {"fits": [], "descend": [], "new": [{"title": "", "under": []}], "instruction": false, "status": false, "why": "one line"}`;
+- "instruction": true if the source is Isaak telling you how he wants you to behave or how to organise the web.
+Answer with one JSON object: {"fits": [], "descend": [], "new": [{"title": "", "under": []}], "instruction": false, "why": "one line"}`;
 
 /** Where a source fits: from the centre outward, one level at a time. */
 export async function place(sourceId: string): Promise<{ fed: string[]; created: string[] }> {
@@ -173,7 +199,6 @@ async function placeInput(input: { type: "summary" | "source"; id: string }, lab
   const fed = new Set<string>();
   const created: string[] = [];
   let instruction = false;
-  let status = false;
   let frontier = [lifeId];
   const shown = new Set<string>(input.type === "summary" ? [input.id] : []);
   for (let depth = 0; depth < 8 && frontier.length; depth += 1) {
@@ -185,7 +210,7 @@ async function placeInput(input: { type: "summary" | "source"; id: string }, lab
     for (const s of level) shown.add(s.id);
     if (!level.length) break;
     const listing = level.map((s) => `- ${s.id} | ${s.title}${s.under ? ` (feeds ${s.under})` : " (centre)"} | ${s.inputs} summary inputs | ${s.gist || "(empty so far)"}`).join("\n");
-    const out = await callJson<{ fits?: string[]; descend?: string[]; new?: { title: string; under?: string[] }[]; instruction?: boolean; status?: boolean }>("web", {
+    const out = await callJson<{ fits?: string[]; descend?: string[]; new?: { title: string; under?: string[] }[]; instruction?: boolean }>("web", {
       task: "place",
       system: PLACE_SYSTEM,
       prompt: `${label}:\n${content}\n\nSUMMARIES AT THIS LEVEL:\n${listing}`,
@@ -202,26 +227,13 @@ async function placeInput(input: { type: "summary" | "source"; id: string }, lab
       fed.add(newId);
     }
     if (out.instruction && input.type === "source") instruction = true;
-    if (out.status && input.type === "source") status = true;
     frontier = (out.descend ?? []).filter((d) => known.has(d));
   }
   if (instruction) fed.add(await instructionsSummary());
-  if (status) fed.add(await statusSummary());
   for (const target of fed) await feed(target, input.type, input.id);
   await markStale([...fed]);
   light([...fed]);
   return { fed: [...fed], created };
-}
-
-/** Talk about the system itself has its own summary (Isaak, 15 Nov), which feeds "my life" like any other. */
-export async function statusSummary(): Promise<string> {
-  const r = await db().query<{ id: string }>(`SELECT id FROM summaries WHERE is_status = true AND absorbed_at IS NULL LIMIT 1`);
-  if (r.rows[0]) return r.rows[0].id;
-  const lifeId = await ensureLife();
-  const sid = await createSummary("System status");
-  await db().query(`UPDATE summaries SET is_status = true WHERE id = $1`, [sid]);
-  await feed(lifeId, "summary", sid);
-  return sid;
 }
 
 /** His instructions on how it should behave and organise itself: their own summary, inside "my life". */
@@ -239,6 +251,7 @@ const WRITE_SYSTEM = `You write one summary in Isaak's memory web from its input
 Mark where every statement comes from, right after it, with the input's marker exactly as given: [[s:ID]] for a source, [[m:ID]] for a summary. A statement with no marker is your own thought, conclusion or guess, and it shows as such, so only leave a statement unmarked when it really is yours.
 Where a picture from the inputs makes the summary more alive, put it on its own line as [[img:ID]] (only for inputs marked as pictures).
 Text marked as typed by Isaak himself is his own edit of this summary: weigh it and decide what to do with it.
+In summary inputs, tags in square brackets say where each statement came from (from Isaak, from the web, from your own earlier message, from a work session); a statement without a tag was a model's own thought.
 If a summary input is a summary of a project, say so plainly.
 
 Answer with one JSON object: {"title": "a short title", "body": "the summary with its markers", "tags": ["a few short labels for filtering: topics, periods, kinds"]}`;
@@ -256,7 +269,7 @@ export async function rewrite(summaryId: string, extra = ""): Promise<void> {
       const r = await db().query<{ title: string; body: string; stale: boolean; kind: string }>(`SELECT title, body, stale, kind FROM summaries WHERE id = $1 AND absorbed_at IS NULL`, [input.id]);
       const row = r.rows[0];
       if (!row) continue;
-      const text = `[[m:${input.id}]] SUMMARY${row.kind === "project" ? " OF A PROJECT" : ""} "${row.title}":\n${plain(row.body).slice(0, 4000) || "(still empty)"}`;
+      const text = `[[m:${input.id}]] SUMMARY${row.kind === "project" ? " OF A PROJECT" : ""} "${row.title}":\n${(await annotate(row.body)).slice(0, 5000) || "(still empty)"}`;
       parts.push(text); budget -= text.length;
     } else {
       const r = await db().query<{ kind: string; origin: string; title: string; text: string; mime: string | null; readable: boolean; file_name: string | null; created_at: string }>(
@@ -273,7 +286,7 @@ export async function rewrite(summaryId: string, extra = ""): Promise<void> {
   const out = await callJson<{ title?: string; body?: string; tags?: string[] }>("web", {
     task: "rewrite",
     system: WRITE_SYSTEM,
-    prompt: `${s.is_life ? 'This is "My life", the centre: the summary of his whole life, built from everything below it. What the system status summary says gets at most one short line here, like "the system runs smoothly" or "the system is not running smoothly right now; improvements are being made".\n' : ""}${(s as SummaryRow & { is_status?: boolean }).is_status ? "This summary is about the system itself: how it is running. Keep it short and current; newer status replaces older status.\n" : ""}${s.is_instructions ? "This summary holds Isaak's instructions on how you should behave and organise the web. Keep them precise; newer instructions win over older ones that contradict them, and say so.\n" : ""}CURRENT TITLE: ${s.title}\nCURRENT TEXT:\n${s.body || "(empty)"}\n${extra ? `\nISAAK ASKS FOR THIS REVISION: ${extra}\n` : ""}\nINPUTS:\n${parts.join("\n\n") || "(none yet)"}`,
+    prompt: `${s.is_life ? 'This is "My life", the centre: the summary of his whole life, built from everything below it.\n' : ""}${s.is_instructions ? "This summary holds Isaak's instructions on how you should behave and organise the web. Keep them precise; newer instructions win over older ones that contradict them, and say so.\n" : ""}CURRENT TITLE: ${s.title}\nCURRENT TEXT:\n${s.body || "(empty)"}\n${extra ? `\nISAAK ASKS FOR THIS REVISION: ${extra}\n` : ""}\nINPUTS:\n${parts.join("\n\n") || "(none yet)"}`,
     maxTokens: 8000,
   });
   const body = String(out.body ?? s.body);

@@ -31,7 +31,6 @@ export function scriptedModel(opts: CallOpts & { model: string }): string {
         descend,
         new: isNew ? [{ title: topic.charAt(0).toUpperCase() + topic.slice(1), under: [centre] }] : [],
         instruction: /\b(always|never|from now on|i want you to)\b/i.test(source),
-        status: /shut down|not placed|is down|model .* (back|down)/i.test(source),
         why: "mock placement",
       });
     }

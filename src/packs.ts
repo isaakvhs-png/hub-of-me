@@ -2,7 +2,7 @@ import { id } from "./ids.js";
 import { callJson } from "./models.js";
 import { NotFoundError, ValidationError } from "./errors.js";
 import { bump, db, light } from "./state.js";
-import { ensureLife, plain, readSummaries } from "./web.js";
+import { annotate, ensureLife, plain, readSummaries } from "./web.js";
 
 /**
  * Context packs (IDEA.md): made from a prompt ("gather a context pack on this and this"), stored in the Lego folder for
@@ -42,7 +42,9 @@ export async function buildPack(title: string, prompt: string): Promise<string> 
   const known = new Set(all.rows.map((s) => s.id));
   const picked = (out.pick ?? []).filter((p) => known.has(p)).slice(0, 40);
   const read = await readSummaries(picked);
-  const content = [`CONTEXT PACK: ${prompt}`, ...read.map((r) => `## ${r.title}\n${plain(r.body)}`)].join("\n\n");
+  const parts: string[] = [];
+  for (const r of read) parts.push(`## ${r.title}\n${await annotate(r.body)}`);
+  const content = [`CONTEXT PACK: ${prompt}`, ...parts].join("\n\n");
   const packId = id();
   await db().query(`INSERT INTO packs (id, title, prompt, content) VALUES ($1,$2,$3,$4)`, [packId, (title.trim() || String(out.title ?? "") || prompt).slice(0, 200), prompt, content]);
   light(picked);

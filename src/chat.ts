@@ -1,7 +1,7 @@
 import { id } from "./ids.js";
 import { call, callJson, ModelDownError } from "./models.js";
 import { bump, db, light, live } from "./state.js";
-import { addSource, applyChanges, lifeAndInstructions, nextLevel, plain, readSummaries, type Change } from "./web.js";
+import { addSource, annotate, applyChanges, lifeAndInstructions, nextLevel, plain, readSummaries, type Change } from "./web.js";
 import { addEvent } from "./calendar.js";
 import { popup } from "./popups.js";
 import { HOW_I_WORK, facts } from "./about.js";
@@ -122,8 +122,8 @@ async function answer(chatId: string): Promise<void> {
       const forced = live.chat.stopAsked ? "Isaak clicked to stop: answer NOW with what you have." : strayRun >= 3 ? "You strayed from your core instructions three rounds in a row: stop and answer NOW with what you have, and say that you stopped." : "";
       const prompt = [
         await facts(),
-        `MY LIFE (${life.id}):\n${plain(life.body) || "(still empty: you are just starting)"}`,
-        instructions ? `HOW ISAAK WANTS YOU TO WORK (${instructions.id}):\n${plain(instructions.body) || "(empty)"}` : "",
+        `MY LIFE (${life.id}):\n${(await annotate(life.body)) || "(still empty: you are just starting)"}`,
+        instructions ? `HOW ISAAK WANTS YOU TO WORK (${instructions.id}):\n${(await annotate(instructions.body)) || "(empty)"}` : "",
         read.length ? `SUMMARIES YOU OPENED:\n${read.map((r) => `${r.id} "${r.title}":\n${r.body}`).join("\n\n")}` : "",
         readSources.length ? `SOURCES YOU OPENED:\n${readSources.map((s) => `s:${s.id}:\n${s.text}`).join("\n\n")}` : "",
         `RECENT CHAT (oldest first):\n${recent}`,
@@ -147,7 +147,7 @@ async function answer(chatId: string): Promise<void> {
       const openIds = (out.open ?? []).map(String);
       const summaryIds = openIds.filter((o) => !o.startsWith("s:") && !read.some((r) => r.id === o));
       const sourceIds = openIds.filter((o) => o.startsWith("s:")).map((o) => o.slice(2));
-      for (const r of await readSummaries(summaryIds)) { read.push({ id: r.id, title: r.title, body: plain(r.body) }); roundMeta.opened.push(r.id); }
+      for (const r of await readSummaries(summaryIds)) { read.push({ id: r.id, title: r.title, body: await annotate(r.body) }); roundMeta.opened.push(r.id); }
       for (const sid of sourceIds) {
         const row = (await db().query<{ text: string }>(`SELECT left(text, 12000) AS text FROM sources WHERE id = $1`, [sid])).rows[0];
         if (row) { readSources.push({ id: sid, text: row.text }); roundMeta.opened.push(`s:${sid}`); }

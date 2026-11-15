@@ -195,15 +195,3 @@ describe("its own messages", () => {
   });
 });
 
-describe("status talk", () => {
-  it("goes into its own System status summary, which feeds my life", async () => {
-    const { say } = await import("../src/chat.js");
-    await say("The model that places things is shut down right now.");
-    await drain();
-    const w = await webView();
-    const status = w.summaries.find((s) => s.title === "System status");
-    expect(status).toBeTruthy();
-    const life = w.summaries.find((s) => s.is_life)!;
-    expect(life.inputs.some((i) => i.id === status!.id)).toBe(true);
-  });
-});

@@ -1,6 +1,6 @@
 import { call, callJson, downRoles, ModelDownError, roleDown, type Role } from "./models.js";
 import { bump, db, lightProject, onWake, setDoing } from "./state.js";
-import { freshen, lifeAndInstructions, place, plain, staleSummaries, unplaced } from "./web.js";
+import { annotate, freshen, lifeAndInstructions, place, plain, staleSummaries, unplaced } from "./web.js";
 import { acceptSuggestion, canon, closeProject, getProject, runAndWait, talk } from "./projects.js";
 import { createProposal } from "./proposals.js";
 import { say } from "./chat.js";
@@ -179,8 +179,8 @@ async function think(): Promise<boolean> {
     system: THINK_SYSTEM,
     prompt: [
       await facts(),
-      `MY LIFE:\n${plain(life.body) || "(empty)"}`,
-      instructions ? `HOW ISAAK WANTS YOU TO WORK:\n${plain(instructions.body)}` : "",
+      `MY LIFE:\n${(await annotate(life.body)) || "(empty)"}`,
+      instructions ? `HOW ISAAK WANTS YOU TO WORK:\n${await annotate(instructions.body)}` : "",
       `WHAT HE SAID AND GAVE LATELY:\n${recent.rows.map((r) => `- ${r.kind}: ${r.title} ${r.text}`).join("\n") || "(nothing)"}`,
       `PROPOSALS SO FAR:\n${proposals.rows.map((p) => `- ${p.title} (${p.status}${p.why ? `: ${p.why}` : ""})`).join("\n") || "(none)"}`,
       unreadable.rows.length ? `FILES YOU CAN'T READ YET:\n${unreadable.rows.map((u) => `- ${u.file_name} (${String(u.created_at).slice(0, 10)})`).join("\n")}` : "",
