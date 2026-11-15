@@ -1,7 +1,7 @@
 import { id } from "./ids.js";
 import { call, callJson, ModelDownError } from "./models.js";
 import { bump, db, light, live } from "./state.js";
-import { addSource, applyChanges, freshen, lifeAndInstructions, nextLevel, plain, readSummaries, type Change } from "./web.js";
+import { addSource, applyChanges, lifeAndInstructions, nextLevel, plain, readSummaries, type Change } from "./web.js";
 import { addEvent } from "./calendar.js";
 import { popup } from "./popups.js";
 import { HOW_I_WORK, facts } from "./about.js";
@@ -32,6 +32,7 @@ async function saveChat(role: "isaak" | "it", text: string, meta: Record<string,
 /** Something it says in the chat without being asked (its own work, a question, an update). Also a source. */
 export async function say(text: string, meta: Record<string, unknown> = {}): Promise<void> {
   const sourceId = await addSource({ kind: "reply", origin: "self", title: "Its own message in the chat", text });
+  await db().query(`UPDATE sources SET placed = true WHERE id = $1`, [sourceId]);
   await saveChat("it", text, { ...meta, unprompted: true }, sourceId);
 }
 
@@ -84,8 +85,6 @@ async function answer(chatId: string): Promise<void> {
   bump();
   const meta: { rounds: { why: string; opened: string[]; straying?: boolean }[]; stopped?: string } = { rounds: [] };
   try {
-    // Touching "my life" and its instructions brings them up to date first (slower, but never stale).
-    try { const first = await lifeAndInstructions(); await freshen([first.life.id, ...(first.instructions ? [first.instructions.id] : [])]); } catch { /* read them as they are */ }
     const { life, instructions } = await lifeAndInstructions();
     light([life.id, ...(instructions ? [instructions.id] : [])]);
     const read: { id: string; title: string; body: string }[] = [];
@@ -139,6 +138,8 @@ async function answer(chatId: string): Promise<void> {
       strayRun = straying ? strayRun + 1 : 0;
     }
     const replySource = await addSource({ kind: "reply", origin: "self", title: "Its reply in the chat", text: final });
+    // Kept as a source, but not placed: placing every reply doubled the work for little gain.
+    await db().query(`UPDATE sources SET placed = true WHERE id = $1`, [replySource]);
     await saveChat("it", final, meta, replySource);
   } catch (error) {
     if (!(error instanceof ModelDownError)) {

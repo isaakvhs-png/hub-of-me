@@ -15,8 +15,8 @@ export type Role = "chat" | "work" | "web" | "check";
 export const ROLE_MODEL: Record<Role, string> = {
   chat: process.env.MODEL_CHAT?.trim() || "claude-sonnet-5-5",
   work: process.env.MODEL_WORK?.trim() || "claude-opus-5-5",
-  web: process.env.MODEL_WEB?.trim() || "gemini-3.5-flash",
-  check: process.env.MODEL_CHECK?.trim() || "gemini-3.5-flash-lite",
+  web: process.env.MODEL_WEB?.trim() || "claude-haiku-5-5",
+  check: process.env.MODEL_CHECK?.trim() || "claude-haiku-5-5",
 };
 
 export const ROLE_NAME: Record<Role, string> = {
@@ -102,7 +102,7 @@ export async function callModel(model: string, opts: CallOpts, role: Role | null
   const rateLimited = (e: unknown) => /quota|rate.?limit|429|resource.?exhausted/i.test(e instanceof Error ? e.message : String(e));
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const { text, provider } = await raw(model, opts, role === "chat" ? 10 : 0);
+      const { text, provider } = await raw(model, opts, role === "chat" ? 10 : role === "web" || role === "check" ? 5 : 0);
       const ms = Date.now() - started;
       await record(opts.task, model, provider, true, ms, charsIn, text.length);
       if (role && down.has(role)) {

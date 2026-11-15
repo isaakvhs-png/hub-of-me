@@ -172,7 +172,7 @@ describe("its own work", () => {
 
 describe("shutdowns", () => {
   it("a model that can't answer shuts its part down with a popup, and says when it is back", async () => {
-    setMock((o) => { if (o.model.startsWith("gemini")) throw new Error("quota"); return scriptedModel(o); });
+    setMock((o) => { if (o.model === "claude-haiku-5-5") throw new Error("limit"); return scriptedModel(o); });
     await expect(call("web", { task: "x", system: "", prompt: "" })).rejects.toBeInstanceOf(ModelDownError);
     expect((await openPopups()).some((p) => p.kind === "shutdown")).toBe(true);
     setMock(scriptedModel);

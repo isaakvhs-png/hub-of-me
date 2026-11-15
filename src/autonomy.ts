@@ -167,7 +167,10 @@ Answer with one JSON object: {"proposals": [{"title": "", "body": "what and why"
 async function think(): Promise<boolean> {
   const count = Number((await db().query<{ n: string }>(`SELECT count(*) AS n FROM sources WHERE kind NOT IN ('reply','proposal')`)).rows[0]?.n ?? 0);
   if (count === lastThinkSourceCount || count === 0) return false;
-  if (Date.now() - lastThinkAt < 10 * 60_000) return false;
+  // At most once an hour, and not while three of its proposals are still waiting for him: no flood of proposals.
+  if (Date.now() - lastThinkAt < 60 * 60_000) return false;
+  const waiting = Number((await db().query<{ n: string }>(`SELECT count(*) AS n FROM proposals WHERE status = 'open'`)).rows[0]?.n ?? 0);
+  if (waiting >= 3) return false;
   lastThinkAt = Date.now();
   lastThinkSourceCount = count;
   setDoing("Thinking about what to propose");
@@ -188,7 +191,7 @@ async function think(): Promise<boolean> {
     ].filter(Boolean).join("\n\n"),
     maxTokens: 3000,
   });
-  for (const p of (out.proposals ?? []).slice(0, 5)) {
+  for (const p of (out.proposals ?? []).slice(0, Math.max(0, 3 - waiting))) {
     if (p?.title?.trim() && p.body?.trim()) await createProposal({ title: p.title, body: p.body });
   }
   if (out.say?.trim()) await say(out.say.trim());
