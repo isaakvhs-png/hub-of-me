@@ -60,8 +60,10 @@ async function raw(model: string, opts: CallOpts, priority = 0): Promise<{ text:
     system: opts.system,
     messages: [{ role: "user", content: opts.prompt }],
     model,
-    maxTokens: opts.maxTokens ?? 8000,
+    maxTokens: Math.max(opts.maxTokens ?? 8000, model.startsWith("gemini") ? 8000 : 0),
     structured: opts.json,
+    // Gemini counts its thinking inside the output budget; keep it low so the answer itself fits.
+    ...(model.startsWith("gemini") ? { thinking: "low" as const } : {}),
     webSearch: opts.webSearch,
     images: opts.images,
     priority,
@@ -114,6 +116,7 @@ export async function callModel(model: string, opts: CallOpts, role: Role | null
     }
   }
   const why = lastError instanceof Error ? lastError.message : String(lastError);
+  console.error(`model call failed: ${model} (${opts.task}): ${why}`);
   await record(opts.task, model, mock ? "mock" : "live", false, Date.now() - started, charsIn, 0, why);
   if (role && !down.has(role)) {
     down.set(role, { since: new Date().toISOString(), why: why.slice(0, 300) });
