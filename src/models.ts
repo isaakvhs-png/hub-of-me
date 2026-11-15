@@ -99,6 +99,7 @@ export async function callModel(model: string, opts: CallOpts, role: Role | null
   const started = Date.now();
   const charsIn = opts.system.length + opts.prompt.length;
   let lastError: unknown = null;
+  const rateLimited = (e: unknown) => /quota|rate.?limit|429|resource.?exhausted/i.test(e instanceof Error ? e.message : String(e));
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const { text, provider } = await raw(model, opts, role === "chat" ? 10 : 0);
@@ -112,7 +113,8 @@ export async function callModel(model: string, opts: CallOpts, role: Role | null
     } catch (error) {
       lastError = error;
       if (mock) break;
-      await new Promise((r) => setTimeout(r, 1500));
+      // A per-minute limit passes by itself: wait a minute before trying again instead of shutting down at once.
+      await new Promise((r) => setTimeout(r, rateLimited(error) ? 65_000 : 1500));
     }
   }
   const why = lastError instanceof Error ? lastError.message : String(lastError);
