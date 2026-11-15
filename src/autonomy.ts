@@ -1,0 +1,198 @@
+import { call, callJson, downRoles, ModelDownError, roleDown, type Role } from "./models.js";
+import { bump, db, lightProject, onWake, setDoing } from "./state.js";
+import { freshen, lifeAndInstructions, place, plain, staleSummaries, unplaced } from "./web.js";
+import { acceptSuggestion, canon, closeProject, getProject, runAndWait, talk } from "./projects.js";
+import { createProposal } from "./proposals.js";
+import { say } from "./chat.js";
+import { popup } from "./popups.js";
+import { HOW_I_WORK, facts } from "./about.js";
+import { getKnob } from "./settings.js";
+
+/**
+ * Its own work (IDEA.md). It only sleeps when there is no work. Anything that comes in wakes it. In order:
+ *  1. what came in: place it in the web;
+ *  2. its own open projects, one at a time, its own choice which: design the board, run it, judge, go on, until a
+ *     satisfying junction (then a summary and his input before continuing) or it needs him;
+ *  3. its own thinking: proposals (as many as it likes), things to bring up (like files it can't read yet);
+ *  4. outdated summaries, at the bottom of the list.
+ */
+
+let running = false;
+let wakeUp: (() => void) | null = null;
+let stopped = false;
+let lastThinkAt = 0;
+let lastThinkSourceCount = -1;
+
+export function startAutonomy(): () => void {
+  stopped = false;
+  onWake(() => { if (wakeUp) { const w = wakeUp; wakeUp = null; w(); } });
+  void loop();
+  return () => { stopped = true; if (wakeUp) wakeUp(); };
+}
+
+async function sleep(ms: number) {
+  await new Promise<void>((resolve) => { wakeUp = resolve; setTimeout(() => { if (wakeUp === resolve) wakeUp = null; resolve(); }, ms); });
+}
+
+async function loop() {
+  if (running) return;
+  running = true;
+  while (!stopped) {
+    let worked = false;
+    try { worked = await oneStep(); } catch (error) { setDoing(""); console.error("own work:", error); }
+    if (!worked) { setDoing(""); await sleep(60_000); }
+  }
+  running = false;
+}
+
+let lastProbe = 0;
+/** A part that shut down comes back only when its model answers again: every five minutes it asks a tiny question. */
+async function probe() {
+  if (Date.now() - lastProbe < 5 * 60_000) return;
+  lastProbe = Date.now();
+  for (const d of downRoles()) {
+    await call(d.role as Role, { task: "probe", system: "Answer with the single word: ok", prompt: "ok?", maxTokens: 20 }).catch(() => undefined);
+  }
+}
+
+/** One piece of work; false when there was nothing to do. */
+export async function oneStep(): Promise<boolean> {
+  await probe();
+  if (!roleDown("web")) {
+    const next = await unplaced(1);
+    if (next[0]) {
+      setDoing("Placing something new in the web");
+      await place(next[0]).catch(async (error) => {
+        // Gemini being down is not this source's fault: it waits for Gemini to come back.
+        if (error instanceof ModelDownError) return;
+        // A source that can't be placed for another reason should not block the rest.
+        await db().query(`UPDATE sources SET placed = true WHERE id = $1`, [next[0]]);
+        await db().query(`INSERT INTO activity (id, what, detail) VALUES (gen_random_uuid()::text, 'place failed', $1)`, [String((error as Error).message)]).catch(() => undefined);
+      });
+      return true;
+    }
+  }
+  const own = Boolean(await getKnob("ownWork"));
+  if (own && !roleDown("work")) {
+    const project = await pickProject();
+    if (project) { await workOn(project); return true; }
+    if (await think()) return true;
+  }
+  if (own && !roleDown("web")) {
+    const stale = await staleSummaries(1);
+    if (stale[0]) { setDoing("Updating an outdated summary"); await freshen(stale); return true; }
+  }
+  return false;
+}
+
+async function pickProject(): Promise<string | null> {
+  const r = await db().query<{ id: string; title: string; goal: string }>(`SELECT id, title, goal FROM projects WHERE owner = 'it' AND status = 'open' ORDER BY last_active_at`);
+  if (!r.rows.length) return null;
+  if (r.rows.length === 1) return r.rows[0].id;
+  // One at a time, its own choice which.
+  try {
+    const out = await callJson<{ pick?: string }>("work", {
+      task: "pick-project",
+      system: "You work on your own projects one at a time. Pick the one to work on now. Answer with one JSON object: {\"pick\": \"project id\"}",
+      prompt: r.rows.map((p) => `- ${p.id} | ${p.title} | ${p.goal.slice(0, 300)}`).join("\n"),
+      maxTokens: 300,
+    });
+    return r.rows.find((p) => p.id === out.pick)?.id ?? r.rows[0].id;
+  } catch { return r.rows[0].id; }
+}
+
+const JUDGE_SYSTEM = `You are working on one of your own projects in Isaak's workspace, on your own. You just ran a round on its board. Judge where it stands:
+- "continue": there is more to do; say in "next" what the next round should do;
+- "junction": you reached a satisfying junction; before continuing you ask Isaak for his input (say what in "ask");
+- "need_input": you can't go on without him (say what you need in "ask").
+Answer with one JSON object: {"state": "continue" | "junction" | "need_input", "next": "", "ask": "", "say": "one or two sentences for the chat if he should know something now, else empty"}`;
+
+async function workOn(projectId: string) {
+  const project = await getProject(projectId);
+  setDoing(`Working on my project "${project.title}"`);
+  lightProject(projectId);
+  const last = await db().query<{ result: string }>(`SELECT result FROM runs WHERE project_id = $1 ORDER BY started_at DESC LIMIT 1`, [projectId]);
+  const nextHint = await db().query<{ text: string }>(`SELECT text FROM project_messages WHERE project_id = $1 AND role = 'it-note' ORDER BY created_at DESC LIMIT 1`, [projectId]);
+  const self = last.rows[0]
+    ? `Working on your own. The last round's result is above. ${nextHint.rows[0]?.text ? `Your plan for this round: ${nextHint.rows[0].text}. ` : ""}Design the board for the next round (change what needs changing) and run it.`
+    : `Working on your own. This is the first round of your project. Its goal: ${project.goal}. Design the board for it and run it.`;
+  const { reply, proposed } = await talk(projectId, self, "it");
+  if (proposed) {
+    const msg = await db().query<{ id: string }>(`SELECT id FROM project_messages WHERE project_id = $1 AND proposed_board IS NOT NULL ORDER BY created_at DESC LIMIT 1`, [projectId]);
+    if (msg.rows[0]) await acceptSuggestion(projectId, msg.rows[0].id);
+  }
+  const { board } = await canon(projectId);
+  if (!board.pieces.some((p) => p.type === "model")) {
+    await db().query(`UPDATE projects SET status = 'waiting' WHERE id = $1`, [projectId]);
+    await say(`I got stuck on my project "${project.title}": I couldn't build a board to run (${reply.slice(0, 300)}). Could you take a look in the project?`, { projectId });
+    return;
+  }
+  const run = await runAndWait(projectId, "it");
+  if (run.status === "waiting") return; // the "me" element: the run waits for his answer; it said so in the chat
+  if (run.status === "stopped" || run.status === "failed") {
+    await db().query(`UPDATE projects SET status = 'waiting' WHERE id = $1`, [projectId]);
+    await say(`My project "${project.title}" stopped (${run.status}): ${run.result.slice(0, 400)} I'll wait for you before going on.`, { projectId });
+    await popup("question", `"${project.title}" stopped`, run.result.slice(0, 2000), projectId);
+    return;
+  }
+  const judge = await callJson<{ state?: string; next?: string; ask?: string; say?: string }>("work", {
+    task: "judge-round",
+    system: JUDGE_SYSTEM,
+    prompt: `PROJECT "${project.title}"\nGOAL: ${project.goal}\n\nTHE ROUND'S RESULT:\n${run.result.slice(0, 20000)}`,
+    maxTokens: 1500,
+  });
+  const state = judge.state === "junction" || judge.state === "need_input" ? judge.state : "continue";
+  if (state === "continue") {
+    await db().query(`INSERT INTO project_messages (id, project_id, role, text) VALUES (gen_random_uuid()::text, $1, 'it-note', $2)`, [projectId, String(judge.next ?? "").slice(0, 4000)]);
+    if (judge.say?.trim()) await say(judge.say.trim(), { projectId });
+    return;
+  }
+  // A junction: it writes the summary, just like when they work on it together, and asks before going on.
+  if (state === "junction") await closeProject(projectId, null, "junction");
+  else await db().query(`UPDATE projects SET status = 'waiting' WHERE id = $1`, [projectId]);
+  const ask = String(judge.ask ?? "What do you think, and how should I go on?");
+  await say(`${state === "junction" ? `I reached a good point in my project "${project.title}" and wrote its summary.` : `I need you on my project "${project.title}".`} ${ask}`, { projectId });
+  await popup("question", `"${project.title}": ${state === "junction" ? "a good point to check in" : "needs your input"}`, ask, projectId);
+  bump();
+}
+
+const THINK_SYSTEM = `You have your own time in Isaak's personal system.
+
+${HOW_I_WORK}
+
+You may propose projects of your own: as many as you like, each with what and why. Don't repeat proposals he has seen unless you have a new reason; you may always revisit an idea if it is worth it. You may also bring something up in the chat (for example files you can't read yet), when you judge it is useful now. If nothing is worth doing, do nothing.
+Answer with one JSON object: {"proposals": [{"title": "", "body": "what and why"}], "say": "something for the chat, or empty"}`;
+
+/** Its own thinking: proposals and things to bring up. Only when something new came in since it last thought. */
+async function think(): Promise<boolean> {
+  const count = Number((await db().query<{ n: string }>(`SELECT count(*) AS n FROM sources WHERE kind NOT IN ('reply','proposal')`)).rows[0]?.n ?? 0);
+  if (count === lastThinkSourceCount || count === 0) return false;
+  if (Date.now() - lastThinkAt < 10 * 60_000) return false;
+  lastThinkAt = Date.now();
+  lastThinkSourceCount = count;
+  setDoing("Thinking about what to propose");
+  const { life, instructions } = await lifeAndInstructions();
+  const proposals = await db().query<{ title: string; status: string; why: string }>(`SELECT title, status, why FROM proposals ORDER BY created_at DESC LIMIT 40`);
+  const unreadable = await db().query<{ file_name: string; created_at: string }>(`SELECT file_name, created_at FROM sources WHERE readable = false ORDER BY created_at DESC LIMIT 20`);
+  const recent = await db().query<{ title: string; text: string; kind: string }>(`SELECT title, left(text, 600) AS text, kind FROM sources WHERE origin = 'isaak' ORDER BY created_at DESC LIMIT 15`);
+  const out = await callJson<{ proposals?: { title?: string; body?: string }[]; say?: string }>("work", {
+    task: "own-time",
+    system: THINK_SYSTEM,
+    prompt: [
+      await facts(),
+      `MY LIFE:\n${plain(life.body) || "(empty)"}`,
+      instructions ? `HOW ISAAK WANTS YOU TO WORK:\n${plain(instructions.body)}` : "",
+      `WHAT HE SAID AND GAVE LATELY:\n${recent.rows.map((r) => `- ${r.kind}: ${r.title} ${r.text}`).join("\n") || "(nothing)"}`,
+      `PROPOSALS SO FAR:\n${proposals.rows.map((p) => `- ${p.title} (${p.status}${p.why ? `: ${p.why}` : ""})`).join("\n") || "(none)"}`,
+      unreadable.rows.length ? `FILES YOU CAN'T READ YET:\n${unreadable.rows.map((u) => `- ${u.file_name} (${String(u.created_at).slice(0, 10)})`).join("\n")}` : "",
+    ].filter(Boolean).join("\n\n"),
+    maxTokens: 3000,
+  });
+  for (const p of (out.proposals ?? []).slice(0, 5)) {
+    if (p?.title?.trim() && p.body?.trim()) await createProposal({ title: p.title, body: p.body });
+  }
+  if (out.say?.trim()) await say(out.say.trim());
+  return true;
+}
+
+export function resetThinkForTests() { lastThinkAt = 0; lastThinkSourceCount = -1; }

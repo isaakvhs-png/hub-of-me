@@ -1,0 +1,37 @@
+{
+  "name": "hub-rings",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n api,web \"HUB_PORT=43124 tsx watch server/index.ts\" \"vite\"",
+    "start": "NODE_ENV=production tsx server/index.ts",
+    "build": "vite build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.318",
+    "@electric-sql/pglite": "^0.3.14",
+    "@hono/node-server": "^1.19.6",
+    "hono": "^4.10.4",
+    "mammoth": "^1.11.0",
+    "pg": "^8.16.3",
+    "tsx": "^4.20.6",
+    "unpdf": "^1.4.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.5",
+    "@types/react": "^18.3.26",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.7.0",
+    "concurrently": "^9.2.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.1",
+    "vitest": "^3.2.4"
+  }
+}

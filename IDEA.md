@@ -1,0 +1,228 @@
+# The idea — in Isaak's own words
+
+Only Isaak's own words, in order. Don't rewrite or summarise.
+
+> All right. You gotta pitch the idea again. So we get a system where I can chat with it. And each message that I say and each file that I upload, whatever, it has the capability to take any kind of file, right? And anything that I upload or say to it gets logged into the summary system. We have a summary of my life in the middle. And then, but that summary is built upon summaries of summaries of summaries, right? So we build from the outside in. And then in this system that we create, it creates different summaries, and often they are redundant and they cover the same ground. Example, my internship may feed into my career summary. No, my internship may feed into my university. My university may feed into my career, and my career may feed into my life as a whole. But my internship, as well as being counted, you know, as its own, as well as counting towards my university, it also counts as a topic of me exploring career possibilities, which of course then feeds redundantly into my career summary. And that redundancy is on purpose. Also, a summary is created, another redundant summary of me in 2026, or, you know, me in, like, a summary is created of sort of a project which I'm undergoing right now. To reorganize my life a bit. In that case, it becomes more the background context in which I'm doing it, right? And this might sit in an entirely different, like, tree of summaries. And it's like that. So summaries, I would like to create a system where everything is really interconnected, and there are a lot of redundant entries, so to say. My point is, if I upload something about my summary, about my internship, I don't just want it to create a summary of my internship. No, I want that to map this into different places. Do you get the what I'm describing here?
+
+## Follow-ups, 15 Nov 2026
+
+> Yeah, regarding your answer. So please just retain my original message, right? My original message has got the has got all the good ideas in it. Your summary often just loses stuff, right? And changes stuff that I'm not aware of. So keep my original message, keep everything from there intact, and then just addend the following to it where it matters. So don't create your own summary for this, please. So you said one rule makes it work. When something comes in, the system asks which summaries does this belong in, not where does this belong. I don't really get that, honestly. So that's unimportant, but it puts the source in once as raw material that's always kept. That's true. Yeah, marking summaries as needing updates is right as well. So yeah, basically you just put in the idea. Something comes in, it looks at everything and see, okay, where does this fit, and then tags those things as need updating. So that's all you can really add to it from your thing. You're right that it triggers a bit of a cascade problem, but indeed, things only being updated when it gets accessed is a good fallback. If something is not updated yet, and then we need to access everything, that's gonna create a bit of a slow model when it needs to look through its own memory, and a lot of things haven't been updated yet, but fine, I can live with that for now. Also, if it does indeed do stuff during its downtime, that helps a lot. No, I don't want you to put this in a one-page design. I want you to keep my own wording and then just addend what's important. So yeah, do that.
+
+> Fair enough. It's probably going to come up with its own like summaries, right? You can't trust these kinds of models to do exactly what you want them to. Like that redundancy I mentioned. Um, I feel very much that I might have to guide it through that a little, you know? Tell it, okay, this is a project I'm doing. It's also related to internship and yada, yada, yada, yada, yada, right? I'm going to have to like help it organize its own tree. I don't mind that a lot. Um, It's just I'm not sure how to. Do we have a revise button? Or should I simply be able to drop a message into it like, yo, your current structure looks like this and this, but I would also like it to have this and this, or I would like it to change it in this fashion. Will that be enough, do you think? Or do we need a specialized function for that?
+
+> Right. Yeah, that's very true. I was working from the assumption that you would be able to see the tree, but yeah, you do indeed need to see the map. No. Your second idea, fuck that. I'm not going to micromanage to this extent, right? I don't like popping in. Popping in like this hard coded rule is only going to serve to make it more complicated. You say it needs a special like way to indicate, okay, these are my words, these are law, but that's the idea anyway, right? Like, I don't know, but if I say to it explicitly, okay, I want you to reorganize in this fashion, do you really think it's going to drift? Because it's going to read that I want you to reorganize in this fashion every time. So like, hey,
+
+> Yeah, so I feel that's the problem you are highlighting. Um, Okay, first of all, summarize my messages again. Addendum, I mean. So I will be giving it instructions, right? So on the structure of the map and probably also how it behaves, sort of, right? Um, And you say that it drifts when it doesn't read those instructions or when it ignores them, is what I want to add. And when there are a lot of contrasting, I may say things which contrast each other instructions. So yeah, that could be a problem that it doesn't read those. But I feel we can like change it by the architecture. We can like solve this by the architecture of the web that's created. What do you think?
+
+> So yeah, I think that does solve it. It doesn't sit next to the summary of my life. It is inside the summary of my life, which it reads at all times. So that's good. Um, Now on to model behavior. I really have my doubts that prompting an LLM differently is gonna do anything for you. Like, well, maybe it can. I don't know. Prompting an LLM is not gonna make it behave fundamentally different. It will just be a filter over its usual response. Is kind of what I f- I feel is happening. So I don't know about that, but fine. Let's try it, right? Um, Let's see if this works for it. So we trust for now that we can give it the personality that we want, but solely based on input. Um, Now for functionality, this is a whole different aspect of it. Cause maybe we need a button that I click on for a response that automatically switches off then. Um, And if I click it on, the thing gets access to its functionalities. If not, it's just a chatbot with a sorting system, right? With its functionalities turned on, it can do all sorts of stuff. And I think we need to think about how that stuff manifests. Like, how does that look like? So I'm open to ideas.
+
+> No. So I think the way that I would want this to work, the model, when it's not triggered, it has the ability to manage its own sorting system, right? It also has the ability to add to my calendar, and it also has the ability to add to my sorting system, right? Through work that it's doing on its own. Not that we explored that avenue yet, but it has it. When I click this button, it opens up the workspace. And the workspace is a separate chat. It's not inside of our chat, so to say. And the workspace is for kind of co-work, I guess. So all of its functionality opens up here. I can tell it to construct, and we work kind of in rounds. So the workspace works like a board in front of me where elements are generated. And me and the board stays between rounds, but can be revised based on my speech, what I tell it, right? So I could, for example, instruct it on how to put a context pack together, or I can just tell it, put a context pack together yourself. This then gets dropped into the board. And then after that, I may say, okay, take this context pack, give it to an AI and make it work in the web search module, which is then also added to the board. It works like that. And then when we are done, the summary of everything that we did, including modules and including the board layouts, is generated. The summary is made of that, and that is added to the web. Does that make sense? Critically assess, please.
+
+> So yeah, of course, there literally we take a screenshot of the board and attach that. That's how it works, and it takes the entire conversation history, and they are put in as raw files, right? And then the summary of this work session is generated based on that. And yeah, your thing of when is it done? That's very correct. When I click into the summary of a work session, there should just be a button that says pick this back up, and boom, there it is back in the workshop, exactly where we left it off. And of course, when it actually runs the thing which we have built on the board, output. All right, so the console log is saved. Its thoughts at every step of the way is saved. In the summary comes the exact well, the whole run is replayable to its finest grains, right? You can see exactly how it worked inside of the web search module, for example, etc., etc. You say what can be on the board. Well, it should all be defined. It should be like a Lego set, like pre-built elements that can be on the board. So, example, right? I open up the workplace. I say, gather a context pack on this and this and this. Boom, context pack on the board. I then tell it, all right, we put a model on the board. So boom, Gemini is on the board. We can link the context pack to Gemini and like also copy the context pack for other AIs. Then we load the web browsing module, which we designed beforehand. It isn't, my point is, it's an element which has already been in the system, right? The web module is code. It's literal code that helps the model browse the web more efficiently. It's just an element that we load in that has been defined before, and it cannot like make up elements on the spot. So to complete my example, we load the web module, and we then simply we instruct. We load the web module, and I say, okay, first we make the. First, we make the model with this context pack go into the web search module, and afterwards it returns its results to me. And then it just draws an arrow between the model with its context pack and the web search module, and then another arrow with a 2 on it back to me on the board. That's how it works, right? That's just my example. Well, the calendar without the button, yeah, it can just add to my calendar whenever it feels like. Again, we also want to make it autonomous in the long run, but we will discuss that later. And on your point of the workspace feeds the web, I don't get how this is unclear. We can load context packs into the web. Or sorry, we can load context packs into the workspace. And then once a work session is concluded, a summary gets put into it in the web. And like I said, I already talked about that.
+
+> Yeah, this is good. We need to work through this idea like this, I think. Imagine you were a code, you were a computer, and you got these building instructions. Imagine you can invent nothing yourself, right? If even the tiniest detail is left unclear in the summary, you cannot build it, and the build will fail, right? Look at it from that direction. So really make clear what you still need to know. Who answers in the main chat? Good question. I don't think who answers in the main chat. So first of all, you can let go of all of the ideas that are from the old build, right? Unless I explicitly say it. So no Jarvis core split. Like I said in the beginning, we're treating this as the blueprint, which has to be precise. So who answers in the normal chat? A model does, I guess. It sees my message. It At the same time it sees the core summary. It can reason at that point. Uh, Is this enough to answer his request, or do I need to open additional summaries? At which point it can do that if it likes, and then it can go as many rounds as it likes, opening up modules until it finally responds to my message. There is more there to unpack, so such as perhaps it can present, it receives my prompts plus its core summary. So it receives my prompt and then it starts like spinning, meaning its original answer is being generated. And then if it decides to answer, it just answers fine. But if that spinning symbol turns into a 2, then that means it's opening up additional shit, at which point I can click on it to just stop that. I want you to answer just based on what you have currently. I hope that answers it. Who builds the Lego pieces? At first, you can just build them. Um, How does the board run? I guess the board, in principle, it runs completely once I click go. So we built it. We built with modules beforehand what it does, right? So it's like creating a game plan. So we load in the model and the context pack. And we draw an arrow from it into the web search module. And then when we click go, that model with that context pack and its instructions goes to the web search module. And does some digging, and then it returns to me to give its final summary, at which point we can decide what to do from there. Maybe we change the board, maybe we make it rerun it again with like slightly different instructions. Who cares? But we should be able to build into the board moments of involvement of me, so it can, may perhaps after a certain step, it can come to me and say, okay, I found this and this and this. How do you want me to proceed? I don't know exactly yet. Can the workspace touch the web directly? Good question. I want to say no, because the workspace is also a place for experimenting. So if I fuck anything up there, I don't want it to have too bad of consequences, So I would say a summary is generated from a work session, which can include everything therein, which may then potentially influence the web. But the work session itself cannot influence the web too much. Some ideas from the message I dropped aren't in the file. So I think you still know them, right? It's like, it summaries of different parts. So normal black is just my own words. I mean, I guess that doesn't really work entirely, because a summary is always to an extent an interpretation of the model of my thoughts. So maybe we just need a different color. I don't know about this one yet. You can talk to me about different colors for certain things. Your question 6 I already answered, I think. So you can append this to our strategy and talk to me about some things.
+
+> Yeah, your color idea is fine. I would create another color for work sessions. Because otherwise, how is it gonna log the result of work sessions in its own web? Um, It can create new summaries freely, but only based off sources, so stuff it finds on the web, um, or stuff that I upload to it, or when it's in its own time. Again, we haven't discussed its autonomy yet, right? So that's hard to answer, but yeah, it can create sources on its own. Um, What is a summary? I would say a summary is just plain text, maybe with pictures included. If I upload it, I don't want to enforce a um, hard text limit. However, it is summaries of summaries of summaries. So the core document, my life, has sentences originating from all of its underlying summaries, right? It creates a paragraph on this. And the paragraph doesn't have to be like a bullet point thing. It doesn't have to list off systematically its different summaries. No, it combines them into a cohesive whole. While and then if it needs to almost verbatim repeat a summary that came earlier, that's fine. If it wants to shrink that summary or like summarize it further into like just a couple lines, that's also fine. That's up to it, really. Yeah, every chat message is a source. I mean, how are you gonna? Every chat message is a source, but it doesn't feed into any summaries because what is hi or thanks or stop gonna do? I mean, it is the model's job to create summaries. So maybe in the long run it finds enough of these little pieces to make a small summary out of that. Like, fuck, I don't know, pleasantries. It's not an important topic, but I want it to generate dynamically all these random like summaries, right? What does the map look like? I want to go for rings. Because that fits the summaries of summaries of summaries theme. You can talk me into the web if you've got a good argument for it, though. And then what counts as downtime? Let's get into that later. No, the chat cannot use modules. Like I said, I described earlier what the chat can do. It's a chat box for talking. Uh, Chat really does nothing else but take entries in and talk to me about them, and also talk about the underlying model itself. What does the to mean? Well, when I its starting context pack is the life summary plus what's like when I'm talking to the chat, right? Its starting context pack is my prompt plus my life summary. It then reasons, which is number one. It reasons, okay, is this enough to answer him? If it decides no, we move on to two, which is where it opens up the next concentric ring of summaries, so to say. And then it can keep going and keep going until it knows enough to answer me. That's what I mean. And your stop interpretation is right. Chat model does see the last few messages. Probably make that dynamic, right? So fill up the context that this chat can take with to the max. Let's say it can take 10K characters before it like really starts to drop off. Let's say my core life summary is 6,000. Well, then let it read the 4,000 characters of recent chat history. And when it goes to round number two, it can replace recent chat history for a large extent with more summaries. I don't know. You get what I mean, right? Just make it use, as long as it retains what I really want from it, it can fill itself up with whatever it likes. Try to like optimize how much characters it can actually take. Calendar inside the app. Which model? Let's talk about that later. Yeah. So what's in the Lego box? Well, a context pack. So probably a list of previously used context packs can be opened up, but I can also generate new ones on the fly simply from a prompt. Models. So yeah, another like folder you can open up and drag pieces out of is models. So Gemini, Claude, others, etc. The web search module is something we haven't built yet. That's kind of hard to implement. Fine. Let's say we put the web search module in there for now. For now, it doesn't really do anything because we have no workspace built in to help the model, so to say, search the web, right? So it's right now the web module basically just means user built-in web search function. But we can like add to this as we go. Also, modules should have descriptions of what they are. And something that I really want to emphasize here. I can, of course, drag and drop different modules onto the board, but it's mostly generated from me talking to it. So I'll be like, load this and this module and then do this and this and this. And then it dynamically generates what I say to it. It creates a board from that, so to say. How does a session end? Yeah, a close button, which closes it. And I want to say the moment that I do actually close a session, it sort of stays open for a while, you know, preloaded. But the summary is already being generated based on that session. There's a button in the corner, which I click, that reopens the session. And if I then continue working on it, the summary is updated. If eventually I close the session and it stays inactive for like, I don't know, 24 hours, the button disappears. Now, if I want to re-access it, I simply have to find the original, the summary of that work session and click the reactivate button, at which point everything is loaded again. Work sessions should also probably have histories so that you can like see what you did through time, right? Yeah, you can have several workspaces at once. Where's the list of old sessions? Fuck, I don't know. Maybe you can just filter on that. It's stored in the web is what it is. So maybe you can just like click on the web and like filter by work sessions, at which point only those are shown. And the build itself, stop asking me questions, which I've already answered, please. Oh, wait. No, it is a kind of a different question. Okay. I don't know how this all works, man. I want a new build. I don't want the old one. I want this to be a new project, not a branch off of the new one. Can we do that easily? Also, I want to retain the code of the old build, right?
+
+> Yeah, regarding your idea that summaries sit one ring lower when they draw from multiple summaries is correct. Just want to emphasize that the model can then create a whole lot of rings. So, for example, on if layer 0 is the center, then on layer n can be two summaries. On n minus 1 can be a summary of those two. And then on n minus 2 can be a summary of the summary that lives on n minus 1 and a summary which lives on n. And it really shouldn't be afraid to create more layers than this. It can create as many as it likes to fit everything in a nice way.
+
+Claude's questions that the next answer refers to (kept so the numbers make sense):
+
+1. How does it find where a new source fits? Suggestion: start at the centre and work outward along the links, only going deeper where it fits.
+2. New summary or add to an existing one: entirely the model's call?
+3. Are raw sources drawn on the map, or only summaries?
+4. Can Isaak edit a summary directly by typing, or only by telling the chat?
+5. Can he delete a source, so it's forgotten and the summaries built on it get rewritten?
+6. What counts as "any kind of file"? Audio and video too?
+7. In round 2, does it open the whole next ring, or pick which summaries to open?
+8. The calendar inside the app: where on screen?
+9. Main screen: the chat with the rings map next to it?
+10. Where do the instructions for a model go: on the model piece or on the arrow?
+11. What does a finished run produce: a result piece on the board, a message, or both?
+12. Moments of involvement: an arrow back to "me" means it stops and waits. Enough?
+13. Can one board run things in parallel?
+14. Session history: a saved version of the board after every round?
+15. Login: just Isaak, with a password like now?
+16. Phone or only laptop?
+17. Name of the new project ("hub-rings")?
+
+> 1 is fine, 2) its not a binary choice it can do both, and yes its the models choice 3) they are hidden behind a filter 4) can do both. there's also a revision button inside summaries, 5) no, but i should be able to do a revision where i say "dont like this summary, absorb it into the rest of the web" and it does that 6) what's unclear about "any type of file"? perhaps the model doesn't have the tools to digest certain files types as is, at which point it stores them but doesn't do anything with it, and brings that up from time to time. 7) it picks 8) a different tab 9) yeah sure. main chat is expandable or collapsable 10) instructions for a run are written below the run as a whole or can be specified per model. if not specified, whole run is used. maybe both can be used. 11) Yeah, a result piece which is that specific run summarised, thoughts at every point, input and output 12) for now 13) yes, everything starts at the same time. if two lines converge it means wait for both inputs to finish before continueing, ths brings the circuitry back a bit. 14) yes, board also just has back and forth buttons, 15) login just like we have now,16) for now only laptop, 17) hub rings is fine for now
+
+Claude's questions that the next answer refers to (kept so the numbers make sense):
+
+A. Things the file refers to that aren't in it
+1. The colours: black for things from Isaak, blue for the web, purple for its own thoughts, green for work sessions.
+2. The instructions summary: his instructions get their own summary, inside his life summary.
+3. The ring rule: a summary sits one ring further in than the innermost thing it's built from.
+4. Every sentence in a summary links to the source it came from. Still in?
+
+B. The web
+5. Does "my life" exist from the start, as an empty centre?
+6. The revision button inside a summary: a box where he writes what should change, after which it rewrites the summary?
+7. If he types in a summary directly, does his edit survive the next rewrite from sources?
+8. "Absorb it into the rest of the web": the summary disappears and its sources get placed elsewhere?
+9. Clicking a summary on the map: where does it open?
+10. Which filters are there?
+11. Can he see on the map which summaries are outdated?
+12. Where does he upload files: by dragging them into the chat? Maximum size?
+13. "Stuff it finds on the web": the chat can't use modules, so web input only comes from work sessions, and later from its own time?
+14. May it put pictures from his uploads into summaries?
+
+C. The chat
+15. Is there a maximum number of rounds?
+16. Does he see what it opened per round, or only the number?
+17. "Talking about the underlying model itself": what can it see about itself?
+18. When it adds something to his calendar, does it tell him in the chat?
+19. One endless chat, or can he start new conversations?
+
+D. The calendar tab
+20. Month or week view? Can he add, change and delete things himself?
+21. Is an appointment a source in the web?
+22. Reminders or notifications?
+
+E. The workspace
+23. Where is the button that opens a workspace, and does a workspace open as its own tab?
+24. The layout: where are the board, the workspace chat and the Lego box?
+25. What exactly is a context pack: a bundle of summaries and sources as text? Can he open it and edit it?
+26. A model piece without a module: does it simply answer from its context pack and instructions?
+27. Which models go in the box first? Each one needs its own API key.
+28. Is the "me" piece always on the board?
+29. Everything starts at the same time and converging lines mean wait, so what does the "2" on an arrow mean?
+30. Can he stop a run while it's going?
+31. Rerunning: a new result piece, or replace the old one?
+32. Back and forth on the board: is one step one instruction from him?
+33. The reopen button "in the corner": which corner, which screen? Several closed sessions, several buttons?
+34. Can a workspace read from the web only through context packs, or in other ways too?
+
+F. Practical
+35. Hosting: the same as the old build (Render, a Postgres database)?
+36. Language: English for the interface and its replies?
+37. Look: dark or light, the same feel as the old build?
+38. Typing only, or dictation too?
+
+> Colors are up for you to decide. Any number two is anything I tell it on how it should behave. Number 3 is correct. yes, sources can be summaries, as long as it links back to a source eventually, Number 5, yes, empty center from the start. Successful commits made, of niet. Nieuw. Thermic resist antitransparant. 6, yes. Everything includes a dictation function as well. Um, It doesn't have to survive per se. It's just marked as something that I wrote myself, and then the model can decide what to do with it. I mean, number 8, that's an example of how I would want the model to behave. And yes. Number 9, it opens on top of the map. Multiple summaries are technically supposed to be open, or are possible to be open at the same time. Number 10, as many filters as possible can be generated dynamically. 12, sorry, 11, I mean. Yes, 12. Yes and no, 13. we still gotta talk about it's autoonomy. during a workshop, main results are logged, but also if it finds relevant side businesses, it can also log them in that summary. 14) pictures are more then welcome. i like it cus it makes the summaries feel more alive, please use pictures. 15) no maximum, maybe a failsafe to stop runaway 16) yes, the map lights up based on its latest response, waht it opened. 17) it can see everything 18) yes it does. 19) endless chat i guess. can tell it to delete parts of that chat, as long as they are logged in the web 20) yes, can switch between. can also use same filters on calendar events as on map 21) sure, feeds into summaries 22) yes, comes later 23) yes and eys 24) workspace is a blank map infront of me, lego elements are in a foldered system to the side, 25) yes and yes. its not on the board, it's created fro the board, then stored for convenient later use on the board wherever fits best 26) i guess 27) ? just use it as we use models now 28) sure 29) it means it is step 2 for that model. so arrows show how a model moves, what it does, in what sequence 30) yeah sure 31) new results 32) what i meant with back and forth is that i talk, the workspace AI responds, suggests a board change, I accept or make further revisions, eventually i accept, that's the cannon board then. 33) a recent worskpace sessions tab, organised chronologically. the idea of deleting worksessions from that after a whle is not necessary then 34) idk, what do u suggesst? 35) yes, we dont fix what aint broke 36) yes 37) look is dark, UI is simplistic and kind of retro looking. we go for that console window look 38) both dictation and typing
+
+Claude's colour choice (Isaak: "Colors are up for you to decide"), for the dark console look: from Isaak: white. From the web: cyan. Its own thoughts: amber. Work sessions: green. Text Isaak typed into a summary himself: white with a small marker in front.
+
+Claude's suggestion for 34: a workspace reads the web only through context packs.
+
+Claude's questions that the next answer refers to:
+1. The line "Successful commits made, of niet. Nieuw. Thermic resist antitransparant.": meant something, or dictation noise?
+2. Maximum upload size?
+3. The failsafe against runaway rounds: when does it kick in, and what happens then?
+4. Autonomy and downtime.
+5. Which model for the chat, the workspace AI, and writing summaries?
+
+> cool. 1) idk 2) no limit i guess. do we have as torage limit built into the cloud on which it's stored? 3) it kicks in when it lsoes the plot 4) discuss later 5)  what do u suggest?
+
+Claude's suggestions that the next answer refers to:
+2. Look up the storage on his Render plan; if tight, keep files in separate file storage and only text and links in the database.
+3. "Loses the plot": if two rounds in a row bring nothing it actually uses, it stops, answers with what it has, and says it stopped.
+5. Chat: Claude Sonnet 5.5. Writing and placing summaries: Gemini 3.5 Flash. Workspace AI: Claude Opus 5.5. Model pieces on the board: Gemini and Claude, same keys as the old build.
+
+> 2) sure 3) lost the plot means that it strays from its core instructions without reason and starts wasting resources, i'm not strict with this, it's allowed to experiment, but i don't want runaway loops 5) sure, opus is a model on the board too. on the board, withn the folders, there's a modle folder, therin are claude and gemini, withn claude there's opus, haiku and sonnet
+
+Claude's questions that the next answer refers to:
+1. The runaway check: before every round it writes one line on why it opens what it opens and how that serves the question. If it can't give a reason connected to the question two rounds in a row, it stops and answers with what it has. Yes or no?
+2. The Gemini folder: which Gemini models go in it?
+3. Autonomy and downtime.
+
+> 1) sure, make it 3 rounds 2) whatever folders we have acces to, 3) let's discuss that now. autonomy should be like it working in it's own workspace. It can create it's own projects, which it then designs the board for, just like if we were working together. then it runs the board, gets results, then decides if it wants to keep working. next round is obviously built on the previous one, keeps working till it's achieved it's goal or judges it needs my input. once it's done with one, it writes a summary of that, just like if we were working on it together. then it can move on to other projects. I can then access these projects and seemlesly keep working within that workspace. if it needs my input, it brings it up somehwow. its own work, besides maintaining memory and calendar, consists of working on all of it's open projects until it's reached a satisfactory junctiion within each. It can start projects on its own when it writes a proposal document for me which i then accept, which goes into the summary of that project then.
+>
+> it then runs that board, gets results, updates the summary file just like if we were working on it together.
+
+Claude's questions that the next answer refers to:
+1. When does it work: nonstop, at set times, or only after Isaak has been quiet for a while?
+2. A budget per day or week?
+3. How does it bring up that it needs him: a message in the chat, a separate "waiting for you" tab, or both?
+4. Proposals: where does he see them, can he edit one before accepting? If he declines, does it drop the idea or may it bring it back?
+5. Is a proposal always required?
+6. Several projects at once, or one after another?
+7. "A satisfactory junction": entirely its own judgement, and does it then stop on that project until he opens it?
+8. Can he tell its projects apart from his (own mark, own colour)?
+9. Same limits as with him: only the existing Lego pieces, and the three-round check on its own rounds too?
+10. Maintaining memory: does it update outdated summaries first, before working on projects?
+
+> 1) nonstop assuming there are open projects. incoming emails should wake it up. 2) no runaway loops, other than that, no budget 3) it brings them up in regular chat within paragraphs, can open them whenever it wants as a seperate popup. it has that ability 4)yes, i can revise and type into it. 5) yes, always. making proposals is up to it though, as many as it likes 6) lets do one at a time for now 7) yes 8) not neccessary, i can open and work inside of its projects just like cowork 9) yes, if it wants more options it should ask me. 10) no it updates summaries when it touches them. if it's got nothing better to do it can also update summaries, but that's at the bottom of priority list
+
+Claude's questions that the next answer refers to:
+1. Which email account (Gmail, Outlook, something else)?
+2. Is every incoming email a source in the web?
+3. What may it do with email: only read, or also send?
+4. What does "wake up" mean concretely?
+5. Where does a proposal show up: in the chat inside a paragraph, then in a popup where he can type in it and accept?
+6. If he declines a proposal, does it drop it for good, or may it bring it back later?
+7. One project at a time: which one goes next?
+8. Priority order: emails and his messages, then its open projects, then writing proposals, then updating summaries last?
+9. Which model does its own work? Suggestion: the same as the workspace AI (Opus).
+
+> 1) we connect email accounts through a connections tab 2) sure 3) it may read and propose replies, which it can send with my permission 4) it wakes up whenever something comes in. however it should only ever be asleep if there is no work to be done. anything that comes in goes into the web, which may mark summaries as stale, which creates work, judgement on what it does with that happens as it comes in 5) yes, perhaps also a seperate proposal page i can click into at any tiime 6) if i decline i will revise it if i feel there's merit in a related idea, if i tell it to drop it completely i should tell it why, which is data for it, meaning that needs to go into the web too. it may always revisit the idea if it thinks its worth tit 7) own choice 8) sure 9)what?
+
+Claude's questions that the next answer refers to:
+(9 explained: which model does the thinking when it works on its own. Suggestion: Opus, same as the workspace with Isaak.)
+1. The connections tab: which email accounts first (Gmail, Outlook, both)?
+2. Approving a proposed reply: in the same popup, or on the proposals page?
+
+> oh, opus. 1) we built them in on the go 2) proposals may pop up in any window. i can accept and revise or decline em there however i like. the proposal page is jsut an overview of open proposals, opening it there opens it the same way as if t would pop up, same options available
+
+Claude's questions that the next answer refers to:
+1. Render storage: waiting until Isaak has signed in to Render.
+2. Build order: in steps (web and chat; calendar; workspace; autonomy; connections and email), or differently?
+
+> i cant sign in to render it tells me too many attempts, i reset my password but still, its been hours, 2) no we build all at once, system isn't that large. you stress test after you're done building
+
+Claude's questions that the next answer refers to:
+1. Its own projects: where does he see them, the Workspaces tab or a separate list?
+2. Can he see on the main screen that it's working and on which project? Watch the board live?
+3. If he opens a project it's working on right now: does it stop and hand over, or do both work on it?
+4. On the map: is an own project a summary in the web, green like work sessions, or something of its own?
+5. What goes in a proposal?
+6. An arrow to "me" in its own project: does it pause and ask him in the chat with a popup?
+7. A log of its activity: one place to see what it has been doing, or only through projects and the chat?
+8. Are its own chat replies also sources, or only his messages?
+9. The runaway check: who judges whether a round's reason still connects to the question, its own judgement or a separate cheap model?
+10. Files it can't read: how often does it bring them up?
+11. A model on the board that gets input from another model: does it wait until that model has delivered?
+12. How much does the chat read per message (how fast and how expensive may one reply be)?
+13. The colours: white for Isaak, cyan for the web, amber for its own thoughts, green for work sessions. OK?
+14. The tabs: Home (chat and map), Calendar, Workspaces, Proposals, Connections. The full set?
+15. When a model is unavailable (plan limit, outage): does another model step in, or does it wait?
+16. Nothing is imported from the old build's data; the web starts completely empty?
+
+> 1) in the workspace. i think we should integrate the list of projects into the workspace. projects it's working on by itself go in there. I suppose also proposals, as well as projects i started, each in their respective tabs. 2) yeah you can watch the board of a project live as it works therin. also when its accesssing the memory web on itself it also lights up accordingly. 3) should already be clear from my description. i can tap into a project at anytime and co-work. if it reaches a satisfying junction it asks for my input before contnuieing its work 4) its just a project summary dude christ 5) that's up to it. a description of what and why for a start 6) I guess i want "me" to be an element it can build into the web 7) it works through projects, so if it's updated it or needs my attention it should say that in the chat, and the projects should light up accordingly. i should also just be able to ask the model itself. 8) they are also sources i guess. 9) seperate cheap model 10) for it to judge 11) converging lines already answers this, and yes 12) that's for it to judge. 13) sure, just needs a legend 14) no, think i said that already 15) it uses whatever model it has. when sonnet isnt available to answer the chat, and when opus isnt to do the projects, those shut down 16) yep
+
+Claude's questions that the next answer refers to:
+1. The tabs: Home (chat and map), Calendar, Workspace, Connections; inside Workspace three tabs: its projects, proposals, his projects. Is "recent workspace sessions, organised chronologically" now the "his projects" tab, so a work session is simply a project?
+2. "'me' as an element it can build into the web": did he mean the board? Then in its own projects, an arrow to "me" means it stops there and asks him.
+3. If Gemini (summaries and placing) isn't available, does that shut down too, so new input waits until Gemini is back?
+
+> 1) yep 2) yes it can build me into the web as a "need input" element 3) yes. whenever anything shuts down it should say so iin a big popup
+
+Claude's notes and questions that the next answers refer to (Render and limits):
+1. Render's free plan: a site sleeps after 15 minutes without visitors; all free sites share about one month of awake time per month. Suggestion: the new site on the smallest paid server; let the old site sleep or pause it.
+2. Uploaded files are stored in the database, so they don't get lost when the site updates.
+3. The old build's database isn't on Render. Which provider is it?
+4. Memory on the server: enough; calls through the Claude plan run one at a time.
+
+> 1) we ping it don't we? just make it do its work whever it gets pinged, if there s work. we should build into the settings thab (yes, we add a setting tab with knobs and stuff) that we show how much montly usage render has left, as well as how much space we have left, as well as when the former resets, etc. we'll see about limits when we use it. model limits should also go there. idk that other bs ur talking about 2) what? technical terms go over my head dude 3) i think it's neon. 4)idk
+>
+> This whole reponse was hard for me, so if u need more input before commtting my responses to the plan do ask
+
+Claude's questions that the next answer refers to:
+1. Render's free awake time is shared by all free sites; if the old and the new site are both pinged around the clock, both run out halfway through the month. May the old site's ping be switched off?
+2. (No decision needed: files are stored in the database.)
+3. The new site gets its own new database at Neon. Can Isaak sign in to Neon in the browser pane?
+
+> oh yeah just deactivate the old one then. 3) i can, idk how to tho. i figured if the old site used it then the noew one does too, how much space do we have? you said bout 500 mb? that won't get us very far, i'm down for creating more space for it down along the line. for now its fine tho, but that switch is easy to make then?
+
+(Claude summarised the plan back to Isaak in chat; the next answer refers to that summary.)
+
+> few changes. fuck a ring, make it all a tree. collapsable into a single file my life. i dont see anything about files lighting up so far. include that, i did talk about it. i wanna once again reiterate the concept of redundancy, and creating as many summaries as it likes. as long as it captures a new angle, let it do whatever. i dont see that in ur summary.  also yes it was cron job. anything else you still need to know?
+
+Claude's questions that the next answer refers to:
+1. A summary with several parents (the internship under university and under career): in a tree, does it show up under each parent, the same summary in several places?
+2. Collapsing: by default only "my life" is visible, clicked open level by level, like folders?
+3. The chat rounds: round 2 now means it opens the level below what it has already read?
+4. Where is the tree: in the place of the map on Home, next to the chat?
+
+> 1) summaries are generated based on sumaries. two summariies can be born from the same parent summary, and two parent summaries can go into one child summary.  i think that solves it, doesn't it? 2) sure, 3) yes, 4) next to the chat.

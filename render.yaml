@@ -1,0 +1,11 @@
+# hub-rings on Render. The repo is gitlab.com/isaakvhs-png/hub-rings, branch main; Render deploys every push.
+# Env vars are set in the Render dashboard, never committed.
+services:
+  - type: web
+    name: hub-rings
+    runtime: node
+    plan: free
+    branch: main
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/healthz
