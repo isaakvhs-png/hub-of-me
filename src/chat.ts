@@ -29,8 +29,30 @@ async function saveChat(role: "isaak" | "it", text: string, meta: Record<string,
   return chatId;
 }
 
-/** Something it says in the chat without being asked (its own work, a question, an update). Also a source. */
+/**
+ * Something it says in the chat without being asked (its own work, a question, an update). Isaak, 15 Nov: what it does
+ * on its own comes to him as one paragraph in one message, not as several messages. So while he hasn't written since
+ * its last message of its own, a new note is folded into that same message, rewritten as one paragraph.
+ */
 export async function say(text: string, meta: Record<string, unknown> = {}): Promise<void> {
+  const last = (await db().query<ChatRow>(`SELECT * FROM chat WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 1`)).rows[0];
+  const lastMeta = last ? (JSON.parse(last.meta || "{}") as Record<string, unknown>) : {};
+  if (last && last.role === "it" && lastMeta.unprompted) {
+    let merged = `${last.text} ${text}`;
+    try {
+      merged = (await call("web", {
+        task: "merge-own-work",
+        system: "Rewrite these notes about what you did on your own as ONE plain paragraph for Isaak: clear, short, nothing repeated, nothing he can't follow. Keep every question you ask him. Plain text only.",
+        prompt: `WHAT YOU ALREADY TOLD HIM:\n${last.text}\n\nNEW:\n${text}`,
+        maxTokens: 1500,
+      })).text.trim() || merged;
+    } catch { /* keep the plain join */ }
+    const projects = [...new Set([...(Array.isArray(lastMeta.projectIds) ? lastMeta.projectIds as string[] : lastMeta.projectId ? [String(lastMeta.projectId)] : []), ...(meta.projectId ? [String(meta.projectId)] : [])])];
+    await db().query(`UPDATE chat SET text = $2, meta = $3 WHERE id = $1`, [last.id, merged, JSON.stringify({ ...lastMeta, ...meta, unprompted: true, projectIds: projects, projectId: projects[projects.length - 1] ?? null })]);
+    if (last.source_id) await db().query(`UPDATE sources SET text = $2 WHERE id = $1`, [last.source_id, merged]);
+    bump();
+    return;
+  }
   const sourceId = await addSource({ kind: "reply", origin: "self", title: "Its own message in the chat", text });
   await db().query(`UPDATE sources SET placed = true WHERE id = $1`, [sourceId]);
   await saveChat("it", text, { ...meta, unprompted: true }, sourceId);

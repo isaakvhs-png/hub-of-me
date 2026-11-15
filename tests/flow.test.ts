@@ -180,3 +180,17 @@ describe("shutdowns", () => {
     expect((await openPopups()).some((p) => p.kind === "back")).toBe(true);
   });
 });
+
+describe("its own messages", () => {
+  it("what it does on its own comes as one message until he writes again", async () => {
+    const { say } = await import("../src/chat.js");
+    await say("I placed your note.");
+    await say("I updated a summary.");
+    let h = await history();
+    expect(h.filter((m) => m.role === "it")).toHaveLength(1);
+    await send("ok"); await chatIdle();
+    await say("Another thing.");
+    h = await history();
+    expect(h[h.length - 1].text).toContain("Another thing.");
+  });
+});
