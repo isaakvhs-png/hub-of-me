@@ -173,7 +173,7 @@ async function answer(chatId: string): Promise<void> {
 async function recentChat(beforeId: string, count: number): Promise<string> {
   const r = await db().query<{ id: string; role: string; text: string; created_at: string }>(
     `SELECT id, role, text, created_at FROM chat WHERE deleted_at IS NULL AND created_at <= (SELECT created_at FROM chat WHERE id = $1) AND id <> $1 ORDER BY created_at DESC LIMIT $2`, [beforeId, count]);
-  return r.rows.reverse().map((row) => `[${row.id}] ${row.role === "isaak" ? "ISAAK" : "YOU"} (${new Date(row.created_at).toISOString().slice(0, 16)}): ${row.text.slice(0, 3000)}`).join("\n") || "(nothing earlier)";
+  return r.rows.reverse().map((row) => `[${row.id}] ${row.role === "isaak" ? "ISAAK" : "YOU"} (${new Date(row.created_at).toISOString().slice(0, 16)}): ${row.role === "isaak" ? row.text : row.text.slice(0, 3000)}`).join("\n") || "(nothing earlier)";
 }
 
 /** The runaway check (Isaak: "a separate cheap model"). True when this round strays from the core instructions without reason. */

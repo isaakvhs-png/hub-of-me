@@ -173,7 +173,7 @@ async function think(): Promise<boolean> {
   const { life, instructions } = await lifeAndInstructions();
   const proposals = await db().query<{ title: string; status: string; why: string }>(`SELECT title, status, why FROM proposals ORDER BY created_at DESC LIMIT 40`);
   const unreadable = await db().query<{ file_name: string; created_at: string }>(`SELECT file_name, created_at FROM sources WHERE readable = false ORDER BY created_at DESC LIMIT 20`);
-  const recent = await db().query<{ title: string; text: string; kind: string }>(`SELECT title, left(text, 600) AS text, kind FROM sources WHERE origin = 'isaak' ORDER BY created_at DESC LIMIT 15`);
+  const recent = await db().query<{ title: string; text: string; kind: string }>(`SELECT title, CASE WHEN kind = 'file' THEN left(text, 4000) ELSE text END AS text, kind FROM sources WHERE origin = 'isaak' ORDER BY created_at DESC LIMIT 15`);
   const out = await callJson<{ proposals?: { title?: string; body?: string }[]; say?: string }>("work", {
     task: "own-time",
     system: THINK_SYSTEM,
