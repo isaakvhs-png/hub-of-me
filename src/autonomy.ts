@@ -160,17 +160,14 @@ const THINK_SYSTEM = `You have your own time in Isaak's personal system.
 
 ${HOW_I_WORK}
 
-You may propose projects of your own: as many as you like, each with what and why. Don't repeat proposals he has seen unless you have a new reason; you may always revisit an idea if it is worth it. You may also bring something up in the chat (for example files you can't read yet), when you judge it is useful now. If nothing is worth doing, do nothing.
+You may propose projects of your own: as many as you like, each with what and why, as long as each one is accurate and current and covers its own ground: proposals must not overlap with each other or with proposals he has already seen. You may always revisit an idea if it is worth it. You may also bring something up in the chat (for example files you can't read yet), when you judge it is useful now. If nothing is worth doing, do nothing.
 Answer with one JSON object: {"proposals": [{"title": "", "body": "what and why"}], "say": "something for the chat, or empty"}`;
 
 /** Its own thinking: proposals and things to bring up. Only when something new came in since it last thought. */
 async function think(): Promise<boolean> {
   const count = Number((await db().query<{ n: string }>(`SELECT count(*) AS n FROM sources WHERE kind NOT IN ('reply','proposal')`)).rows[0]?.n ?? 0);
   if (count === lastThinkSourceCount || count === 0) return false;
-  // At most once an hour, and not while three of its proposals are still waiting for him: no flood of proposals.
-  if (Date.now() - lastThinkAt < 60 * 60_000) return false;
-  const waiting = Number((await db().query<{ n: string }>(`SELECT count(*) AS n FROM proposals WHERE status = 'open'`)).rows[0]?.n ?? 0);
-  if (waiting >= 3) return false;
+  if (Date.now() - lastThinkAt < 10 * 60_000) return false;
   lastThinkAt = Date.now();
   lastThinkSourceCount = count;
   setDoing("Thinking about what to propose");
@@ -191,11 +188,28 @@ async function think(): Promise<boolean> {
     ].filter(Boolean).join("\n\n"),
     maxTokens: 3000,
   });
-  for (const p of (out.proposals ?? []).slice(0, Math.max(0, 3 - waiting))) {
-    if (p?.title?.trim() && p.body?.trim()) await createProposal({ title: p.title, body: p.body });
+  for (const p of out.proposals ?? []) {
+    if (!p?.title?.trim() || !p.body?.trim()) continue;
+    // Isaak, 15 Nov: before creating a proposal it thinks for a second to be sure this proposal, or part of it, isn't already covered by another.
+    if (await alreadyCovered(p.title, p.body)) continue;
+    await createProposal({ title: p.title, body: p.body });
   }
   if (out.say?.trim()) await say(out.say.trim());
   return true;
+}
+
+async function alreadyCovered(title: string, body: string): Promise<boolean> {
+  const all = await db().query<{ title: string; body: string; status: string; why: string }>(`SELECT title, body, status, why FROM proposals ORDER BY created_at DESC`);
+  if (!all.rows.length) return false;
+  try {
+    const out = await callJson<{ covered?: boolean }>("work", {
+      task: "proposal-overlap",
+      system: `Before you create a proposal, you check that it covers its own ground: that this proposal, or part of it, is not already covered by another proposal (open, accepted, declined or dropped). Answer with one JSON object: {"covered": true or false, "why": "one line"}`,
+      prompt: `NEW PROPOSAL "${title}":\n${body}\n\nEXISTING PROPOSALS:\n${all.rows.map((p) => `- "${p.title}" (${p.status}${p.why ? `: ${p.why}` : ""}): ${p.body.slice(0, 1500)}`).join("\n")}`,
+      maxTokens: 400,
+    });
+    return Boolean(out.covered);
+  } catch { return false; }
 }
 
 export function resetThinkForTests() { lastThinkAt = 0; lastThinkSourceCount = -1; }

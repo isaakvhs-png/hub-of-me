@@ -76,6 +76,7 @@ export function scriptedModel(opts: CallOpts & { model: string }): string {
     case "pack": return JSON.stringify({ title: "Pack", pick: ids(p).slice(0, 3) });
     case "revise": return JSON.stringify({ action: /absorb/i.test(p.split("ISAAK SAYS:")[1] ?? "") ? "absorb" : "rewrite", say: "Done." });
     case "read-picture": return "A picture of a desk with a laptop.";
+    case "proposal-overlap": return JSON.stringify({ covered: false, why: "new ground" });
     case "pick-project": return JSON.stringify({ pick: /^- ([0-9a-f-]{36})/m.exec(p)?.[1] });
     case "judge-round": return JSON.stringify({ state: mockState.judge, next: "Search deeper.", ask: "Is this the direction you want?", say: "" });
     case "own-time": {
