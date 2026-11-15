@@ -167,7 +167,6 @@ Answer with one JSON object: {"proposals": [{"title": "", "body": "what and why"
 async function think(): Promise<boolean> {
   const count = Number((await db().query<{ n: string }>(`SELECT count(*) AS n FROM sources WHERE kind NOT IN ('reply','proposal')`)).rows[0]?.n ?? 0);
   if (count === lastThinkSourceCount || count === 0) return false;
-  if (Date.now() - lastThinkAt < 10 * 60_000) return false;
   lastThinkAt = Date.now();
   lastThinkSourceCount = count;
   setDoing("Thinking about what to propose");
