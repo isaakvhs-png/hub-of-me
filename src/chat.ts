@@ -54,7 +54,6 @@ export async function say(text: string, meta: Record<string, unknown> = {}): Pro
     return;
   }
   const sourceId = await addSource({ kind: "reply", origin: "self", title: "Its own message in the chat", text });
-  await db().query(`UPDATE sources SET placed = true WHERE id = $1`, [sourceId]);
   await saveChat("it", text, { ...meta, unprompted: true }, sourceId);
 }
 
@@ -160,8 +159,6 @@ async function answer(chatId: string): Promise<void> {
       strayRun = straying ? strayRun + 1 : 0;
     }
     const replySource = await addSource({ kind: "reply", origin: "self", title: "Its reply in the chat", text: final });
-    // Kept as a source, but not placed: placing every reply doubled the work for little gain.
-    await db().query(`UPDATE sources SET placed = true WHERE id = $1`, [replySource]);
     await saveChat("it", final, meta, replySource);
   } catch (error) {
     if (!(error instanceof ModelDownError)) {

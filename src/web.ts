@@ -143,8 +143,9 @@ You look at the web one level at a time, starting at the centre. For the source 
 - "fits": ids of the summaries shown that this source should feed directly (often several);
 - "descend": ids of summaries shown whose inputs you want to see next, because the source may fit deeper there;
 - "new": new summaries to make for angles that are missing, each with "title" and "under" (ids of shown summaries the new one should feed into);
-- "instruction": true if the source is Isaak telling you how he wants you to behave or how to organise the web.
-Answer with one JSON object: {"fits": [], "descend": [], "new": [{"title": "", "under": []}], "instruction": false, "why": "one line"}`;
+- "instruction": true if the source is Isaak telling you how he wants you to behave or how to organise the web;
+- "status": true if (part of) the source is talk about the system itself: whether a model is down or back, what isn't placed yet, errors, what it is busy with. Status talk goes into its own summary of status talk, never into summaries about Isaak's life. A source that also says something about Isaak still fits where that belongs.
+Answer with one JSON object: {"fits": [], "descend": [], "new": [{"title": "", "under": []}], "instruction": false, "status": false, "why": "one line"}`;
 
 /** Where a source fits: from the centre outward, one level at a time. */
 export async function place(sourceId: string): Promise<{ fed: string[]; created: string[] }> {
@@ -172,6 +173,7 @@ async function placeInput(input: { type: "summary" | "source"; id: string }, lab
   const fed = new Set<string>();
   const created: string[] = [];
   let instruction = false;
+  let status = false;
   let frontier = [lifeId];
   const shown = new Set<string>(input.type === "summary" ? [input.id] : []);
   for (let depth = 0; depth < 8 && frontier.length; depth += 1) {
@@ -183,7 +185,7 @@ async function placeInput(input: { type: "summary" | "source"; id: string }, lab
     for (const s of level) shown.add(s.id);
     if (!level.length) break;
     const listing = level.map((s) => `- ${s.id} | ${s.title}${s.under ? ` (feeds ${s.under})` : " (centre)"} | ${s.inputs} summary inputs | ${s.gist || "(empty so far)"}`).join("\n");
-    const out = await callJson<{ fits?: string[]; descend?: string[]; new?: { title: string; under?: string[] }[]; instruction?: boolean }>("web", {
+    const out = await callJson<{ fits?: string[]; descend?: string[]; new?: { title: string; under?: string[] }[]; instruction?: boolean; status?: boolean }>("web", {
       task: "place",
       system: PLACE_SYSTEM,
       prompt: `${label}:\n${content}\n\nSUMMARIES AT THIS LEVEL:\n${listing}`,
@@ -200,13 +202,26 @@ async function placeInput(input: { type: "summary" | "source"; id: string }, lab
       fed.add(newId);
     }
     if (out.instruction && input.type === "source") instruction = true;
+    if (out.status && input.type === "source") status = true;
     frontier = (out.descend ?? []).filter((d) => known.has(d));
   }
   if (instruction) fed.add(await instructionsSummary());
+  if (status) fed.add(await statusSummary());
   for (const target of fed) await feed(target, input.type, input.id);
   await markStale([...fed]);
   light([...fed]);
   return { fed: [...fed], created };
+}
+
+/** Talk about the system itself has its own summary (Isaak, 15 Nov), which feeds "my life" like any other. */
+export async function statusSummary(): Promise<string> {
+  const r = await db().query<{ id: string }>(`SELECT id FROM summaries WHERE is_status = true AND absorbed_at IS NULL LIMIT 1`);
+  if (r.rows[0]) return r.rows[0].id;
+  const lifeId = await ensureLife();
+  const sid = await createSummary("System status");
+  await db().query(`UPDATE summaries SET is_status = true WHERE id = $1`, [sid]);
+  await feed(lifeId, "summary", sid);
+  return sid;
 }
 
 /** His instructions on how it should behave and organise itself: their own summary, inside "my life". */
@@ -258,7 +273,7 @@ export async function rewrite(summaryId: string, extra = ""): Promise<void> {
   const out = await callJson<{ title?: string; body?: string; tags?: string[] }>("web", {
     task: "rewrite",
     system: WRITE_SYSTEM,
-    prompt: `${s.is_life ? 'This is "My life", the centre: the summary of his whole life, built from everything below it.\n' : ""}${s.is_instructions ? "This summary holds Isaak's instructions on how you should behave and organise the web. Keep them precise; newer instructions win over older ones that contradict them, and say so.\n" : ""}CURRENT TITLE: ${s.title}\nCURRENT TEXT:\n${s.body || "(empty)"}\n${extra ? `\nISAAK ASKS FOR THIS REVISION: ${extra}\n` : ""}\nINPUTS:\n${parts.join("\n\n") || "(none yet)"}`,
+    prompt: `${s.is_life ? 'This is "My life", the centre: the summary of his whole life, built from everything below it. What the system status summary says gets at most one short line here, like "the system runs smoothly" or "the system is not running smoothly right now; improvements are being made".\n' : ""}${(s as SummaryRow & { is_status?: boolean }).is_status ? "This summary is about the system itself: how it is running. Keep it short and current; newer status replaces older status.\n" : ""}${s.is_instructions ? "This summary holds Isaak's instructions on how you should behave and organise the web. Keep them precise; newer instructions win over older ones that contradict them, and say so.\n" : ""}CURRENT TITLE: ${s.title}\nCURRENT TEXT:\n${s.body || "(empty)"}\n${extra ? `\nISAAK ASKS FOR THIS REVISION: ${extra}\n` : ""}\nINPUTS:\n${parts.join("\n\n") || "(none yet)"}`,
     maxTokens: 8000,
   });
   const body = String(out.body ?? s.body);

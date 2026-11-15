@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS summaries (
 );
 
 -- What a summary is made from: other summaries or sources. One input can feed many summaries; one summary many inputs.
+ALTER TABLE summaries ADD COLUMN IF NOT EXISTS is_status BOOLEAN NOT NULL DEFAULT false;
+
 CREATE TABLE IF NOT EXISTS feeds (
   summary_id TEXT NOT NULL,
   input_type TEXT NOT NULL,
