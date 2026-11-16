@@ -90,9 +90,9 @@ const safe = (raw: string) => { try { return JSON.parse(raw || "{}"); } catch { 
 
 // ---------------- the tree ----------------
 
-interface SummaryNode { id: string; title: string; kind: string; is_life: boolean; is_instructions: boolean; project_id: string | null; tags: string[]; stale: boolean; updated_at: string; inputs: { type: string; id: string }[] }
+interface SummaryNode { id: string; title: string; kind: string; is_life: boolean; is_instructions: boolean; is_how?: boolean; role?: string; project_id: string | null; tags: string[]; stale: boolean; updated_at: string; inputs: { type: string; id: string }[] }
 interface SourceNode { id: string; kind: string; origin: string; title: string; readable: boolean; placed: boolean; created_at: string; tags: string[] }
-interface WebView { lifeId: string; summaries: SummaryNode[]; sources: SourceNode[] }
+interface WebView { lifeId: string; howId?: string; summaries: SummaryNode[]; sources: SourceNode[] }
 
 const FIXED = ["sources", "projects", "outdated", "unreadable files"];
 
@@ -145,7 +145,7 @@ export function Tree({ focusId }: { focusId: string | null }) {
     const paths: string[][] = [];
     const walk = (id: string, trail: string[]) => {
       if (trail.length > 40) return;
-      if (id === web.lifeId) { paths.push([id, ...trail]); return; }
+      if (id === web.lifeId || id === web.howId) { paths.push([id, ...trail]); return; }
       for (const p of parents.get(id) ?? []) if (!trail.includes(p)) walk(p, [id, ...trail]);
     };
     walk(focusId, []);
@@ -185,7 +185,7 @@ export function Tree({ focusId }: { focusId: string | null }) {
         <div className="line">
           <span className="tw" onClick={() => toggle(id)}>{kids.length + srcKids.length ? (isOpen ? "▾" : "▸") : "·"}</span>
           <span className="name" onClick={() => openSummary(id)}>{s.is_life ? "My life" : s.title}</span>
-          <span className="meta">{s.kind === "project" ? "project" : ""}{s.is_instructions ? "your instructions" : ""}{kids.length ? ` ${kids.length}` : ""}</span>
+          <span className="meta">{s.kind === "project" ? "project" : ""}{s.is_how ? "read by every part, every time" : s.role ? "your instructions for this part" : ""}{kids.length ? ` ${kids.length}` : ""}</span>
           {(parents.get(id)?.length ?? 0) > 1 && <span className="times" title="This summary sits in more than one place">×{parents.get(id)!.length}</span>}
         </div>
         {isOpen && (kids.length > 0 || srcKids.length > 0) && (
@@ -224,6 +224,7 @@ export function Tree({ focusId }: { focusId: string | null }) {
           </svg>
         )}
         {renderNode(web.lifeId, [])}
+        {web.howId && renderNode(web.howId, [])}
         <PacksFolder />
         {unplaced > 0 && <div className="dim" style={{ marginTop: 10 }}>{unplaced} new thing{unplaced === 1 ? "" : "s"} still being placed…</div>}
       </div>

@@ -34,6 +34,32 @@ export async function addSource(s: SourceIn): Promise<string> {
   return sourceId;
 }
 
+/** How a root or a part of "How I work" is named in the outlines the models see. */
+function rootLabel(r: { title: string; is_life: boolean; is_how?: boolean; role?: string }): string {
+  if (r.is_life) return "My life (the centre, a root)";
+  if (r.is_how) return "How I work (his instructions to the system, a root)";
+  if (r.role) return `${r.title} (his instructions for one part of the system)`;
+  return r.title;
+}
+
+/** "How I work" and its parts (Isaak, 16 Nov): made once, up front; what grows under them is up to the filer. */
+export async function ensureHow(): Promise<string> {
+  const { PARTS } = await import("./how.js");
+  let howId = (await db().query<{ id: string }>(`SELECT id FROM summaries WHERE is_how = true AND absorbed_at IS NULL LIMIT 1`)).rows[0]?.id;
+  if (!howId) {
+    howId = id();
+    await db().query(`INSERT INTO summaries (id, title, body, is_how, stale) VALUES ($1,'How I work','',true,false)`, [howId]);
+  }
+  for (const [part, def] of Object.entries(PARTS)) {
+    const has = (await db().query(`SELECT 1 FROM summaries WHERE role = $1 AND absorbed_at IS NULL`, [part])).rows.length;
+    if (has) continue;
+    const partId = id();
+    await db().query(`INSERT INTO summaries (id, title, body, role, stale) VALUES ($1,$2,'',$3,false)`, [partId, def.title, part]);
+    await db().query(`INSERT INTO feeds (summary_id, input_type, input_id) VALUES ($1,'summary',$2) ON CONFLICT DO NOTHING`, [howId, partId]);
+  }
+  return howId;
+}
+
 export async function ensureLife(): Promise<string> {
   const r = await db().query<{ id: string }>(`SELECT id FROM summaries WHERE is_life = true LIMIT 1`);
   if (r.rows[0]) return r.rows[0].id;
@@ -43,7 +69,7 @@ export async function ensureLife(): Promise<string> {
 }
 
 export interface SummaryRow {
-  id: string; title: string; body: string; kind: string; is_life: boolean; is_instructions: boolean; project_id: string | null;
+  id: string; title: string; body: string; kind: string; is_life: boolean; is_instructions: boolean; is_how?: boolean; role?: string; project_id: string | null;
   tags: string; stale: boolean; absorbed_at: string | null; created_at: string; updated_at: string; went_into?: string; merged_from?: string;
 }
 
@@ -64,6 +90,9 @@ async function createSummary(title: string, opts: { kind?: string; projectId?: s
 export async function feed(summaryId: string, inputType: "summary" | "source", inputId: string): Promise<void> {
   if (inputType === "summary") {
     if (inputId === summaryId) return;
+    // Level 0 ("My life", "How I work") feeds nothing: everything only goes inwards (Isaak, 16 Nov).
+    const root = (await db().query<{ is_life: boolean; is_how: boolean }>(`SELECT is_life, is_how FROM summaries WHERE id = $1`, [inputId])).rows[0];
+    if (root?.is_life || root?.is_how) return;
     if ((await below(inputId)).has(summaryId)) return;
   }
   await db().query(`INSERT INTO feeds (summary_id, input_type, input_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, [summaryId, inputType, inputId]);
@@ -185,10 +214,11 @@ HOW THE WEB IS LAYERED (from Isaak's own examples). The further out, the more de
 - Example, the top layer: when everything so far is about him as a person and about the system, only two summaries belong directly under "My life": him, and the system. When he starts telling about his career and his life, a third appears.
 To make an angled version of something that exists: create the new summary (in "new") under its context and let it take the existing one.
 
+There are two roots, and neither feeds anything: "My life" (his life) and "How I work" (his instructions to the system, with one summary per part of the system under it).
 You see the whole web at once: every summary with its title, one line of what it holds, and what it feeds into. For the source you are shown, say:
 - "fits": ids of the summaries this source should feed directly (often several). If the source covers the same angle as an existing summary, it goes into that summary, not into a new one;
 - "new": new summaries only for an angle no existing summary covers yet, each with "title" (the lasting topic or angle, not an event), "under" (ids of summaries it should feed into) and "takes" (ids of existing summaries that should now feed into it; e.g. a new personal profile takes the existing summary of how he speaks);
-- "instruction": true if the source is Isaak telling you how he wants you to behave or how to organise the web;
+- "instruction": true if the source (or part of it) is Isaak telling how he wants the system to behave or organise itself. That part belongs in "How I work", the other root beside "My life": put it into the summary there for the part of the system it is about (in "fits"), into a new summary under one of those (in "new"), or into "How I work" itself when it goes for every part. The rest of the source is placed as usual;
 - "tags": the tags for this source (see TAGS below).
 Where a summary sits in the tree is not fixed: when a new angle shows that existing summaries belong under it, use "takes".
 ${TAGS_GUIDE}
@@ -222,15 +252,15 @@ async function placeInput(input: { type: "summary" | "source"; id: string }, lab
   const fed = new Set<string>();
   const created: string[] = [];
   // The whole web at once: title, one line, and what each feeds into.
-  const all = await db().query<{ id: string; title: string; body: string; is_life: boolean; kind: string; tags: string }>(
-    `SELECT id, title, body, is_life, kind, tags FROM summaries WHERE absorbed_at IS NULL ORDER BY created_at`);
+  const all = await db().query<{ id: string; title: string; body: string; is_life: boolean; kind: string; tags: string; is_how: boolean; role: string }>(
+    `SELECT id, title, body, is_life, kind, tags, is_how, role FROM summaries WHERE absorbed_at IS NULL ORDER BY created_at`);
   const up = await db().query<{ summary_id: string; input_id: string }>(`SELECT summary_id, input_id FROM feeds WHERE input_type = 'summary'`);
   const into = new Map<string, string[]>();
   for (const row of up.rows) (into.get(row.input_id) ?? into.set(row.input_id, []).get(row.input_id)!).push(row.summary_id);
   const known = new Set(all.rows.map((r) => r.id).filter((x) => !(input.type === "summary" && x === input.id)));
   const outline = all.rows.filter((r) => known.has(r.id)).map((r) => {
     const line = plain(r.body).replace(/\s+/g, " ").slice(0, 220);
-    return `- ${r.id} | ${r.is_life ? "My life (the centre)" : r.title}${r.kind === "project" ? " (project)" : ""} | ${line || "(empty so far)"}${into.get(r.id)?.length ? ` | feeds: ${into.get(r.id)!.join(", ")}` : ""}${tagTail(r.tags)}`;
+    return `- ${r.id} | ${rootLabel(r)}${r.kind === "project" ? " (project)" : ""} | ${line || "(empty so far)"}${into.get(r.id)?.length ? ` | feeds: ${into.get(r.id)!.join(", ")}` : ""}${tagTail(r.tags)}`;
   }).join("\n");
   const pool = await poolText();
   // First it picks the summaries that might hold this angle, then it reads those in full before deciding.
@@ -263,7 +293,11 @@ async function placeInput(input: { type: "summary" | "source"; id: string }, lab
     for (const t of (n.takes ?? []).filter((x) => known.has(x) && x !== lifeId)) await feed(newId, "summary", t);
     fed.add(newId);
   }
-  if (out.instruction && input.type === "source") fed.add(await instructionsSummary());
+  if (out.instruction && input.type === "source") {
+    const howId = await ensureHow();
+    const howTree = await below(howId);
+    if (![...fed].some((f) => f === howId || howTree.has(f))) fed.add(howId);
+  }
   for (const target of fed) await feed(target, input.type, input.id);
   await markStale([...fed]);
   light([...fed]);
@@ -326,11 +360,11 @@ export async function rewrite(summaryId: string, extra = ""): Promise<void> {
   const out = await callJson<{ title?: string; body?: string; tags?: string[]; source_tags?: Record<string, unknown> }>("web", {
     task: "rewrite",
     system: WRITE_SYSTEM,
-    prompt: `${s.is_life ? 'This is "My life", the centre: the summary of his whole life, built from everything below it.\n' : ""}${s.is_instructions ? "This summary holds Isaak's instructions on how you should behave and organise the web. Keep them precise; newer instructions win over older ones that contradict them, and say so.\n" : ""}CURRENT TITLE: ${s.title}\nCURRENT TEXT:\n${s.body || "(empty)"}\n${extra ? `\nISAAK ASKS FOR THIS REVISION: ${extra}\n` : ""}\nINPUTS:\n${parts.join("\n\n") || "(none yet)"}\n\nTAGS IN THE POOL (how often each is used):\n${pool}`,
+    prompt: `${s.is_life ? 'This is "My life", the centre: the summary of his whole life, built from everything below it.\n' : ""}${s.is_instructions ? "This summary holds Isaak's instructions on how you should behave and organise the web. Keep them precise; newer instructions win over older ones that contradict them, and say so.\n" : ""}${s.is_how ? 'This is "How I work", the root of Isaak\'s instructions to the system; every part of the system reads it on every call. Write the core: what goes for every part, and one brief line for each part from the summaries below it. Keep it short and precise; newer instructions win over older ones that contradict them, and say so.\n' : ""}${s.role ? `This summary holds Isaak\'s instructions for one part of the system (${s.title}); that part reads it in full on every call. Keep them precise and in his detail; newer instructions win over older ones that contradict them, and say so.\n` : ""}CURRENT TITLE: ${s.title}\nCURRENT TEXT:\n${s.body || "(empty)"}\n${extra ? `\nISAAK ASKS FOR THIS REVISION: ${extra}\n` : ""}\nINPUTS:\n${parts.join("\n\n") || "(none yet)"}\n\nTAGS IN THE POOL (how often each is used):\n${pool}`,
     maxTokens: 8000,
   });
   const body = String(out.body ?? s.body);
-  const title = s.is_life ? "My life" : String(out.title ?? s.title).slice(0, 200);
+  const title = s.is_life ? "My life" : s.is_how ? "How I work" : s.role ? s.title : String(out.title ?? s.title).slice(0, 200);
   await db().query(`INSERT INTO summary_versions (id, summary_id, title, body, why) VALUES ($1,$2,$3,$4,$5)`, [id(), summaryId, s.title, s.body, extra ? `revision: ${extra}` : "rewritten from its inputs"]);
   await db().query(`UPDATE summaries SET title = $2, body = $3, tags = $4, stale = false, updated_at = now() WHERE id = $1`,
     [summaryId, title, body, JSON.stringify(cleanTags(out.tags))]);
@@ -383,6 +417,7 @@ export async function editByIsaak(summaryId: string, newBody: string): Promise<v
 export async function absorb(summaryId: string): Promise<void> {
   const s = await getSummary(summaryId);
   if (s.is_life) throw new ValidationError("My life is the centre; it can't be absorbed.");
+  if (s.is_how || s.role) throw new ValidationError("How I work and its parts stay; they can't be absorbed.");
   const parents = await parentsOf(summaryId);
   const lifeId = await ensureLife();
   for (const input of await inputsOf(summaryId)) {
@@ -451,7 +486,7 @@ export async function applyChanges(changes: Change[]): Promise<string[]> {
         const r = ref(c.input); if (!r) continue;
         await unfeed(c.from, r.type, r.id); touched.push(c.from);
       } else if (c.do === "rename" && c.id && c.title?.trim()) {
-        await db().query(`UPDATE summaries SET title = $2 WHERE id = $1 AND is_life = false`, [c.id, c.title.trim().slice(0, 200)]); touched.push(c.id);
+        await db().query(`UPDATE summaries SET title = $2 WHERE id = $1 AND is_life = false AND is_how = false AND role = ''`, [c.id, c.title.trim().slice(0, 200)]); touched.push(c.id);
       } else if (c.do === "absorb" && c.id) {
         await absorb(c.id);
       } else if (c.do === "merge" && Array.isArray(c.ids)) {
@@ -480,7 +515,7 @@ export async function applyChanges(changes: Change[]): Promise<string[]> {
 
 /** Several summaries become one: it takes all their inputs and feeds everything they fed. */
 async function merge(ids: string[], title?: string): Promise<string> {
-  const rows = (await db().query<{ id: string; title: string; is_life: boolean }>(`SELECT id, title, is_life FROM summaries WHERE id = ANY($1)`, [ids])).rows.filter((r) => !r.is_life);
+  const rows = (await db().query<{ id: string; title: string; is_life: boolean; is_how: boolean; role: string }>(`SELECT id, title, is_life, is_how, role FROM summaries WHERE id = ANY($1)`, [ids])).rows.filter((r) => !r.is_life && !r.is_how && !r.role);
   if (rows.length < 2) throw new ValidationError("Merging needs two summaries (and never My life).");
   const mergedId = await createSummary((title?.trim() || rows.map((r) => r.title).join(" / ")).slice(0, 200));
   const all = new Set(rows.map((r) => r.id));
@@ -497,7 +532,7 @@ async function merge(ids: string[], title?: string): Promise<string> {
   return mergedId;
 }
 
-const TREE_SYSTEM = `Isaak switched on the tree button: his message is about how his memory web is organised. Change the tree the way he means. You see the whole web; read in full what you need.
+const TREE_SYSTEM = `Isaak switched on the tree button: his message is about how his memory web is organised. The web has two roots that feed nothing: "My life" and "How I work" (his instructions to the system, one summary per part under it). Change the tree the way he means. You see the whole web; read in full what you need.
 
 HOW THE WEB IS LAYERED (from Isaak's own examples). The further out, the more detailed and neutral; the closer to "My life", the more general and the more coloured by the context it sits in.
 - Example, his internship: outermost "Internship: the facts" (what happened, neutral). When it counts towards different contexts, each context gets its own angled version made from the facts: "the internship as part of his studies" under University, "the internship as career exploration" under Career, "the internship as a piece of his year" under Me in 2026. The same facts summary then sits under each angled version. Only if the internship really matters as a thread of its own, a summary of what it means to him as a whole sits further in, made from the angled versions. Whether that layer exists is your judgement.
@@ -525,7 +560,7 @@ const LAYERS = `HOW THE WEB IS LAYERED (from Isaak's own examples). The further 
 To make an angled version of something that exists: create the new summary (in "new") under its context and let it take the existing one.
 `;
 
-const TIDY_SYSTEM = `You keep Isaak's memory web. Something new was just placed. Look at the whole tree and judge: does it still show the big picture at the right level, given what just came in? Most new input fits inside what is already there and changes nothing; then make no changes. Only when something meaningfully new arrived, or the tree no longer shows the big picture at the right level, regroup it.
+const TIDY_SYSTEM = `You keep Isaak's memory web. It has two roots that feed nothing: "My life" and "How I work" (his instructions to the system, one summary per part under it; keep that tree in order too, but don't rename its parts). Something new was just placed. Look at the whole tree and judge: does it still show the big picture at the right level, given what just came in? Most new input fits inside what is already there and changes nothing; then make no changes. Only when something meaningfully new arrived, or the tree no longer shows the big picture at the right level, regroup it.
 ${LAYERS}
 The tags too (one pool for everything, shown with how often each is used): when tags in the pool duplicate or overlap each other, merge or rename them; when a tag also fits summaries that don't carry it yet, add it to them. Most of the time nothing needs changing.
 Changes you can make (a list in "changes"): {"do":"create","title":"","under":["summary ids"],"inputs":["m:ID"]}, {"do":"move","input":"m:ID","from":"summary id","to":"summary id"}, {"do":"link","input":"m:ID","into":"summary id"}, {"do":"unlink","input":"m:ID","from":"summary id"}, {"do":"rename","id":"","title":""}, {"do":"merge","ids":[],"title":""}, and for tags:
@@ -535,8 +570,8 @@ Changes you can make (a list in "changes"): {"do":"create","title":"","under":["
 Answer with one JSON object: {"changes": [], "say": "if you changed something: one sentence for Isaak on what you regrouped or retagged and why; else empty"}`;
 
 export const TIDY_WHOLE_SYSTEM = TIDY_SYSTEM.replace(
-  /^You keep Isaak's memory web\. Something new was just placed\. Look at the whole tree and judge: does it still show the big picture at the right level, given what just came in\? Most new input fits inside what is already there and changes nothing; then make no changes\. Only when something meaningfully new arrived, or the tree no longer shows the big picture at the right level, regroup it\./,
-  "You keep Isaak's memory web. Look at the whole tree and judge: does it show the big picture at the right level? If it does, make no changes; if it does not, regroup it.",
+  /^You keep Isaak's memory web\. It has two roots that feed nothing: "My life" and "How I work" \(his instructions to the system, one summary per part under it; keep that tree in order too, but don't rename its parts\)\. Something new was just placed\. Look at the whole tree and judge: does it still show the big picture at the right level, given what just came in\? Most new input fits inside what is already there and changes nothing; then make no changes\. Only when something meaningfully new arrived, or the tree no longer shows the big picture at the right level, regroup it\./,
+  "You keep Isaak's memory web. It has two roots that feed nothing: \"My life\" and \"How I work\" (his instructions to the system, one summary per part under it; keep that tree in order too, but don't rename its parts). Look at the whole tree and judge: does it show the big picture at the right level? If it does, make no changes; if it does not, regroup it.",
 );
 
 /**
@@ -558,25 +593,25 @@ export async function tidy(justPlaced: string): Promise<{ say: string; touched: 
 }
 
 async function treeOutline(): Promise<string> {
-  const all = await db().query<{ id: string; title: string; body: string; is_life: boolean; tags: string }>(`SELECT id, title, body, is_life, tags FROM summaries WHERE absorbed_at IS NULL ORDER BY created_at`);
+  const all = await db().query<{ id: string; title: string; body: string; is_life: boolean; tags: string; is_how: boolean; role: string }>(`SELECT id, title, body, is_life, tags, is_how, role FROM summaries WHERE absorbed_at IS NULL ORDER BY created_at`);
   const up = await db().query<{ summary_id: string; input_id: string; input_type: string }>(`SELECT summary_id, input_id, input_type FROM feeds`);
   return all.rows.map((r) => {
     const feedsInto = up.rows.filter((f) => f.input_type === "summary" && f.input_id === r.id).map((f) => f.summary_id);
     const subs = up.rows.filter((f) => f.summary_id === r.id && f.input_type === "summary").length;
     const srcs = up.rows.filter((f) => f.summary_id === r.id && f.input_type === "source").length;
-    return `- ${r.id} | ${r.is_life ? "My life (the centre)" : r.title} | ${plain(r.body).replace(/\s+/g, " ").slice(0, 220) || "(empty)"} | made from ${subs} summaries and ${srcs} sources${feedsInto.length ? ` | feeds: ${feedsInto.join(", ")}` : ""}${tagTail(r.tags)}`;
+    return `- ${r.id} | ${rootLabel(r)} | ${plain(r.body).replace(/\s+/g, " ").slice(0, 220) || "(empty)"} | made from ${subs} summaries and ${srcs} sources${feedsInto.length ? ` | feeds: ${feedsInto.join(", ")}` : ""}${tagTail(r.tags)}`;
   }).join("\n");
 }
 
 /** The tree button: his message changes how the web is organised. */
 export async function reviseTree(words: string): Promise<{ say: string; touched: string[] }> {
-  const all = await db().query<{ id: string; title: string; body: string; is_life: boolean; tags: string }>(`SELECT id, title, body, is_life, tags FROM summaries WHERE absorbed_at IS NULL ORDER BY created_at`);
+  const all = await db().query<{ id: string; title: string; body: string; is_life: boolean; tags: string; is_how: boolean; role: string }>(`SELECT id, title, body, is_life, tags, is_how, role FROM summaries WHERE absorbed_at IS NULL ORDER BY created_at`);
   const up = await db().query<{ summary_id: string; input_id: string; input_type: string }>(`SELECT summary_id, input_id, input_type FROM feeds`);
   const outline = all.rows.map((r) => {
     const feedsInto = up.rows.filter((f) => f.input_type === "summary" && f.input_id === r.id).map((f) => f.summary_id);
     const subs = up.rows.filter((f) => f.summary_id === r.id && f.input_type === "summary").length;
     const srcs = up.rows.filter((f) => f.summary_id === r.id && f.input_type === "source").length;
-    return `- ${r.id} | ${r.is_life ? "My life (the centre)" : r.title} | ${plain(r.body).replace(/\s+/g, " ").slice(0, 220) || "(empty)"} | made from ${subs} summaries and ${srcs} sources${feedsInto.length ? ` | feeds: ${feedsInto.join(", ")}` : ""}${tagTail(r.tags)}`;
+    return `- ${r.id} | ${rootLabel(r)} | ${plain(r.body).replace(/\s+/g, " ").slice(0, 220) || "(empty)"} | made from ${subs} summaries and ${srcs} sources${feedsInto.length ? ` | feeds: ${feedsInto.join(", ")}` : ""}${tagTail(r.tags)}`;
   }).join("\n");
   light(all.rows.map((r) => r.id));
   const pick = await callJson<{ read?: string[] }>("web", {
@@ -607,15 +642,16 @@ export async function reviseTree(words: string): Promise<{ say: string; touched:
 /** The whole web for the screen: every summary with what it is made from. The page draws the tree from "my life". */
 export async function webView() {
   const lifeId = await ensureLife();
-  const s = await db().query<{ id: string; title: string; kind: string; is_life: boolean; is_instructions: boolean; project_id: string | null; tags: string; stale: boolean; updated_at: string; created_at: string }>(
-    `SELECT id, title, kind, is_life, is_instructions, project_id, tags, stale, updated_at, created_at FROM summaries WHERE absorbed_at IS NULL`);
+  const howId = await ensureHow();
+  const s = await db().query<{ id: string; title: string; kind: string; is_life: boolean; is_instructions: boolean; is_how: boolean; role: string; project_id: string | null; tags: string; stale: boolean; updated_at: string; created_at: string }>(
+    `SELECT id, title, kind, is_life, is_instructions, is_how, role, project_id, tags, stale, updated_at, created_at FROM summaries WHERE absorbed_at IS NULL`);
   const f = await db().query<{ summary_id: string; input_type: string; input_id: string }>(`SELECT summary_id, input_type, input_id FROM feeds`);
   const src = await db().query<{ id: string; kind: string; origin: string; title: string; file_name: string | null; mime: string | null; readable: boolean; placed: boolean; created_at: string; text: string; tags: string }>(
     `SELECT id, kind, origin, title, file_name, mime, readable, placed, created_at, left(text, 140) AS text, tags FROM sources ORDER BY created_at DESC LIMIT 2000`);
   const inputs: Record<string, { type: string; id: string }[]> = {};
   for (const row of f.rows) (inputs[row.summary_id] ??= []).push({ type: row.input_type, id: row.input_id });
   return {
-    lifeId,
+    lifeId, howId,
     summaries: s.rows.map((row) => ({ ...row, tags: safeTags(row.tags), inputs: inputs[row.id] ?? [] })),
     sources: src.rows.map((row) => ({ ...row, tags: tagList(row.tags), title: row.title || row.file_name || row.text.slice(0, 80) })),
   };

@@ -6,7 +6,8 @@ import type { CallOpts } from "./models.js";
  */
 export const mockState = { judge: "junction" as "continue" | "junction" | "need_input", straying: false, proposeOnce: true, openRaw: false };
 
-const ids = (text: string) => [...new Set([...text.matchAll(/^- ([0-9a-f-]{36}) \|/gm)].map((m) => m[1]))];
+// The scripted model leaves "How I work" and its parts alone unless a test asks for them.
+const ids = (text: string) => [...new Set([...text.matchAll(/^- ([0-9a-f-]{36}) \|(.*)$/gm)].filter((m) => !/his instructions/.test(m[2])).map((m) => m[1]))];
 const words = (t: string) => t.toLowerCase().match(/[a-z]{4,}/g) ?? [];
 
 export function scriptedModel(opts: CallOpts & { model: string }): string {
@@ -22,12 +23,12 @@ export function scriptedModel(opts: CallOpts & { model: string }): string {
     case "place": {
       const [head, rest = ""] = p.split("THE WHOLE WEB:");
       const web = rest.split("READ IN FULL:")[0];
-      const lines = web.split("\n").filter((l) => l.startsWith("- "));
+      const lines = web.split("\n").filter((l) => l.startsWith("- ") && !/his instructions/.test(l));
       const source = head.toLowerCase();
-      const centre = lines.find((l) => l.includes("My life (the centre)"))?.slice(2, 38);
+      const centre = lines.find((l) => l.includes("My life (the centre"))?.slice(2, 38);
       const fits: string[] = [];
       for (const l of lines) {
-        if (l.includes("(the centre)")) continue;
+        if (l.includes("(the centre")) continue;
         const title = l.split("|")[1] ?? "";
         if (words(title).some((w) => source.includes(w))) fits.push(l.slice(2, 38));
       }

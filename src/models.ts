@@ -1,3 +1,4 @@
+import { howIWorkFor } from "./how.js";
 import { anthropicComplete } from "./ai/anthropic.js";
 import { geminiComplete } from "./ai/gemini.js";
 import { planAvailable, planComplete, planLimited, planStatus } from "./ai/plan.js";
@@ -95,7 +96,9 @@ async function record(task: string, model: string, provider: string, ok: boolean
 }
 
 /** One call to a named model (the board's model pieces). Retries once. */
-export async function callModel(model: string, opts: CallOpts, role: Role | null = null): Promise<CallResult> {
+export async function callModel(model: string, given: CallOpts, role: Role | null = null): Promise<CallResult> {
+  // Every call reads "How I work" (Isaak, 16 Nov): the core and the section for its own part.
+  const opts: CallOpts = { ...given, system: `${given.system}${await howIWorkFor(given.task)}` };
   const started = Date.now();
   const charsIn = opts.system.length + opts.prompt.length;
   let lastError: unknown = null;

@@ -216,3 +216,7 @@ ALTER TABLE sources ADD COLUMN IF NOT EXISTS tags TEXT NOT NULL DEFAULT '[]';
 
 -- An attachment (or an email forwarded inside an email) points at the email it came with.
 ALTER TABLE sources ADD COLUMN IF NOT EXISTS part_of TEXT;
+
+-- "How I work" (Isaak, 16 Nov): a root of its own beside "My life", with one summary per part of the system under it.
+ALTER TABLE summaries ADD COLUMN IF NOT EXISTS is_how BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE summaries ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT '';

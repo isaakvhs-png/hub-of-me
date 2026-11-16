@@ -18,8 +18,9 @@ beforeEach(async () => { await fresh(); });
 describe("the web", () => {
   it("starts with an empty centre", async () => {
     const w = await webView();
-    expect(w.summaries).toHaveLength(1);
-    expect(w.summaries[0].is_life).toBe(true);
+    const life = w.summaries.filter((s) => !s.is_how && !s.role);
+    expect(life).toHaveLength(1);
+    expect(life[0].is_life).toBe(true);
   });
 
   it("places a message into summaries and rewrites them with markers when touched", async () => {
@@ -39,7 +40,7 @@ describe("the web", () => {
     await send("internship notes");
     await chatIdle(); await drain();
     const w = await webView();
-    const child = w.summaries.find((s) => !s.is_life)!;
+    const child = w.summaries.find((s) => !s.is_life && !s.is_how && !s.role)!;
     await editByIsaak(child.id, "My own line here");
     const v = await summaryView(child.id, false);
     expect(v.body).toContain("{{isaak}}My own line here{{/isaak}}");
@@ -50,7 +51,7 @@ describe("the web", () => {
 
   it("revise with 'absorb' absorbs", async () => {
     await send("internship notes"); await chatIdle(); await drain();
-    const child = (await webView()).summaries.find((s) => !s.is_life)!;
+    const child = (await webView()).summaries.find((s) => !s.is_life && !s.is_how && !s.role)!;
     const out = await revise(child.id, "absorb this into the rest");
     expect(out.action).toBe("absorb");
   });
@@ -110,7 +111,7 @@ describe("context packs", () => {
     // Merge what it gathered with another summary: the current version follows the trail.
     const web = await webView();
     const mine = v.items.find((it) => !web.summaries.find((s) => s.id === it.id)?.is_life);
-    const other = web.summaries.find((s) => !s.is_life && !v.items.some((it) => it.id === s.id));
+    const other = web.summaries.find((s) => !s.is_life && !s.is_how && !s.role && !v.items.some((it) => it.id === s.id));
     expect(mine && other).toBeTruthy();
     if (mine && other) {
       await applyChanges([{ do: "merge", ids: [mine.id, other.id], title: "Merged" } as never]);
@@ -208,6 +209,67 @@ describe("the Gmail inbox", () => {
     await drain();
     const tags = await db().query<{ tags: string }>(`SELECT tags FROM sources WHERE id = $1`, [emailId]);
     expect(JSON.parse(tags.rows[0].tags)).toContain("from Anna");
+  });
+});
+
+describe("How I work", () => {
+  beforeEach(async () => { await fresh(); });
+
+  it("every model call reads the core and its own part; the up-check reads nothing", async () => {
+    const systems: Record<string, string> = {};
+    setMock((o) => { systems[o.task] = o.system; return scriptedModel(o); });
+    await send("I like cycling"); await chatIdle(); await drain();
+    await call("web", { task: "probe", system: "Answer with the single word: ok", prompt: "ok?" });
+    setMock(scriptedModel);
+    expect(systems.place).toContain("HOW ISAAK WANTS THE SYSTEM TO WORK");
+    expect(systems.place).toContain("FOR YOU (For placing and tidying)");
+    expect(systems.chat).toContain("FOR YOU (For the chat)");
+    expect(systems.probe).not.toContain("HOW ISAAK WANTS");
+  });
+
+  it("an instruction lands in How I work, and level 0 feeds nothing", async () => {
+    await send("from now on always answer in one line"); await chatIdle(); await drain();
+    const w = await webView();
+    const how = w.summaries.find((s) => s.is_how)!;
+    const msg = (await db().query<{ id: string }>(`SELECT id FROM sources WHERE text = 'from now on always answer in one line'`)).rows[0];
+    const { feed } = await import("../src/web.js");
+    expect(how.inputs.some((i) => i.id === msg.id)).toBe(true);
+    await feed(how.inputs.find((i) => i.type === "summary")!.id, "summary", w.lifeId);
+    const life = (await webView()).summaries.find((s) => s.is_life)!;
+    expect((await webView()).summaries.some((s) => s.inputs.some((i) => i.id === life.id))).toBe(false);
+  });
+
+  it("once: moves the old instructions in, dissolves the old summary, undoes his inbox message and sends it again", async () => {
+    const { addSource, feed } = await import("../src/web.js");
+    const lifeId = await ensureLife();
+    await db().query(`INSERT INTO summaries (id, title, body, is_instructions, stale) VALUES ('old-instr', 'How Isaak wants me to work', 'old', true, false)`);
+    await feed(lifeId, "summary", "old-instr");
+    for (const text of ["from now on always answer briefly", "I want you to never use bullet points"]) {
+      const sid = await addSource({ kind: "message", origin: "isaak", text });
+      await db().query(`UPDATE sources SET placed = true WHERE id = $1`, [sid]);
+      await feed("old-instr", "source", sid);
+    }
+    const inbox = "alright you've got your first like functional usage coming up, my internship is at Wetlands International";
+    const msgId = await addSource({ kind: "message", origin: "isaak", text: inbox });
+    await db().query(`UPDATE sources SET placed = true WHERE id = $1`, [msgId]);
+    await db().query(`INSERT INTO chat (id, role, text, source_id, meta) VALUES ('c1', 'isaak', $1, $2, '{}')`, [inbox, msgId]);
+    await db().query(`INSERT INTO summaries (id, title, body, stale) VALUES ('career', 'Career', 'x', false)`);
+    await feed(lifeId, "summary", "career"); await feed("career", "source", msgId);
+    await db().query(`INSERT INTO proposals (id, title, body) VALUES ('p1', 'Untangle the inbox', 'x')`);
+    await drain(); await chatIdle(); await drain();
+    const w = await webView();
+    expect(w.summaries.some((s) => s.id === "old-instr")).toBe(false);
+    const howTree = w.summaries.find((s) => s.is_how)!;
+    const moved = (await db().query<{ id: string }>(`SELECT id FROM sources WHERE text LIKE 'from now on always answer briefly'`)).rows[0].id;
+    expect(howTree.inputs.some((i) => i.id === moved)).toBe(true);
+    expect(w.summaries.some((s) => s.id === "career")).toBe(false);
+    expect((await db().query<{ status: string }>(`SELECT status FROM proposals WHERE id = 'p1'`)).rows[0].status).toBe("dropped");
+    const chats = (await history()).filter((h) => h.text === inbox);
+    expect(chats).toHaveLength(1);
+    expect(chats[0].id).not.toBe("c1");
+    const again = (await db().query<{ placed: boolean }>(`SELECT placed FROM sources WHERE text = $1`, [inbox])).rows;
+    expect(again).toHaveLength(1);
+    expect(again[0].placed).toBe(true);
   });
 });
 
@@ -326,7 +388,7 @@ describe("placing with the whole web in view", () => {
     const { setMock } = await import("../src/models.js");
     await send("watch my linguistics"); await chatIdle(); await drain();
     const before = await webView();
-    const ling = before.summaries.find((s) => !s.is_life)!;
+    const ling = before.summaries.find((s) => !s.is_life && !s.is_how && !s.role)!;
     setMock((o) => {
       if (o.task === "place" && o.prompt.includes("personal profile")) {
         const centre = /- ([0-9a-f-]{36}) \| My life/.exec(o.prompt)![1];
@@ -357,7 +419,7 @@ describe("the tree button", () => {
   it("one message reorganises the tree: a merge takes both summaries' inputs and is rewritten", async () => {
     await send("internship at Arcadis"); await chatIdle(); await drain();
     await send("bats and turbines"); await chatIdle(); await drain();
-    const before = (await webView()).summaries.filter((s) => !s.is_life);
+    const before = (await webView()).summaries.filter((s) => !s.is_life && !s.is_how && !s.role);
     expect(before.length).toBeGreaterThanOrEqual(2);
     await send("merge those two, they overlap", [], true); await chatIdle();
     const after = await webView();

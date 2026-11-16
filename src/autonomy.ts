@@ -1,6 +1,6 @@
 import { call, callJson, downRoles, ModelDownError, roleDown, type Role } from "./models.js";
 import { bump, db, lightProject, onWake, setDoing } from "./state.js";
-import { annotate, freshen, lifeAndInstructions, place, plain, staleSummaries, tagList, tagSource, tidy, unplaced } from "./web.js";
+import { absorb, annotate, ensureHow, freshen, lifeAndInstructions, markStale, place, plain, staleSummaries, tagList, tagSource, tidy, unplaced } from "./web.js";
 import { acceptSuggestion, canon, closeProject, getProject, runAndWait, talk } from "./projects.js";
 import { createProposal } from "./proposals.js";
 import { say } from "./chat.js";
@@ -55,6 +55,80 @@ async function probe() {
   }
 }
 
+/** Placing one source, then tidying on the fly: does the tree still show the big picture, given what just came in? */
+async function placeAndTidy(sourceId: string) {
+  const r = await place(sourceId);
+  const src = (await db().query<{ title: string; text: string; tags: string }>(`SELECT title, text, tags FROM sources WHERE id = $1`, [sourceId])).rows[0];
+  const t = await tidy(`${src?.title ?? ""}\n${src?.text ?? ""}${tagList(src?.tags).length ? `\n[its tags: ${tagList(src?.tags).join(", ")}]` : ""}`).catch(() => ({ say: "", touched: [] as string[] }));
+  if (t.say) await say(t.say);
+  return r;
+}
+
+const metaHas = async (key: string) => (await db().query(`SELECT 1 FROM meta WHERE key = $1`, [key])).rows.length > 0;
+const metaGet = async (key: string) => (await db().query<{ value: string }>(`SELECT value FROM meta WHERE key = $1`, [key])).rows[0]?.value ?? null;
+const metaSet = (key: string, value: string) => db().query(`INSERT INTO meta (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [key, value]);
+
+/**
+ * Once (Isaak, 16 Nov), in this order: the old instructions summary is dissolved into what it sat under; the messages
+ * that fed it are placed again, one at a time and oldest first, so the filer sorts them into "How I work" itself; then his message about the internship inbox is undone (what was made from it and after it goes, its two
+ * proposals are dropped, the chat around it is cleared) and sent through the chat again.
+ */
+async function moveInstructionsOnce(): Promise<boolean> {
+  if (roleDown("web")) return false;
+  if (!(await metaHas("how-migrate:2026-11-16"))) {
+    await ensureHow();
+    if (!(await metaHas("how-migrate:start"))) {
+      const old = (await db().query<{ id: string }>(`SELECT id FROM summaries WHERE is_instructions = true AND absorbed_at IS NULL LIMIT 1`)).rows[0];
+      const list = old ? (await db().query<{ input_id: string }>(
+        `SELECT f.input_id FROM feeds f JOIN sources s ON s.id = f.input_id WHERE f.summary_id = $1 AND f.input_type = 'source' ORDER BY s.created_at`, [old.id])).rows.map((r) => r.input_id) : [];
+      await metaSet("how-migrate:list", JSON.stringify(list));
+      await metaSet("how-migrate:start", new Date().toISOString());
+      // The old summary goes first (its messages go to what it sat under), so the filer doesn't put them back into it.
+      if (old) {
+        await absorb(old.id).catch(() => undefined);
+        await db().query(`UPDATE summaries SET is_instructions = false WHERE id = $1`, [old.id]);
+      }
+    }
+    const list = JSON.parse((await metaGet("how-migrate:list")) ?? "[]") as string[];
+    for (const sid of list) {
+      if (await metaHas(`how-moved:${sid}`)) continue;
+      await metaSet(`how-moved:${sid}`, "done");
+      setDoing("Moving your instructions into How I work");
+      await placeAndTidy(sid).catch(() => undefined);
+      return true;
+    }
+    await metaSet("how-migrate:2026-11-16", new Date().toISOString());
+    return true;
+  }
+  if (!(await metaHas("redo-inbox-message:2026-11-16"))) {
+    await metaSet("redo-inbox-message:2026-11-16", new Date().toISOString());
+    const start = (await metaGet("how-migrate:start")) ?? new Date().toISOString();
+    const msg = (await db().query<{ id: string; text: string; created_at: string }>(
+      `SELECT id, text, created_at FROM sources WHERE kind = 'message' AND origin = 'isaak' AND text LIKE 'alright you''ve got your first like functional usage%' ORDER BY created_at LIMIT 1`)).rows[0];
+    if (!msg) return true;
+    setDoing("Undoing your inbox message to put it through again");
+    const later = (await db().query<{ id: string }>(
+      `SELECT id FROM sources WHERE created_at >= $1 AND created_at < $2 AND kind IN ('message','reply','proposal')`, [msg.created_at, start])).rows.map((r) => r.id);
+    const made = (await db().query<{ id: string }>(
+      `SELECT id FROM summaries WHERE created_at >= $1 AND created_at < $2 AND is_life = false AND is_how = false AND role = '' AND absorbed_at IS NULL`, [msg.created_at, start])).rows.map((r) => r.id);
+    const touched = (await db().query<{ summary_id: string }>(`SELECT DISTINCT summary_id FROM feeds WHERE input_type = 'source' AND input_id = ANY($1)`, [later])).rows.map((r) => r.summary_id);
+    await db().query(`DELETE FROM feeds WHERE input_type = 'source' AND input_id = ANY($1)`, [later]);
+    for (const sid of made) {
+      touched.push(...(await db().query<{ summary_id: string }>(`SELECT summary_id FROM feeds WHERE input_type = 'summary' AND input_id = $1`, [sid])).rows.map((r) => r.summary_id));
+      await db().query(`DELETE FROM feeds WHERE summary_id = $1 OR (input_type = 'summary' AND input_id = $1)`, [sid]);
+      await db().query(`UPDATE summaries SET absorbed_at = now() WHERE id = $1`, [sid]);
+    }
+    await markStale([...new Set(touched)].filter((t) => !made.includes(t)));
+    await db().query(`UPDATE chat SET deleted_at = now() WHERE source_id = ANY($1)`, [later]);
+    await db().query(`UPDATE proposals SET status = 'dropped', decided_at = now(), why = 'Undone together with his inbox message, to put it through again (Isaak, 16 Nov).' WHERE created_at >= $1 AND created_at < $2 AND status = 'open'`, [msg.created_at, start]);
+    await db().query(`DELETE FROM sources WHERE id = ANY($1)`, [later]);
+    const { send } = await import("./chat.js");
+    await send(msg.text);
+    return true;
+  }
+  return false;
+}
+
 /** One piece of work; false when there was nothing to do. */
 export async function oneStep(): Promise<boolean> {
   await probe();
@@ -62,13 +136,7 @@ export async function oneStep(): Promise<boolean> {
     const next = await unplaced(1);
     if (next[0]) {
       setDoing("Placing something new in the web");
-      const placed = await place(next[0]).then(async (r) => {
-        // Tidying on the fly: does the tree still show the big picture, given what just came in?
-        const src = (await db().query<{ title: string; text: string; tags: string }>(`SELECT title, text, tags FROM sources WHERE id = $1`, [next[0]])).rows[0];
-        const t = await tidy(`${src?.title ?? ""}\n${src?.text ?? ""}${tagList(src?.tags).length ? `\n[its tags: ${tagList(src?.tags).join(", ")}]` : ""}`).catch(() => ({ say: "", touched: [] as string[] }));
-        if (t.say) await say(t.say);
-        return r;
-      }).catch(async (error) => {
+      const placed = await placeAndTidy(next[0]).catch(async (error) => {
         // Gemini being down is not this source's fault: it waits for Gemini to come back.
         if (error instanceof ModelDownError) return;
         // A source that can't be placed for another reason should not block the rest.
@@ -106,6 +174,7 @@ export async function oneStep(): Promise<boolean> {
     if (t.say) await say(t.say);
     return true;
   }
+  if (await moveInstructionsOnce()) return true;
   const own = Boolean(await getKnob("ownWork"));
   if (own && !roleDown("work")) {
     const project = await pickProject();
