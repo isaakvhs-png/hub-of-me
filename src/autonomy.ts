@@ -78,6 +78,15 @@ export async function oneStep(): Promise<boolean> {
       return true;
     }
   }
+  // Once (Isaak, 16 Nov): when everything is placed, one tidying pass over the whole tree as it is, so a tree built
+  // before the layers gets the same judgement as new input would.
+  if (!roleDown("web") && !(await db().query(`SELECT 1 FROM meta WHERE key = 'tidy-whole:2026-11-16'`)).rows.length) {
+    await db().query(`INSERT INTO meta (key, value) VALUES ('tidy-whole:2026-11-16', $1)`, [new Date().toISOString()]);
+    setDoing("Looking over the whole web");
+    const t = await tidy("").catch(() => ({ say: "", touched: [] as string[] }));
+    if (t.say) await say(t.say);
+    return true;
+  }
   const own = Boolean(await getKnob("ownWork"));
   if (own && !roleDown("work")) {
     const project = await pickProject();

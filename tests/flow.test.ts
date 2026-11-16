@@ -217,6 +217,17 @@ describe("placing with the whole web in view", () => {
 });
 
 describe("the tree button", () => {
+  it("once everything is placed, it tidies the whole tree once, with no input to judge it by", async () => {
+    const seen: string[] = [];
+    setMock((o) => { if (o.task === "tidy") seen.push(o.prompt); return scriptedModel(o); });
+    await drain(); await drain();
+    setMock(scriptedModel);
+    const whole = seen.filter((p) => !p.includes("JUST PLACED"));
+    expect(whole.length).toBe(1);
+    const done = await db().query(`SELECT 1 FROM meta WHERE key = 'tidy-whole:2026-11-16'`);
+    expect(done.rows.length).toBe(1);
+  });
+
   it("one message reorganises the tree: a merge takes both summaries' inputs and is rewritten", async () => {
     await send("internship at Arcadis"); await chatIdle(); await drain();
     await send("bats and turbines"); await chatIdle(); await drain();

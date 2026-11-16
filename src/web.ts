@@ -491,14 +491,22 @@ ${LAYERS}
 Changes you can make (a list in "changes"): {"do":"create","title":"","under":["summary ids"],"inputs":["m:ID"]}, {"do":"move","input":"m:ID","from":"summary id","to":"summary id"}, {"do":"link","input":"m:ID","into":"summary id"}, {"do":"unlink","input":"m:ID","from":"summary id"}, {"do":"rename","id":"","title":""}, {"do":"merge","ids":[],"title":""}.
 Answer with one JSON object: {"changes": [], "say": "if you changed something: one sentence for Isaak on what you regrouped and why; else empty"}`;
 
-/** Tidying on the fly (Isaak, 16 Nov): after something new is placed, it judges whether the tree should be regrouped. */
+export const TIDY_WHOLE_SYSTEM = TIDY_SYSTEM.replace(
+  /^You keep Isaak's memory web\. Something new was just placed\. Look at the whole tree and judge: does it still show the big picture at the right level, given what just came in\? Most new input fits inside what is already there and changes nothing; then make no changes\. Only when something meaningfully new arrived, or the tree no longer shows the big picture at the right level, regroup it\./,
+  "You keep Isaak's memory web. Look at the whole tree and judge: does it show the big picture at the right level? If it does, make no changes; if it does not, regroup it.",
+);
+
+/**
+ * Tidying on the fly (Isaak, 16 Nov): after something new is placed, it judges whether the tree should be regrouped.
+ * With nothing just placed it looks at the tree as a whole (the once-only pass after the layers came in).
+ */
 export async function tidy(justPlaced: string): Promise<{ say: string; touched: string[] }> {
   if (roleDown("web")) return { say: "", touched: [] };
   const outline = await treeOutline();
   const out = await callJson<{ changes?: Change[]; say?: string }>("web", {
     task: "tidy",
-    system: TIDY_SYSTEM,
-    prompt: `JUST PLACED:\n${justPlaced.slice(0, 3000)}\n\nTHE WHOLE WEB:\n${outline}`,
+    system: justPlaced ? TIDY_SYSTEM : TIDY_WHOLE_SYSTEM,
+    prompt: justPlaced ? `JUST PLACED:\n${justPlaced.slice(0, 3000)}\n\nTHE WHOLE WEB:\n${outline}` : `THE WHOLE WEB:\n${outline}`,
     maxTokens: 2500,
   });
   if (!out.changes?.length) return { say: "", touched: [] };
