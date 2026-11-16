@@ -4,6 +4,20 @@ What the system actually did when Isaak used it: observed behaviour, why it happ
 
 ---
 
+## 2026-11-16 20:18 · "It's making a mess of things": the to-do document he asked for
+
+**What he did:** while going through the inbox (19:02 UTC, overwhelmed) he asked more than once for one core document to keep track of everything he still has to do. He has since used and revised "Open questions and to-dos to bring to Ragani" as that list.
+**What it did:** at 19:03 the chat said it had started "Open questions and to-dos from the email dump". In the tree that summary is now called "Open questions and to-dos to bring to Ragani": the summary writer renames a summary to "the lasting topic" each time it rewrites it, and most items were for Ragani. Alongside it, three other summaries hold the same kind of content: "Dealing with the internship inbox" (39 sources, under Career and Open threads), "Onboarding at Wetlands International" (33) and "Open threads and waiting proposals" (29).
+**Why it looks like a mess:**
+- The title he asked for is not stable: rewriting can rename it, so his document gets lost.
+- Nothing ties "the one document he asked for" together; each to-do also lands wherever else it fits (redundancy), so it shows in four places.
+- The same summary often sits both under a summary and under that summary's parent (e.g. "Own angles…" and "Learning Python and GIS…" under "Internship as career exploration" and under Career). The tree looks doubled. Career has 12 children.
+- An empty leftover: "Conversations before the method arrives" has no inputs since its proposal was moved out of How I work (builder's one-time move).
+- There's no button on screen to merge summaries; only the chat or the tree button can do it.
+- The chat told him "I won't add new proposals while the ten open ones wait", a rule nobody gave it. Ten proposals are open.
+**Numbers:** 31 summaries (7 of them How I work), 104 sources, 32 emails, nothing waiting.
+**Parked by Isaak:** "let's talk about that later".
+
 ## 2026-11-16 18:34 · His message got no answer; a deploy killed it
 
 **What he did:** asked the chat (17:34:50 UTC) whether Kuto, Ragani and Thursday's meeting are all, "look expansively, cover the whole of Wetlands".
