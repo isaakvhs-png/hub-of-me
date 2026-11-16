@@ -342,3 +342,5 @@ Claude's questions that the next answer refers to:
 > One thing I don't entirely understand, ask it where the source came from that somebody's asking for my emergency contacts, and it said, I don't know. Like, what the fuck do you mean, I don't know? I just fed the sources to you, mate. And you made it up from those things. What the fuck?
 
 > We leave it for now, but this is diagnostic data, so do store it somewhere. Actually, can you do something for me? Can you store automatically all of this diagnostic data? Like after every, you know, reply to me, if I did something new with it, you can like quickly look at the model and see what it did and like store something when it's worth it. Yeah.
+
+> Cool. Well, you can start adding to it right away because I sent it a message. And instead of replying to it, I see in the upper right corner updating an outdated summary. So that's not entirely right. And besides just adding to that folder we now have, please also reply as to why it's doing it and why it's not responding.

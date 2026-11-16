@@ -4,6 +4,13 @@ What the system actually did when Isaak used it: observed behaviour, why it happ
 
 ---
 
+## 2026-11-16 18:34 · His message got no answer; a deploy killed it
+
+**What he did:** asked the chat (17:34:50 UTC) whether Kuto, Ragani and Thursday's meeting are all, "look expansively, cover the whole of Wetlands".
+**What it did:** nothing. The chat showed not busy, round 0, while the corner said "Updating an outdated summary" (own time, unrelated and normal).
+**Why:** the server restarted at 17:35:51 UTC, one minute after his message. That was the builder's push of DIAGNOSTICS.md, which Render auto-deployed. The answer was running in memory on the old instance and died with it. Nothing on boot picks up a message of his that never got a reply. Errors in an answer are also swallowed silently (`.catch(() => undefined)`), so a failed answer would look the same.
+**Could change:** (1) on boot, answer any message of his that has no reply after it; (2) pushes that only touch docs skip the deploy (`[skip render]` in the commit message); (3) a failed answer says so in the chat instead of vanishing.
+
 ## 2026-11-16 18:27 · Chat said "I don't know" where a source existed
 
 **What he did:** asked the chat where Ragani's request for his emergency contacts came from.
