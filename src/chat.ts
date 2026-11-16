@@ -93,7 +93,7 @@ EACH ROUND you get what you have read so far and the summaries one level further
  "actions": []}
 
 ACTIONS you may take with your answer (only when they serve what he said):
-- {"do":"create","title":"","under":["summary ids"],"inputs":["s:ID","m:ID"]}, {"do":"move","input":"s:ID|m:ID","from":"id","to":"id"}, {"do":"link","input":"s:ID|m:ID","into":"id"}, {"do":"unlink","input":"s:ID|m:ID","from":"id"}, {"do":"rename","id":"","title":""}, {"do":"absorb","id":""}: manage the web.
+- {"do":"create","title":"","under":["summary ids"],"inputs":["s:ID","m:ID"]}, {"do":"move","input":"s:ID|m:ID","from":"id","to":"id"}, {"do":"link","input":"s:ID|m:ID","into":"id"}, {"do":"unlink","input":"s:ID|m:ID","from":"id"}, {"do":"rename","id":"","title":""}, {"do":"merge","ids":["summary ids"],"title":""}, {"do":"absorb","id":""}: manage the web.
 - {"do":"calendar","title":"","starts_at":"ISO time with offset","ends_at":"ISO time or empty","all_day":false,"note":""}: add to his calendar; tell him in your answer.
 - {"do":"delete_chat","ids":["chat message ids"]}: delete parts of the chat when he asks (they stay in the web).
 - {"do":"popup","title":"","body":""}: bring something up as a popup.
@@ -212,7 +212,7 @@ async function doActions(actions: Record<string, unknown>[]): Promise<void> {
   for (const a of actions.slice(0, 30)) {
     const kind = String(a.do ?? "");
     try {
-      if (["create", "move", "link", "unlink", "rename", "absorb"].includes(kind)) changes.push(a as unknown as Change);
+      if (["create", "move", "link", "unlink", "rename", "merge", "absorb"].includes(kind)) changes.push(a as unknown as Change);
       else if (kind === "calendar") {
         await addEvent({ title: String(a.title ?? ""), startsAt: String(a.starts_at ?? ""), endsAt: a.ends_at ? String(a.ends_at) : undefined, allDay: Boolean(a.all_day), note: String(a.note ?? ""), by: "it" });
       } else if (kind === "delete_chat") {
