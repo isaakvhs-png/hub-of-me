@@ -39,6 +39,17 @@ process.on("uncaughtException", (error) => console.error("uncaught:", error));
 process.on("unhandledRejection", (reason) => console.error("unhandled:", reason));
 
 const server = serve({ fetch: app.fetch, port }, () => console.log(`hub-rings on http://127.0.0.1:${port}`));
-const shutdown = () => { stop(); server.close(); void database.close().finally(() => process.exit(0)); };
-process.on("SIGTERM", shutdown);
-process.on("SIGINT", shutdown);
+// A restart (Isaak, 16 Nov: "that big circle spins in the middle, like do not touch"): the screen shows it at once, new
+// chat messages are refused, and an answer already under way gets up to 25 seconds to finish before the server goes.
+let shuttingDown = false;
+const shutdown = async () => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  const { live, bump } = await import("../src/state.js");
+  live.restarting = true; bump();
+  const { chatIdle } = await import("../src/chat.js");
+  await Promise.race([chatIdle(), new Promise((r) => setTimeout(r, 25_000))]);
+  stop(); server.close(); void database.close().finally(() => process.exit(0));
+};
+process.on("SIGTERM", () => void shutdown());
+process.on("SIGINT", () => void shutdown());

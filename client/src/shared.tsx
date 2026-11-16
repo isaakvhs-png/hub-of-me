@@ -3,6 +3,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from "r
 export interface Popup { id: string; kind: string; title: string; body: string; ref_id: string | null; created_at: string }
 export interface Live {
   version: number;
+  restarting?: boolean;
   lit: Record<string, number>;
   litProjects: Record<string, number>;
   chat: { busy: boolean; round: number; why: string; stopAsked: boolean };

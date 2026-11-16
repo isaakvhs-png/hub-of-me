@@ -189,3 +189,8 @@ th { color: var(--dim); font-weight: normal; }
 
 .node .times { color: var(--cyan); font-size: 11px; margin-left: 4px; }
 .links line { stroke: var(--lit); stroke-width: 1.4; opacity: 0.8; }
+
+/* A restart: a big circle in the middle, nothing to click. */
+.restarting { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,0.75); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; color: var(--fg, #ddd); font-size: 15px; }
+.restarting .ring { width: 96px; height: 96px; border-radius: 50%; border: 6px solid rgba(255,255,255,0.15); border-top-color: var(--cyan, #5ce1e6); animation: ringspin 0.9s linear infinite; }
+@keyframes ringspin { to { transform: rotate(360deg); } }

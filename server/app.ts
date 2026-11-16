@@ -13,6 +13,7 @@ import { addEvent, deleteEvent, listEvents, updateEvent } from "../src/calendar.
 import { acceptSuggestion, closeProject, createProject, lego, listProjects, pickUp, projectView, reopen, setBoard, startRun, stopRun, talk } from "../src/projects.js";
 import { buildPack, editPack, listPacks, packView } from "../src/packs.js";
 import { checkMail, mailStatus } from "../src/mail.js";
+import { live } from "../src/state.js";
 import { BUILT_IN } from "../src/about.js";
 import { acceptProposal, declineProposal, listProposals, reviseProposal } from "../src/proposals.js";
 import { setKnob, settingsView } from "../src/settings.js";
@@ -95,6 +96,7 @@ export function createApp() {
   // ---------- chat ----------
   app.get("/api/chat", async (c) => c.json(await history(Number(c.req.query("limit") ?? 200) || 200)));
   app.post("/api/chat", async (c) => {
+    if (live.restarting) return c.json({ error: "The server is restarting; send it again in a minute." }, 503);
     const type = c.req.header("content-type") ?? "";
     let text = "";
     let tree = false;

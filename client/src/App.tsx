@@ -45,6 +45,7 @@ function Shell({ onSignedOut }: { onSignedOut: () => void }) {
   const [floats, setFloats] = useState<Float[]>([]);
   const [proposalOpen, setProposalOpen] = useState<string | null>(null);
   const shownToasts = useRef(new Set<string>());
+  const [down, setDown] = useState(false);
 
   // The live pulse: what lights up, what the chat and its own work are doing, popups.
   useEffect(() => {
@@ -53,8 +54,13 @@ function Shell({ onSignedOut }: { onSignedOut: () => void }) {
     const tick = async () => {
       try {
         const l = await api<Live>("/live");
+        if (alive) setDown(Boolean(l.restarting));
         if (alive && l.version !== last) { last = l.version; setLive(l); } else if (alive) setLive((old) => (old && JSON.stringify(old.lit) === JSON.stringify(l.lit) ? old : l));
-      } catch (e) { if (e instanceof ApiError && e.status === 401) onSignedOut(); }
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) onSignedOut();
+        // No answer at all (or Render's own error page) while it restarts: show the circle until it is back.
+        else if (alive) setDown(true);
+      }
       if (alive) setTimeout(tick, 1200);
     };
     void tick();
@@ -90,6 +96,12 @@ function Shell({ onSignedOut }: { onSignedOut: () => void }) {
 
   return (
     <ShellContext.Provider value={shell}>
+      {down && (
+        <div className="restarting">
+          <div className="ring" />
+          <div>The server is restarting. Don't touch anything; it'll be back in a minute.</div>
+        </div>
+      )}
       <div className="app">
         <div className="top">
           <div className="brand">&gt; hub-rings</div>

@@ -20,6 +20,8 @@ export interface Live {
   chat: { busy: boolean; round: number; why: string; stopAsked: boolean } ;
   /** What its own work is doing now, in a sentence. */
   doing: string;
+  /** The server is shutting down for a restart (a deploy, or Render putting it to sleep): don't touch. */
+  restarting?: boolean;
 }
 
 export const live: Live = { version: 1, lit: {}, litProjects: {}, chat: { busy: false, round: 0, why: "", stopAsked: false }, doing: "" };
