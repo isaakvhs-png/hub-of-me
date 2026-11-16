@@ -209,10 +209,23 @@ async function placeInput(input: { type: "summary" | "source"; id: string }, lab
     const line = plain(r.body).replace(/\s+/g, " ").slice(0, 220);
     return `- ${r.id} | ${r.is_life ? "My life (the centre)" : r.title}${r.kind === "project" ? " (project)" : ""} | ${line || "(empty so far)"}${into.get(r.id)?.length ? ` | feeds: ${into.get(r.id)!.join(", ")}` : ""}`;
   }).join("\n");
+  // First it picks the summaries that might hold this angle, then it reads those in full before deciding.
+  const pick = await callJson<{ read?: string[] }>("web", {
+    task: "place-candidates",
+    system: `You keep Isaak's memory web. A new source has to be placed. From the whole web (title and one line each), pick the summaries you need to read in full to judge whether the source belongs in them or covers a new angle. Answer with one JSON object: {"read": ["summary ids"]}`,
+    prompt: `${label}:\n${content}\n\nTHE WHOLE WEB:\n${outline}`,
+    maxTokens: 800,
+  });
+  const candidates = (pick.read ?? []).filter((x) => known.has(x)).slice(0, 12);
+  const fullTexts: string[] = [];
+  for (const cid of candidates) {
+    const row = all.rows.find((r) => r.id === cid)!;
+    fullTexts.push(`${cid} | ${row.is_life ? "My life" : row.title}:\n${(await annotate(row.body)) || "(empty so far)"}`);
+  }
   const out = await callJson<{ fits?: string[]; new?: { title: string; under?: string[]; takes?: string[] }[]; instruction?: boolean }>("web", {
     task: "place",
     system: PLACE_SYSTEM,
-    prompt: `${label}:\n${content}\n\nTHE WHOLE WEB:\n${outline}`,
+    prompt: `${label}:\n${content}\n\nTHE WHOLE WEB:\n${outline}${fullTexts.length ? `\n\nREAD IN FULL:\n${fullTexts.join("\n\n")}` : ""}`,
     maxTokens: 3000,
   });
   for (const f of out.fits ?? []) if (known.has(f)) fed.add(f);

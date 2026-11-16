@@ -12,8 +12,10 @@ const words = (t: string) => t.toLowerCase().match(/[a-z]{4,}/g) ?? [];
 export function scriptedModel(opts: CallOpts & { model: string }): string {
   const p = opts.prompt;
   switch (opts.task) {
+    case "place-candidates": return JSON.stringify({ read: ids(p.split("THE WHOLE WEB:")[1] ?? "").slice(0, 3) });
     case "place": {
-      const [head, web = ""] = p.split("THE WHOLE WEB:");
+      const [head, rest = ""] = p.split("THE WHOLE WEB:");
+      const web = rest.split("READ IN FULL:")[0];
       const lines = web.split("\n").filter((l) => l.startsWith("- "));
       const source = head.toLowerCase();
       const centre = lines.find((l) => l.includes("My life (the centre)"))?.slice(2, 38);
