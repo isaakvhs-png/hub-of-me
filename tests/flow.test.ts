@@ -195,3 +195,23 @@ describe("its own messages", () => {
   });
 });
 
+
+describe("placing with the whole web in view", () => {
+  it("a new angle can take an existing summary under it", async () => {
+    const { setMock } = await import("../src/models.js");
+    await send("watch my linguistics"); await chatIdle(); await drain();
+    const before = await webView();
+    const ling = before.summaries.find((s) => !s.is_life)!;
+    setMock((o) => {
+      if (o.task === "place" && o.prompt.includes("personal profile")) {
+        const centre = /- ([0-9a-f-]{36}) \| My life/.exec(o.prompt)![1];
+        return JSON.stringify({ fits: [], new: [{ title: "Isaak as a person", under: [centre], takes: [ling.id] }], instruction: false });
+      }
+      return scriptedModel(o);
+    });
+    await send("keep a personal profile of me"); await chatIdle(); await drain();
+    const after = await webView();
+    const profile = after.summaries.find((s) => s.title === "Isaak as a person")!;
+    expect(profile.inputs.some((i) => i.type === "summary" && i.id === ling.id)).toBe(true);
+  });
+});

@@ -166,14 +166,14 @@ Every message and file is a source. Summaries are made from sources and from oth
 
 Redundancy is on purpose. Isaak: "if I upload something about my internship, I don't just want it to create a summary of my internship. I want that to map this into different places." His internship may feed into his university, his university into his career, his career into his life; the internship also counts as exploring career possibilities, which feeds his career again; and there may be a summary of him in 2026, or of a project he is doing, where it is background context. Create as many summaries as you like, as long as each catches a new angle (a topic, a period of time, a project, a theme). A small piece that fits nowhere yet may stay unplaced until enough similar pieces make a summary worth having.
 
-You look at the web one level at a time, starting at the centre. For the source you are shown, say:
-- "fits": ids of the summaries shown that this source should feed directly (often several);
-- "descend": ids of summaries shown whose inputs you want to see next, because the source may fit deeper there;
-- "new": new summaries to make for angles that are missing, each with "title" and "under" (ids of shown summaries the new one should feed into);
+You see the whole web at once: every summary with its title, one line of what it holds, and what it feeds into. For the source you are shown, say:
+- "fits": ids of the summaries this source should feed directly (often several). If the source covers the same angle as an existing summary, it goes into that summary, not into a new one;
+- "new": new summaries only for an angle no existing summary covers yet, each with "title" (the lasting topic or angle, not an event), "under" (ids of summaries it should feed into) and "takes" (ids of existing summaries that should now feed into it; e.g. a new personal profile takes the existing summary of how he speaks);
 - "instruction": true if the source is Isaak telling you how he wants you to behave or how to organise the web.
-Answer with one JSON object: {"fits": [], "descend": [], "new": [{"title": "", "under": []}], "instruction": false, "why": "one line"}`;
+Where a summary sits in the tree is not fixed: when a new angle shows that existing summaries belong under it, use "takes".
+Answer with one JSON object: {"fits": [], "new": [{"title": "", "under": [], "takes": []}], "instruction": false, "why": "one line"}`;
 
-/** Where a source fits: from the centre outward, one level at a time. */
+/** Where a source fits: it sees the whole web (titles and one line each) and places it. */
 export async function place(sourceId: string): Promise<{ fed: string[]; created: string[] }> {
   const r = await db().query<{ kind: string; origin: string; title: string; text: string; readable: boolean; file_name: string | null }>(
     `SELECT kind, origin, title, text, readable, file_name FROM sources WHERE id = $1`, [sourceId]);
@@ -198,38 +198,34 @@ async function placeInput(input: { type: "summary" | "source"; id: string }, lab
   const lifeId = await ensureLife();
   const fed = new Set<string>();
   const created: string[] = [];
-  let instruction = false;
-  let frontier = [lifeId];
-  const shown = new Set<string>(input.type === "summary" ? [input.id] : []);
-  for (let depth = 0; depth < 8 && frontier.length; depth += 1) {
-    const level: { id: string; title: string; gist: string; inputs: number; under?: string }[] = [];
-    for (const parent of frontier) {
-      if (!shown.has(parent)) level.push(...(await gist([parent])));
-      for (const child of await gist(await summaryChildren(parent))) if (!shown.has(child.id) && !level.some((l) => l.id === child.id)) level.push({ ...child, under: parent });
-    }
-    for (const s of level) shown.add(s.id);
-    if (!level.length) break;
-    const listing = level.map((s) => `- ${s.id} | ${s.title}${s.under ? ` (feeds ${s.under})` : " (centre)"} | ${s.inputs} summary inputs | ${s.gist || "(empty so far)"}`).join("\n");
-    const out = await callJson<{ fits?: string[]; descend?: string[]; new?: { title: string; under?: string[] }[]; instruction?: boolean }>("web", {
-      task: "place",
-      system: PLACE_SYSTEM,
-      prompt: `${label}:\n${content}\n\nSUMMARIES AT THIS LEVEL:\n${listing}`,
-      maxTokens: 2000,
-    });
-    const known = new Set(level.map((s) => s.id));
-    for (const f of out.fits ?? []) if (known.has(f)) fed.add(f);
-    for (const n of out.new ?? []) {
-      if (!n?.title?.trim()) continue;
-      const under = (n.under ?? []).filter((u) => known.has(u));
-      const newId = await createSummary(n.title.trim());
-      created.push(newId);
-      for (const u of under.length ? under : [lifeId]) await feed(u, "summary", newId);
-      fed.add(newId);
-    }
-    if (out.instruction && input.type === "source") instruction = true;
-    frontier = (out.descend ?? []).filter((d) => known.has(d));
+  // The whole web at once: title, one line, and what each feeds into.
+  const all = await db().query<{ id: string; title: string; body: string; is_life: boolean; kind: string }>(
+    `SELECT id, title, body, is_life, kind FROM summaries WHERE absorbed_at IS NULL ORDER BY created_at`);
+  const up = await db().query<{ summary_id: string; input_id: string }>(`SELECT summary_id, input_id FROM feeds WHERE input_type = 'summary'`);
+  const into = new Map<string, string[]>();
+  for (const row of up.rows) (into.get(row.input_id) ?? into.set(row.input_id, []).get(row.input_id)!).push(row.summary_id);
+  const known = new Set(all.rows.map((r) => r.id).filter((x) => !(input.type === "summary" && x === input.id)));
+  const outline = all.rows.filter((r) => known.has(r.id)).map((r) => {
+    const line = plain(r.body).replace(/\s+/g, " ").slice(0, 220);
+    return `- ${r.id} | ${r.is_life ? "My life (the centre)" : r.title}${r.kind === "project" ? " (project)" : ""} | ${line || "(empty so far)"}${into.get(r.id)?.length ? ` | feeds: ${into.get(r.id)!.join(", ")}` : ""}`;
+  }).join("\n");
+  const out = await callJson<{ fits?: string[]; new?: { title: string; under?: string[]; takes?: string[] }[]; instruction?: boolean }>("web", {
+    task: "place",
+    system: PLACE_SYSTEM,
+    prompt: `${label}:\n${content}\n\nTHE WHOLE WEB:\n${outline}`,
+    maxTokens: 3000,
+  });
+  for (const f of out.fits ?? []) if (known.has(f)) fed.add(f);
+  for (const n of out.new ?? []) {
+    if (!n?.title?.trim()) continue;
+    const under = (n.under ?? []).filter((u) => known.has(u));
+    const newId = await createSummary(n.title.trim());
+    created.push(newId);
+    for (const u of under.length ? under : [lifeId]) await feed(u, "summary", newId);
+    for (const t of (n.takes ?? []).filter((x) => known.has(x) && x !== lifeId)) await feed(newId, "summary", t);
+    fed.add(newId);
   }
-  if (instruction) fed.add(await instructionsSummary());
+  if (out.instruction && input.type === "source") fed.add(await instructionsSummary());
   for (const target of fed) await feed(target, input.type, input.id);
   await markStale([...fed]);
   light([...fed]);
@@ -253,6 +249,8 @@ Where a picture from the inputs makes the summary more alive, put it on its own 
 Text marked as typed by Isaak himself is his own edit of this summary: weigh it and decide what to do with it.
 In summary inputs, tags in square brackets say where each statement came from (from Isaak, from the web, from your own earlier message, from a work session); a statement without a tag was a model's own thought.
 If a summary input is a summary of a project, say so plainly.
+
+The title names the lasting topic or angle of this summary, not the latest event; keep the current title unless the angle itself changed.
 
 Answer with one JSON object: {"title": "a short title", "body": "the summary with its markers", "tags": ["a few short labels for filtering: topics, periods, kinds"]}`;
 

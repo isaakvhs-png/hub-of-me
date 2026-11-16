@@ -13,23 +13,22 @@ export function scriptedModel(opts: CallOpts & { model: string }): string {
   const p = opts.prompt;
   switch (opts.task) {
     case "place": {
-      const listing = p.split("SUMMARIES AT THIS LEVEL:")[1] ?? "";
-      const lines = listing.split("\n").filter((l) => l.startsWith("- "));
-      const source = (p.split("SUMMARIES AT THIS LEVEL:")[0] ?? "").toLowerCase();
-      const centre = lines.find((l) => l.includes("(centre)"))?.slice(2, 38);
-      const fits: string[] = []; const descend: string[] = [];
+      const [head, web = ""] = p.split("THE WHOLE WEB:");
+      const lines = web.split("\n").filter((l) => l.startsWith("- "));
+      const source = head.toLowerCase();
+      const centre = lines.find((l) => l.includes("My life (the centre)"))?.slice(2, 38);
+      const fits: string[] = [];
       for (const l of lines) {
-        const sid = l.slice(2, 38);
+        if (l.includes("(the centre)")) continue;
         const title = l.split("|")[1] ?? "";
-        if (l.includes("(centre)")) continue;
-        if (words(title).some((w) => source.includes(w))) { fits.push(sid); descend.push(sid); }
+        if (words(title).some((w) => source.includes(w))) fits.push(l.slice(2, 38));
       }
-      const isNew = !fits.length && centre && !/hello|thanks|^hi\b/.test(source.split(":\n")[1] ?? "");
-      const topic = (words(source.split(":\n")[1] ?? source).find((w) => !["this", "that", "with", "from", "have", "about", "message", "isaak", "source"].includes(w)) ?? "notes");
+      const body = head.split(":\n").slice(1).join(":\n");
+      const isNew = !fits.length && centre && !/hello|thanks|^hi\b/.test(body);
+      const topic = (words(body || source).find((w) => !["this", "that", "with", "from", "have", "about", "message", "isaak", "source"].includes(w)) ?? "notes");
       return JSON.stringify({
         fits,
-        descend,
-        new: isNew ? [{ title: topic.charAt(0).toUpperCase() + topic.slice(1), under: [centre] }] : [],
+        new: isNew ? [{ title: topic.charAt(0).toUpperCase() + topic.slice(1), under: [centre], takes: [] }] : [],
         instruction: /\b(always|never|from now on|i want you to)\b/i.test(source),
         why: "mock placement",
       });
