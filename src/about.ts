@@ -42,3 +42,43 @@ export async function facts(): Promise<string> {
     `Models: ${status.roles.map((r) => `${r.name} = ${r.model}${r.down ? " (SHUT DOWN)" : ""}`).join("; ")}.`,
   ].join("\n");
 }
+
+/**
+ * For Isaak to read (16 Nov: "built-in instructions go in there. It should be readable in the app… Just an overview of
+ * these, for my sake"). What each part of the system does by default, from the code. No model reads this as his
+ * instructions; it changes with the code, in the same change.
+ */
+export const BUILT_IN = `What each part does by default (built into the code). "How I work" holds what you add on top of this.
+
+THE CHAT (Sonnet)
+- Talks with you briefly and plainly, and knows how the whole system works.
+- Each round it decides whether it knows enough; if not, it opens summaries one level further, or everything carrying a tag.
+- Can manage the web and the tags, add to your calendar, delete chat messages, bring up popups, make proposals and context packs.
+- A separate cheap model checks each round for straying; three straying rounds and it stops and answers.
+
+THE FILER (Haiku): placing and tidying
+- Instructions first: what you say about how the system should behave goes into "How I work", into the part it is about.
+- The same angle goes into the summary that already has it; a new summary only for a new angle. Redundancy on purpose.
+- The three layers, with your examples: the internship facts outermost, angled versions per context, a whole meaning further in; how you speak going under a profile; the top layer.
+- Tags as many as fit, with your examples (who it came from, who made it, where, which occasion, what it belongs to, when, who it is about, language, what it asks of you, which project).
+- After each placement, tidying looks at the tree and the tags: usually nothing changes; when it does, it tells you in one sentence.
+- Level 0 ("My life", "How I work", "Context packs") feeds nothing.
+
+THE SUMMARY WRITER (Haiku)
+- Writes one coherent piece from its inputs, not a list; every statement carries a marker to where it came from (your colours).
+- Your own typing in a summary is weighed; titles name the lasting topic.
+- Tags the summary, and adds tags to the entries it reads.
+- "How I work" is written right after something is filed into it.
+
+THE PACK MAKER (Haiku)
+- Picks summaries and tags for a purpose, attaches the raw sources under them, writes a short description; keeps the pack as gathered and as it is now.
+
+THE WORKSPACE (Opus)
+- Builds boards with you from existing pieces only; models on a board can open raw files from their packs.
+
+ITS OWN TIME (Opus)
+- Order: place and tidy what came in, its own projects, proposals (each checked for overlap first), outdated summaries last.
+- What it does on its own reaches you as one paragraph until you write again.
+
+THE GMAIL INBOX
+- Checked every 3 minutes; each email is a file, each attachment a file linked to it. It only reads.`;

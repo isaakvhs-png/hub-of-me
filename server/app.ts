@@ -13,6 +13,7 @@ import { addEvent, deleteEvent, listEvents, updateEvent } from "../src/calendar.
 import { acceptSuggestion, closeProject, createProject, lego, listProjects, pickUp, projectView, reopen, setBoard, startRun, stopRun, talk } from "../src/projects.js";
 import { buildPack, editPack, listPacks, packView } from "../src/packs.js";
 import { checkMail, mailStatus } from "../src/mail.js";
+import { BUILT_IN } from "../src/about.js";
 import { acceptProposal, declineProposal, listProposals, reviseProposal } from "../src/proposals.js";
 import { setKnob, settingsView } from "../src/settings.js";
 
@@ -182,6 +183,7 @@ export function createApp() {
     const body = z.object({ title: z.string().default(""), prompt: z.string().trim().min(1, "Say what the pack is about.") }).parse(await c.req.json());
     return c.json({ id: await buildPack(body.title, body.prompt) });
   });
+  app.get("/api/builtin", async (c) => c.json({ text: BUILT_IN }));
   app.get("/api/packs", async (c) => c.json((await listPacks()).map((p) => ({ id: p.id, title: p.title, description: p.description, created_at: p.created_at }))));
   app.get("/api/packs/:id", async (c) => c.json(await packView(c.req.param("id"))));
   app.patch("/api/packs/:id", async (c) => {

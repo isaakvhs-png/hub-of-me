@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
-import { Mic, Spinner, useLiveData, useShell, when } from "./shared";
+import { Mic, Spinner, Win, useLiveData, useShell, when } from "./shared";
 import { Body, Legend, type Ref } from "./Body";
 import { PackModal } from "./Workspace";
 
@@ -190,6 +190,7 @@ export function Tree({ focusId }: { focusId: string | null }) {
         </div>
         {isOpen && (kids.length > 0 || srcKids.length > 0) && (
           <div className="kids">
+            {s.is_how && <BuiltInLine />}
             {kids.map((k) => renderNode(k.id, [...path, id]))}
             {srcKids.map((k) => { const src = srcById.get(k.id)!; return (
               <div key={`${id}>s:${k.id}`} className="node source">
@@ -234,6 +235,26 @@ export function Tree({ focusId }: { focusId: string | null }) {
 
 function mergedFrom(raw?: string): { id: string; title: string }[] {
   try { const v = JSON.parse(raw || "[]"); return Array.isArray(v) ? v : []; } catch { return []; }
+}
+
+/** Inside "How I work": what each part does by default, for him to read (models don't treat it as his instructions). */
+function BuiltInLine() {
+  const [open, setOpen] = useState(false);
+  const [data] = useLiveData<{ text: string }>(() => api("/builtin"));
+  return (
+    <div className="node">
+      <div className="line"><span className="tw">·</span><span className="name dim" onClick={() => setOpen(true)}>Built in: what each part does by default</span><span className="meta">read only</span></div>
+      {open && (
+        <div className="overlay" onClick={() => setOpen(false)}>
+          <div onClick={(e) => e.stopPropagation()}>
+            <Win className="modal" style={{ width: 760 }} title="built in · what each part does by default" right={<button onClick={() => setOpen(false)}>×</button>}>
+              <div className="prose" style={{ whiteSpace: "pre-wrap", maxHeight: 560, overflow: "auto" }}>{data?.text ?? "…"}</div>
+            </Win>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** The Context packs folder beside My life: every pack it has made, newest first. Packs don't count as places (no ×N). */

@@ -130,6 +130,38 @@ async function moveInstructionsOnce(): Promise<boolean> {
     await send(msg.text);
     return true;
   }
+  // Once more (Isaak, 16 Nov), after instructions came first in the filer's rules: what the first move did is wiped
+  // (the links it made from the 13 messages, and the summaries made while it ran), and the 13 go through the filer again.
+  if (!(await metaHas("how-migrate-2:2026-11-16"))) {
+    const list = JSON.parse((await metaGet("how-migrate:list")) ?? "[]") as string[];
+    if (!(await metaHas("how-migrate-2:wiped"))) {
+      await metaSet("how-migrate-2:wiped", new Date().toISOString());
+      const start = await metaGet("how-migrate:start");
+      const end = await metaGet("redo-inbox-message:2026-11-16");
+      if (start && end && list.length) {
+        // The old summary's messages went to what it sat under when it was dissolved: those links stay.
+        const keep = new Set(((await db().query<{ went_into: string }>(`SELECT went_into FROM summaries WHERE title = 'How Isaak wants me to work' AND absorbed_at IS NOT NULL ORDER BY absorbed_at DESC LIMIT 1`)).rows[0]?.went_into ?? "").split(",").filter(Boolean));
+        const links = (await db().query<{ summary_id: string; input_id: string }>(
+          `SELECT summary_id, input_id FROM feeds WHERE input_type = 'source' AND input_id = ANY($1) AND created_at > $2 AND created_at < $3`, [list, start, end])).rows.filter((l) => !keep.has(l.summary_id));
+        for (const l of links) await db().query(`DELETE FROM feeds WHERE summary_id = $1 AND input_type = 'source' AND input_id = $2`, [l.summary_id, l.input_id]);
+        await markStale([...new Set(links.map((l) => l.summary_id))]);
+        // Summaries made while it ran go; what they held goes to what they sat under.
+        const made = (await db().query<{ id: string }>(
+          `SELECT id FROM summaries WHERE created_at > $1 AND created_at < $2 AND is_life = false AND is_how = false AND role = '' AND absorbed_at IS NULL ORDER BY created_at DESC`, [start, end])).rows.map((r) => r.id);
+        for (const sid of made) await absorb(sid).catch(() => undefined);
+      }
+      return true;
+    }
+    for (const sid of list) {
+      if (await metaHas(`how-moved-2:${sid}`)) continue;
+      await metaSet(`how-moved-2:${sid}`, "done");
+      setDoing("Moving your instructions into How I work");
+      await placeAndTidy(sid).catch(() => undefined);
+      return true;
+    }
+    await metaSet("how-migrate-2:2026-11-16", new Date().toISOString());
+    return true;
+  }
   return false;
 }
 

@@ -342,7 +342,7 @@ async function execute(runId: string, projectId: string, board: Board, by: "isaa
             const { popup } = await import("./popups.js");
             await popup("question", `"${project.title}" needs your input`, current.slice(0, 3000), projectId);
             const { say } = await import("./chat.js");
-            await say(`I need your input on my project "${project.title}": ${current.slice(0, 600)}${current.length > 600 ? "…" : ""} You can answer in the project.`, { projectId });
+            await say(`I need your input on my project "${project.title}": ${current} You can answer in the project.`, { projectId });
           }
           bump();
           const answer = await new Promise<string>((resolve) => waiters.set(runId, resolve));

@@ -13,3 +13,5 @@ Every change to what it can do, or how it works, updates its description of itse
 > Right. So from now on, try to keep that perspective, okay? Don't just update things in isolation. If you update one thing, other things are affected. So try to like think about that and inform me, okay?
 
 Before any change: list what else it touches (its self-description, the action lists in its prompts, the placing/tidying/tree prompts, the mock and tests, the client, IDEA.md) and tell Isaak which of those need updating with it.
+
+The overview Isaak reads in the app (BUILT_IN in src/about.ts, "Built in" under "How I work") changes in the same change as any prompt it describes.
