@@ -38,6 +38,7 @@ export function scriptedModel(opts: CallOpts & { model: string }): string {
         fits,
         new: isNew ? [{ title: topic.charAt(0).toUpperCase() + topic.slice(1), under: [centre], takes: [] }] : [],
         instruction: /\b(always|never|from now on|i want you to)\b/i.test(source),
+        tags: [...(/anna/i.test(body) ? ["from Anna"] : []), ...(/internship/i.test(body) ? ["from his internship"] : []), ...(/subject:/i.test(body) ? ["an email"] : ["came from a message"])],
         why: "mock placement",
       });
     }
@@ -45,12 +46,14 @@ export function scriptedModel(opts: CallOpts & { model: string }): string {
       const inputs = [...p.matchAll(/\[\[(s|m):([^\]]+)\]\] [^\n]*:\n([^\n]*)/g)];
       const body = inputs.map((m) => `${m[3].slice(0, 160)} [[${m[1]}:${m[2]}]]`).join(" ") || "";
       const title = /CURRENT TITLE: (.*)/.exec(p)?.[1] ?? "Summary";
-      return JSON.stringify({ title, body: body ? `${body} This is my own thought about it.` : "", tags: words(body).slice(0, 3) });
+      const firstSource = /\[\[s:([^\]]+)\]\]/.exec(p)?.[1];
+      return JSON.stringify({ title, body: body ? `${body} This is my own thought about it.` : "", tags: words(body).slice(0, 3), source_tags: firstSource ? { [firstSource]: ["read while rewriting"] } : {} });
     }
     case "chat": {
       const round = Number(/This is round (\d+)/.exec(p)?.[1] ?? 1);
       const offered = ids(p.split("ONE LEVEL FURTHER YOU COULD OPEN:")[1] ?? "");
       const msg = /HIS MESSAGE: (.*)/.exec(p)?.[1] ?? "";
+      if (round === 1 && /what did anna/i.test(msg) && /from Anna \(/.test(p)) return JSON.stringify({ why: "Opening everything tagged from Anna", enough: false, tags: ["from Anna"] });
       if (/answer NOW/.test(p) || round >= 2 || !offered.length || !msg.includes("?")) {
         const actions = /calendar/i.test(msg) ? [{ do: "calendar", title: "Dentist", starts_at: "2026-11-20T10:00:00+01:00", note: "" }]
           : /context pack/i.test(msg) ? [{ do: "pack", title: "", prompt: msg }] : [];
@@ -86,7 +89,8 @@ export function scriptedModel(opts: CallOpts & { model: string }): string {
       return `THOUGHTS: I look at what I have.\nOUTPUT: ${opts.webSearch ? "Found two pages.\n\nSOURCES:\nExample — https://example.com" : "Here is what I found."}`;
     }
     case "run-summary": return "The model searched and reported back.";
-    case "pack": return JSON.stringify({ title: "Pack", pick: ids(p).slice(0, 3) });
+    case "pack": return JSON.stringify({ title: "Pack", pick: ids(p).slice(0, 3), tags: /from Anna \(/.test(p) && /anna/i.test(p.split("THE SUMMARIES:")[0]) ? ["from Anna"] : [] });
+    case "tag-source": return JSON.stringify({ tags: ["tagged afterwards"] });
     case "pack-description": return JSON.stringify({ description: "What this pack holds, in short." });
     case "revise": return JSON.stringify({ action: /absorb/i.test(p.split("ISAAK SAYS:")[1] ?? "") ? "absorb" : "rewrite", say: "Done." });
     case "read-picture": return "A picture of a desk with a laptop.";

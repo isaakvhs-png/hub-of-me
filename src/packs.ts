@@ -2,7 +2,7 @@ import { id } from "./ids.js";
 import { callJson } from "./models.js";
 import { NotFoundError, ValidationError } from "./errors.js";
 import { bump, db, light } from "./state.js";
-import { annotate, ensureLife, followTrail, plain, readSummaries, sourcesUnder } from "./web.js";
+import { annotate, ensureLife, followTrail, plain, poolText, readSummaries, sourcesUnder, tagTail, taggedWith } from "./web.js";
 
 /**
  * Context packs (IDEA.md): made from a prompt ("gather a context pack on this and this"), stored in the Lego folder for
@@ -12,7 +12,7 @@ import { annotate, ensureLife, followTrail, plain, readSummaries, sourcesUnder }
 export interface Pack { id: string; title: string; prompt: string; description: string; content: string; items: string; created_at: string; updated_at: string }
 
 /** What a pack gathered: the summaries, each with the raw sources under it. */
-export interface PackItem { id: string; title: string; text?: string; sources: { id: string; title: string }[] }
+export interface PackItem { id: string; title: string; text?: string; tag?: string; sources: { id: string; title: string }[] }
 
 export type PackVersion = "current" | "snapshot";
 
@@ -54,17 +54,25 @@ function sourceLines(sources: { id: string; title: string }[], shown: Set<string
 export async function buildPack(title: string, prompt: string): Promise<string> {
   if (!prompt.trim()) throw new ValidationError("Say what the context pack should be about.");
   const lifeId = await ensureLife();
-  const all = await db().query<{ id: string; title: string; body: string; kind: string }>(
-    `SELECT id, title, body, kind FROM summaries WHERE absorbed_at IS NULL ORDER BY updated_at DESC LIMIT 400`);
-  const outline = all.rows.map((s) => `- ${s.id} | ${s.title}${s.kind === "project" ? " (project)" : ""} | ${plain(s.body).slice(0, 200) || "(empty)"}`).join("\n");
-  const out = await callJson<{ title?: string; pick?: string[] }>("web", {
+  const all = await db().query<{ id: string; title: string; body: string; kind: string; tags: string }>(
+    `SELECT id, title, body, kind, tags FROM summaries WHERE absorbed_at IS NULL ORDER BY updated_at DESC LIMIT 400`);
+  const outline = all.rows.map((s) => `- ${s.id} | ${s.title}${s.kind === "project" ? " (project)" : ""} | ${plain(s.body).slice(0, 200) || "(empty)"}${tagTail(s.tags)}`).join("\n");
+  const out = await callJson<{ title?: string; pick?: string[]; tags?: string[] }>("web", {
     task: "pack",
-    system: `You gather a context pack from Isaak's memory web for a model that will work on something. Pick the summaries that give that model what it needs: enough to understand, nothing that only distracts. "My life" is ${lifeId}. Answer with one JSON object: {"title": "a short title", "pick": ["summary ids"]}`,
-    prompt: `WHAT THE PACK IS FOR: ${prompt}\n\nTHE SUMMARIES:\n${outline || "(the web is still empty)"}`,
+    system: `You gather a context pack from Isaak's memory web for a model that will work on something. Pick the summaries that give that model what it needs: enough to understand, nothing that only distracts. You can also pick tags: a tag brings in every summary and every raw entry (message, file, email) that carries it, wherever it sits in the web. "My life" is ${lifeId}. Answer with one JSON object: {"title": "a short title", "pick": ["summary ids"], "tags": ["tags from the pool"]}`,
+    prompt: `WHAT THE PACK IS FOR: ${prompt}\n\nTHE SUMMARIES:\n${outline || "(the web is still empty)"}\n\nTAGS IN THE POOL (how often each is used):\n${await poolText()}`,
     maxTokens: 2000,
   });
   const known = new Set(all.rows.map((s) => s.id));
-  const picked = (out.pick ?? []).filter((p) => known.has(p)).slice(0, 40);
+  const byTag: { tag: string; sources: { id: string; title: string }[] }[] = [];
+  const fromTags: string[] = [];
+  for (const t of (out.tags ?? []).map(String)) {
+    const hit = await taggedWith(t);
+    if (!hit.summaries.length && !hit.sources.length) continue;
+    fromTags.push(...hit.summaries.map((x) => x.id));
+    byTag.push({ tag: t, sources: hit.sources.map((x) => ({ id: x.id, title: x.title })) });
+  }
+  const picked = [...new Set([...(out.pick ?? []).filter((p) => known.has(p)), ...fromTags.filter((p) => known.has(p))])];
   const read = await readSummaries(picked);
   const items: PackItem[] = [];
   const parts: string[] = [];
@@ -74,6 +82,13 @@ export async function buildPack(title: string, prompt: string): Promise<string> 
     const text = await annotate(r.body);
     items.push({ id: r.id, title: r.title, text, sources });
     parts.push(`## ${r.title}\n${text}\n\n${sourceLines(sources, shown)}`);
+  }
+  // Raw entries a tag brought in that none of the gathered summaries already lists.
+  for (const bt of byTag) {
+    const extra = bt.sources.filter((x) => !shown.has(x.id));
+    if (!extra.length) continue;
+    items.push({ id: `tag:${bt.tag}`, title: `Everything tagged "${bt.tag}"`, tag: bt.tag, sources: extra });
+    parts.push(`## Everything tagged "${bt.tag}"\n${sourceLines(extra, shown)}`);
   }
   const packTitle = (title.trim() || String(out.title ?? "") || prompt).slice(0, 200);
   const desc = read.length ? await callJson<{ description?: string }>("web", {
@@ -103,6 +118,7 @@ export async function packText(packId: string, version: PackVersion = "current")
   const parts: string[] = [];
   const shown = new Set<string>();
   for (const it of now) {
+    if (it.id.startsWith("tag:")) { parts.push(`## ${it.title}\n${sourceLines(it.sources, shown)}`); continue; }
     if (it.gone) { parts.push(`## ${it.title} (no longer in the web; as it was gathered)\n${it.snapshot}`); continue; }
     parts.push(`## ${it.title}${it.note ? ` (${it.note})` : ""}\n${await annotate(it.body)}\n\n${sourceLines(it.sources, shown)}`);
   }
@@ -113,6 +129,11 @@ async function currentItems(p: Pack): Promise<{ id: string; title: string; body:
   const out: Awaited<ReturnType<typeof currentItems>> = [];
   const done = new Set<string>();
   for (const it of itemsOf(p)) {
+    if (it.tag) {
+      const hit = await taggedWith(it.tag);
+      out.push({ id: it.id, title: it.title, body: "", note: "", gone: false, snapshot: "", sources: hit.sources.map((x) => ({ id: x.id, title: x.title })) });
+      continue;
+    }
     const now = await followTrail(it.id);
     if (!now.length) {
       out.push({ id: it.id, title: it.title, body: "", note: "", gone: true, snapshot: it.text?.trim() || "(no text kept)", sources: it.sources });

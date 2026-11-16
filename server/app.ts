@@ -12,6 +12,7 @@ import { absorb, addSource, editByIsaak, revise, sourceFile, sourceView, summary
 import { addEvent, deleteEvent, listEvents, updateEvent } from "../src/calendar.js";
 import { acceptSuggestion, closeProject, createProject, lego, listProjects, pickUp, projectView, reopen, setBoard, startRun, stopRun, talk } from "../src/projects.js";
 import { buildPack, editPack, listPacks, packView } from "../src/packs.js";
+import { checkMail, mailStatus } from "../src/mail.js";
 import { acceptProposal, declineProposal, listProposals, reviseProposal } from "../src/proposals.js";
 import { setKnob, settingsView } from "../src/settings.js";
 
@@ -209,8 +210,9 @@ export function createApp() {
   // ---------- connections and settings ----------
   app.get("/api/connections", async (c) => {
     const r = await db().query(`SELECT id, kind, label, created_at FROM connections ORDER BY created_at`);
-    return c.json({ connections: r.rows, inbound: Boolean(process.env.INBOUND_TOKEN?.trim()) });
+    return c.json({ connections: r.rows, inbound: Boolean(process.env.INBOUND_TOKEN?.trim()), gmail: await mailStatus() });
   });
+  app.post("/api/connections/gmail/check", async (c) => c.json({ new: await checkMail() }));
   app.get("/api/settings", async (c) => c.json(await settingsView()));
   app.post("/api/settings/knob", async (c) => {
     const body = z.object({ name: z.string(), value: z.unknown() }).parse(await c.req.json());

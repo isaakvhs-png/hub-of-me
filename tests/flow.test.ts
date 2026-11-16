@@ -146,6 +146,71 @@ describe("context packs", () => {
   });
 });
 
+describe("tags", () => {
+  beforeEach(async () => { await fresh(); });
+
+  it("tags entries when placing, keeps one pool, and reaches them by tag from packs and the chat", async () => {
+    await send("Anna, my supervisor at the internship, wants the report by Friday"); await chatIdle();
+    await send("I went cycling today"); await chatIdle();
+    await drain();
+    const anna = await db().query<{ tags: string }>(`SELECT tags FROM sources WHERE text LIKE 'Anna%'`);
+    expect(JSON.parse(anna.rows[0].tags)).toContain("from Anna");
+    const { tagPool, taggedWith, renameTags } = await import("../src/web.js");
+    expect((await tagPool()).some((t) => t.tag === "from Anna")).toBe(true);
+    const annaCount = (await taggedWith("from Anna")).sources.length;
+    expect(annaCount).toBeGreaterThan(0);
+    // The chat opens everything carrying a tag.
+    await send("what did Anna send me?"); await chatIdle();
+    const h = await history();
+    expect(JSON.parse(h[h.length - 1].meta).rounds[0].opened).toContain("tag:from Anna");
+    // A pack can gather by tag.
+    const packId = await buildPack("", "what Anna sent me");
+    expect((await packView(packId)).items.length).toBeGreaterThan(0);
+    // Renaming a tag changes it everywhere.
+    await renameTags(["from Anna"], "from Anna (supervisor)");
+    expect((await taggedWith("from Anna (supervisor)")).sources.length).toBe(annaCount);
+    expect((await taggedWith("from Anna")).sources.length).toBe(0);
+  });
+
+  it("everything that came in before tags existed is tagged once, then the pass ends", async () => {
+    await db().query(`INSERT INTO meta (key, value) VALUES ('tag-existing:start', $1)`, [new Date(Date.now() + 60_000).toISOString()]);
+    await send("an old message from before tags"); await chatIdle();
+    await db().query(`UPDATE sources SET tags = '[]'`);
+    await drain(); await drain();
+    await db().query(`UPDATE sources SET tags = '[]' WHERE false`);
+    const done = await db().query(`SELECT 1 FROM meta WHERE key = 'tag-existing:2026-11-16'`);
+    expect(done.rows.length).toBe(1);
+    const tagged = await db().query<{ tags: string }>(`SELECT tags FROM sources WHERE text = 'an old message from before tags'`);
+    expect(tagged.rows[0].tags).not.toBe("[]");
+  });
+});
+
+describe("the Gmail inbox", () => {
+  beforeEach(async () => { await fresh(); });
+
+  it("stores an email as a file, its attachments as files linked to it, and places them", async () => {
+    const { storeEmail } = await import("../src/mail.js");
+    const raw = Buffer.from([
+      "From: Isaak <isaak@outlook.com>", "To: inbox@gmail.com", "Subject: Fw: Report deadline", "Date: Mon, 16 Nov 2026 10:00:00 +0100",
+      "MIME-Version: 1.0", 'Content-Type: multipart/mixed; boundary="b1"', "",
+      "--b1", "Content-Type: text/plain; charset=utf-8", "", "---------- Forwarded message ---------", "From: Anna <anna@ministry.nl>", "The internship report is due Friday.", "",
+      "--b1", "Content-Type: text/csv", 'Content-Disposition: attachment; filename="planning.csv"', "", "week,task", "1,intro", "",
+      "--b1--", "",
+    ].join("\r\n"));
+    const emailId = await storeEmail(raw);
+    const rows = await db().query<{ id: string; kind: string; title: string; text: string; part_of: string | null }>(`SELECT id, kind, title, text, part_of FROM sources ORDER BY created_at`);
+    const email = rows.rows.find((r) => r.id === emailId)!;
+    expect(email.kind).toBe("email");
+    expect(email.text).toContain("From: Anna");
+    const att = rows.rows.find((r) => r.part_of === emailId)!;
+    expect(att.title).toContain("planning.csv");
+    expect(att.text).toContain("week,task");
+    await drain();
+    const tags = await db().query<{ tags: string }>(`SELECT tags FROM sources WHERE id = $1`, [emailId]);
+    expect(JSON.parse(tags.rows[0].tags)).toContain("from Anna");
+  });
+});
+
 describe("the workspace", () => {
   it("talks, accepts the suggested board, runs it and closes into a project summary", async () => {
     const pid = await createProject({ title: "Bat research", owner: "isaak" });
@@ -282,8 +347,9 @@ describe("the tree button", () => {
     setMock((o) => { if (o.task === "tidy") seen.push(o.prompt); return scriptedModel(o); });
     await drain(); await drain();
     setMock(scriptedModel);
+    // Two once-only passes look at the whole tree: the one after the layers came in, and the one after the tagging pass.
     const whole = seen.filter((p) => !p.includes("JUST PLACED"));
-    expect(whole.length).toBe(1);
+    expect(whole.length).toBe(2);
     const done = await db().query(`SELECT 1 FROM meta WHERE key = 'tidy-whole:2026-11-16'`);
     expect(done.rows.length).toBe(1);
   });

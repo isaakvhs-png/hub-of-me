@@ -1,7 +1,7 @@
 import { id } from "./ids.js";
 import { call, callJson, ModelDownError } from "./models.js";
 import { bump, db, light, live } from "./state.js";
-import { addSource, annotate, applyChanges, lifeAndInstructions, reviseTree, nextLevel, plain, readSummaries, type Change } from "./web.js";
+import { addSource, annotate, applyChanges, lifeAndInstructions, reviseTree, nextLevel, plain, poolText, readSummaries, taggedWith, type Change } from "./web.js";
 import { addEvent } from "./calendar.js";
 import { popup } from "./popups.js";
 import { HOW_I_WORK, facts } from "./about.js";
@@ -88,12 +88,14 @@ EACH ROUND you get what you have read so far and the summaries one level further
 {"why": "one line: why you open what you open now, or why you answer now",
  "enough": true or false,
  "open": ["ids of summaries (or s:SOURCEID for a source) to read next round"],
+ "tags": ["tags from the pool: open everything carrying them next round, wherever it sits"],
  "more_history": 0 (how many earlier chat messages to load next round, if you need them),
  "answer": "your reply to Isaak, when enough is true",
  "actions": []}
 
 ACTIONS you may take with your answer (only when they serve what he said):
 - {"do":"create","title":"","under":["summary ids"],"inputs":["s:ID","m:ID"]}, {"do":"move","input":"s:ID|m:ID","from":"id","to":"id"}, {"do":"link","input":"s:ID|m:ID","into":"id"}, {"do":"unlink","input":"s:ID|m:ID","from":"id"}, {"do":"rename","id":"","title":""}, {"do":"merge","ids":["summary ids"],"title":""}, {"do":"absorb","id":""}: manage the web.
+- {"do":"tag_rename","from":"","to":""}, {"do":"tag_merge","tags":[],"into":""}, {"do":"tag_add","tag":"","ids":["summary ids or s:ID"]}: manage the tags (everywhere they are used).
 - {"do":"calendar","title":"","starts_at":"ISO time with offset","ends_at":"ISO time or empty","all_day":false,"note":""}: add to his calendar; tell him in your answer.
 - {"do":"delete_chat","ids":["chat message ids"]}: delete parts of the chat when he asks (they stay in the web).
 - {"do":"popup","title":"","body":""}: bring something up as a popup.
@@ -120,6 +122,7 @@ async function answer(chatId: string): Promise<void> {
       bump();
       const recent = await recentChat(chatId, historyCount);
       const offered = await nextLevel([life.id, ...read.map((r) => r.id)]);
+      const pool = await poolText();
       const forced = live.chat.stopAsked ? "Isaak clicked to stop: answer NOW with what you have." : strayRun >= 3 ? "You strayed from your core instructions three rounds in a row: stop and answer NOW with what you have, and say that you stopped." : "";
       const prompt = [
         await facts(),
@@ -131,13 +134,14 @@ async function answer(chatId: string): Promise<void> {
         attachments.length ? `HE ATTACHED: ${attachments.map((a) => `${a.name} (s:${a.sourceId}${a.readable ? "" : ", you can't read it yet"})`).join(", ")}` : "",
         `HIS MESSAGE: ${msg.text || "(only attachments)"}`,
         offered.length ? `ONE LEVEL FURTHER YOU COULD OPEN:\n${offered.map((o) => `- ${o.id} | ${o.title} | ${o.gist || "(empty so far)"}`).join("\n")}` : "Nothing further to open.",
+        `TAGS YOU COULD OPEN (how often each is used):\n${pool}`,
         `This is round ${round}.${forced ? `\n${forced}` : ""}`,
       ].filter(Boolean).join("\n\n");
-      const out = await callJson<{ why?: string; enough?: boolean; open?: string[]; more_history?: number; answer?: string; actions?: Record<string, unknown>[] }>("chat", { task: "chat", system: SYSTEM, prompt, maxTokens: 6000 });
+      const out = await callJson<{ why?: string; enough?: boolean; open?: string[]; tags?: string[]; more_history?: number; answer?: string; actions?: Record<string, unknown>[] }>("chat", { task: "chat", system: SYSTEM, prompt, maxTokens: 6000 });
       live.chat.why = String(out.why ?? "");
       const roundMeta: { why: string; opened: string[]; straying?: boolean } = { why: live.chat.why, opened: [] };
       meta.rounds.push(roundMeta);
-      if (out.enough || forced || (!out.open?.length && !out.more_history)) {
+      if (out.enough || forced || (!out.open?.length && !out.tags?.length && !out.more_history)) {
         final = String(out.answer ?? "").trim();
         if (!final) final = (await call("chat", { task: "chat-answer", system: SYSTEM.split("EACH ROUND")[0], prompt: `${prompt}\n\nWrite only your reply to Isaak now, as plain text.` })).text.trim();
         if (forced && live.chat.stopAsked) meta.stopped = "Isaak clicked stop";
@@ -152,6 +156,18 @@ async function answer(chatId: string): Promise<void> {
       for (const sid of sourceIds) {
         const row = (await db().query<{ text: string }>(`SELECT left(text, 12000) AS text FROM sources WHERE id = $1`, [sid])).rows[0];
         if (row) { readSources.push({ id: sid, text: row.text }); roundMeta.opened.push(`s:${sid}`); }
+      }
+      // Opening by tag: every summary and every raw entry carrying it.
+      for (const t of (out.tags ?? []).map(String).slice(0, 10)) {
+        const hit = await taggedWith(t);
+        const newSums = hit.summaries.map((x) => x.id).filter((x) => !read.some((r) => r.id === x));
+        for (const r of await readSummaries(newSums)) { read.push({ id: r.id, title: r.title, body: await annotate(r.body) }); roundMeta.opened.push(r.id); }
+        for (const src of hit.sources) {
+          if (readSources.some((x) => x.id === src.id)) continue;
+          const row = (await db().query<{ text: string }>(`SELECT left(text, 12000) AS text FROM sources WHERE id = $1`, [src.id])).rows[0];
+          if (row) { readSources.push({ id: src.id, text: row.text }); roundMeta.opened.push(`s:${src.id}`); }
+        }
+        roundMeta.opened.push(`tag:${t}`);
       }
       if (out.more_history) historyCount += Math.min(200, Math.max(0, Number(out.more_history)));
       // The runaway check: a separate cheap model.
@@ -213,7 +229,7 @@ async function doActions(actions: Record<string, unknown>[]): Promise<void> {
   for (const a of actions.slice(0, 30)) {
     const kind = String(a.do ?? "");
     try {
-      if (["create", "move", "link", "unlink", "rename", "merge", "absorb"].includes(kind)) changes.push(a as unknown as Change);
+      if (["create", "move", "link", "unlink", "rename", "merge", "absorb", "tag_rename", "tag_merge", "tag_add"].includes(kind)) changes.push(a as unknown as Change);
       else if (kind === "calendar") {
         await addEvent({ title: String(a.title ?? ""), startsAt: String(a.starts_at ?? ""), endsAt: a.ends_at ? String(a.ends_at) : undefined, allDay: Boolean(a.all_day), note: String(a.note ?? ""), by: "it" });
       } else if (kind === "delete_chat") {

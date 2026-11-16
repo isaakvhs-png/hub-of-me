@@ -394,7 +394,7 @@ export function PackModal({ id, onClose }: { id: string; onClose: () => void }) 
   useEffect(() => { if (pack && content === null) setContent(pack.content); }, [pack]);
   const list = (items: { id: string; title: string; note?: string; gone?: boolean; sources: { id: string; title: string }[] }[]) => items.map((it) => (
     <div key={it.id} style={{ marginBottom: 8 }}>
-      <a href="#" onClick={(e) => { e.preventDefault(); if (!it.gone) openSummary(it.id); }}>{it.title}</a>{it.note && <span className="dim"> · {it.note}</span>}
+      <a href="#" onClick={(e) => { e.preventDefault(); if (!it.gone && !it.id.startsWith("tag:")) openSummary(it.id); }}>{it.title}</a>{it.note && <span className="dim"> · {it.note}</span>}
       <div className="hist dim">{it.sources.length ? it.sources.map((s) => <div key={s.id}><a href="#" onClick={(e) => { e.preventDefault(); openSource(s.id); }}>• {s.title}</a></div>) : "no raw sources"}</div>
     </div>
   ));

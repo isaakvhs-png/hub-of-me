@@ -91,7 +91,7 @@ const safe = (raw: string) => { try { return JSON.parse(raw || "{}"); } catch { 
 // ---------------- the tree ----------------
 
 interface SummaryNode { id: string; title: string; kind: string; is_life: boolean; is_instructions: boolean; project_id: string | null; tags: string[]; stale: boolean; updated_at: string; inputs: { type: string; id: string }[] }
-interface SourceNode { id: string; kind: string; origin: string; title: string; readable: boolean; placed: boolean; created_at: string }
+interface SourceNode { id: string; kind: string; origin: string; title: string; readable: boolean; placed: boolean; created_at: string; tags: string[] }
 interface WebView { lifeId: string; summaries: SummaryNode[]; sources: SourceNode[] }
 
 const FIXED = ["sources", "projects", "outdated", "unreadable files"];
@@ -113,13 +113,18 @@ export function Tree({ focusId }: { focusId: string | null }) {
   const srcById = useMemo(() => new Map((web?.sources ?? []).map((s) => [s.id, s])), [web]);
   const tags = useMemo(() => {
     const count = new Map<string, number>();
+    // One pool: the tags of summaries and of every entry, most used first.
     for (const s of web?.summaries ?? []) for (const t of s.tags) count.set(t, (count.get(t) ?? 0) + 1);
-    return [...count.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([t]) => t);
+    for (const s of web?.sources ?? []) for (const t of s.tags ?? []) count.set(t, (count.get(t) ?? 0) + 1);
+    return [...count.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t);
   }, [web]);
   const showSources = filters.has("sources") || filters.has("unreadable files");
   const active = [...filters].filter((f) => f !== "sources");
+  const srcTagged = (sid: string, f: string) => Boolean(srcById.get(sid)?.tags?.includes(f));
   const matches = (s: SummaryNode) => active.every((f) =>
-    f === "projects" ? s.kind === "project" : f === "outdated" ? s.stale : f === "unreadable files" ? true : s.tags.includes(f));
+    f === "projects" ? s.kind === "project" : f === "outdated" ? s.stale : f === "unreadable files" ? true
+      : s.tags.includes(f) || s.inputs.some((i) => i.type === "source" && srcTagged(i.id, f)));
+  const tagFilters = active.filter((f) => !FIXED.includes(f));
   const anyFilter = active.filter((f) => f !== "unreadable files").length > 0;
 
   // Paths to matches and to lit summaries open by themselves.
@@ -170,7 +175,9 @@ export function Tree({ focusId }: { focusId: string | null }) {
     const s = byId.get(id);
     if (!s) return null;
     const kids = s.inputs.filter((i) => i.type === "summary" && byId.has(i.id) && !path.includes(i.id));
-    const srcKids = showSources ? s.inputs.filter((i) => i.type === "source" && srcById.has(i.id) && (!filters.has("unreadable files") || !srcById.get(i.id)!.readable)) : [];
+    // Entries show under their summaries when "sources" is on, or when they carry a tag being filtered on.
+    const srcKids = s.inputs.filter((i) => i.type === "source" && srcById.has(i.id) && (
+      (showSources && (!filters.has("unreadable files") || !srcById.get(i.id)!.readable)) || (tagFilters.length > 0 && tagFilters.every((f) => srcTagged(i.id, f)))));
     const isOpen = open.has(id) || autoOpen.has(id);
     const dim = anyFilter && !matches(s);
     return (
@@ -186,7 +193,7 @@ export function Tree({ focusId }: { focusId: string | null }) {
             {kids.map((k) => renderNode(k.id, [...path, id]))}
             {srcKids.map((k) => { const src = srcById.get(k.id)!; return (
               <div key={`${id}>s:${k.id}`} className="node source">
-                <div className="line" onClick={() => openSource(k.id)}>
+                <div className="line" onClick={() => openSource(k.id)} title={src.tags?.length ? `tags: ${src.tags.join(", ")}` : undefined}>
                   <span className="tw">•</span>
                   <span className="name" style={{ color: `var(--${src.origin === "isaak" ? "white" : src.origin === "web" ? "cyan" : src.origin === "session" ? "green" : "amber"})` }}>{src.title || src.kind}</span>
                   <span className="meta">{src.kind}{src.readable ? "" : " · can't read yet"}</span>
@@ -367,7 +374,7 @@ function SummaryWin({ f, z, close, front }: { f: Float; z: number; close: () => 
 }
 
 function SourceWin({ f, z, close, front }: { f: Float; z: number; close: () => void; front: () => void }) {
-  const { openSummary } = useShell();
+  const { openSummary, openSource } = useShell();
   const { pos, start } = useDrag({ x: f.x, y: f.y });
   const [s, , error] = useLiveData<any>(() => api(`/sources/${f.id}`), [f.id]);
   const colour = s ? `var(--${s.origin === "isaak" ? "white" : s.origin === "web" ? "cyan" : s.origin === "session" ? "green" : "amber"})` : undefined;
@@ -383,6 +390,9 @@ function SourceWin({ f, z, close, front }: { f: Float; z: number; close: () => v
             {s.file_name && <div><a href={`/api/sources/${s.id}/file`} target="_blank" rel="noreferrer">open {s.file_name}</a></div>}
             <div className="prose" style={{ color: colour, marginTop: 8 }}>{s.text}</div>
             {s.feedsInto.length > 0 && <div className="hist dim">feeds into: {s.feedsInto.map((p: { id: string; title: string }) => <a key={p.id} href="#" onClick={(e) => { e.preventDefault(); openSummary(p.id); }} style={{ marginRight: 8 }}>{p.title}</a>)}</div>}
+            {s.partOf && <div className="hist dim">attached to: <a href="#" onClick={(e) => { e.preventDefault(); openSource(s.partOf.id); }}>{s.partOf.title}</a></div>}
+            {s.parts?.length > 0 && <div className="hist dim">attachments: {s.parts.map((p: { id: string; title: string }) => <a key={p.id} href="#" onClick={(e) => { e.preventDefault(); openSource(p.id); }} style={{ marginRight: 8 }}>{p.title}</a>)}</div>}
+            {s.tags?.length > 0 && <div className="hist dim">tags: {s.tags.join(", ")}</div>}
           </>
         )}
       </div>

@@ -1,6 +1,6 @@
 import { call, callJson, downRoles, ModelDownError, roleDown, type Role } from "./models.js";
 import { bump, db, lightProject, onWake, setDoing } from "./state.js";
-import { annotate, freshen, lifeAndInstructions, place, plain, staleSummaries, tidy, unplaced } from "./web.js";
+import { annotate, freshen, lifeAndInstructions, place, plain, staleSummaries, tagList, tagSource, tidy, unplaced } from "./web.js";
 import { acceptSuggestion, canon, closeProject, getProject, runAndWait, talk } from "./projects.js";
 import { createProposal } from "./proposals.js";
 import { say } from "./chat.js";
@@ -64,8 +64,8 @@ export async function oneStep(): Promise<boolean> {
       setDoing("Placing something new in the web");
       const placed = await place(next[0]).then(async (r) => {
         // Tidying on the fly: does the tree still show the big picture, given what just came in?
-        const src = (await db().query<{ title: string; text: string }>(`SELECT title, text FROM sources WHERE id = $1`, [next[0]])).rows[0];
-        const t = await tidy(`${src?.title ?? ""}\n${src?.text ?? ""}`).catch(() => ({ say: "", touched: [] as string[] }));
+        const src = (await db().query<{ title: string; text: string; tags: string }>(`SELECT title, text, tags FROM sources WHERE id = $1`, [next[0]])).rows[0];
+        const t = await tidy(`${src?.title ?? ""}\n${src?.text ?? ""}${tagList(src?.tags).length ? `\n[its tags: ${tagList(src?.tags).join(", ")}]` : ""}`).catch(() => ({ say: "", touched: [] as string[] }));
         if (t.say) await say(t.say);
         return r;
       }).catch(async (error) => {
@@ -83,6 +83,25 @@ export async function oneStep(): Promise<boolean> {
   if (!roleDown("web") && !(await db().query(`SELECT 1 FROM meta WHERE key = 'tidy-whole:2026-11-16'`)).rows.length) {
     await db().query(`INSERT INTO meta (key, value) VALUES ('tidy-whole:2026-11-16', $1)`, [new Date().toISOString()]);
     setDoing("Looking over the whole web");
+    const t = await tidy("").catch(() => ({ say: "", touched: [] as string[] }));
+    if (t.say) await say(t.say);
+    return true;
+  }
+  // Once (Isaak, 16 Nov): everything that came in before tags existed gets its tags, one entry at a time, oldest
+  // first; then one tidying pass over the tree and the tag pool together. Nothing is placed again.
+  if (!roleDown("web") && !(await db().query(`SELECT 1 FROM meta WHERE key = 'tag-existing:2026-11-16'`)).rows.length) {
+    await db().query(`INSERT INTO meta (key, value) VALUES ('tag-existing:start', $1) ON CONFLICT (key) DO NOTHING`, [new Date().toISOString()]);
+    const start = (await db().query<{ value: string }>(`SELECT value FROM meta WHERE key = 'tag-existing:start'`)).rows[0].value;
+    const next = (await db().query<{ id: string }>(`SELECT id FROM sources WHERE tags = '[]' AND placed = true AND created_at < $1 AND ('tagged-once:' || id) NOT IN (SELECT key FROM meta WHERE key LIKE 'tagged-once:%') ORDER BY created_at LIMIT 1`, [start])).rows[0];
+    if (next) {
+      setDoing("Tagging what came in before tags existed");
+      await tagSource(next.id).catch(() => undefined);
+      // An entry it gave no tags still counts as done, so the pass ends.
+      await db().query(`INSERT INTO meta (key, value) VALUES ($1, 'done') ON CONFLICT (key) DO NOTHING`, [`tagged-once:${next.id}`]);
+      return true;
+    }
+    await db().query(`INSERT INTO meta (key, value) VALUES ('tag-existing:2026-11-16', $1)`, [new Date().toISOString()]);
+    setDoing("Looking over the whole web and its tags");
     const t = await tidy("").catch(() => ({ say: "", touched: [] as string[] }));
     if (t.say) await say(t.say);
     return true;

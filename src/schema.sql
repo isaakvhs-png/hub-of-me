@@ -210,3 +210,9 @@ ALTER TABLE packs ADD COLUMN IF NOT EXISTS items TEXT NOT NULL DEFAULT '[]';
 -- Merges leave a tag (Isaak, 16 Nov): where a merged or absorbed summary went, and what a merged one came from.
 ALTER TABLE summaries ADD COLUMN IF NOT EXISTS went_into TEXT NOT NULL DEFAULT '';
 ALTER TABLE summaries ADD COLUMN IF NOT EXISTS merged_from TEXT NOT NULL DEFAULT '';
+
+-- Tags (Isaak, 16 Nov): one pool for every entry and every summary; as many as fit.
+ALTER TABLE sources ADD COLUMN IF NOT EXISTS tags TEXT NOT NULL DEFAULT '[]';
+
+-- An attachment (or an email forwarded inside an email) points at the email it came with.
+ALTER TABLE sources ADD COLUMN IF NOT EXISTS part_of TEXT;

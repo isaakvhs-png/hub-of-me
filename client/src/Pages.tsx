@@ -60,7 +60,15 @@ export function Connections() {
     <div className="page">
       <Win title="connections">
         {!c && <div className="dim">Loading…</div>}
-        {c && !c.connections.length && <div className="dim">No connections yet. Email accounts get built in as we go: once one is connected, every incoming email wakes it up and goes into its memory; it may read them and propose replies, and it only sends with your permission.</div>}
+        {c?.gmail && (
+          <div className="item">
+            <div className="row"><span>Gmail inbox</span><span className="badge">{c.gmail.configured ? "connected" : "not set up"}</span><span className="dim">{c.gmail.address ?? ""}</span><span className="grow" />{c.gmail.configured && <button onClick={() => api("/connections/gmail/check", { method: "POST" })}>check now</button>}</div>
+            {c.gmail.configured ? (
+              <div className="dim">{c.gmail.emails} email{c.gmail.emails === 1 ? "" : "s"} read · checks every 3 minutes{c.gmail.lastCheck ? ` · last checked ${when(c.gmail.lastCheck)}` : ""}. Each email goes into the web as a file; attachments as files of their own. It only reads; it sends nothing.</div>
+            ) : <div className="dim">Set GMAIL_ADDRESS and GMAIL_APP_PASSWORD in Render to connect it.</div>}
+            {c.gmail.lastError && <div style={{ color: "var(--red)" }}>Last check failed: {c.gmail.lastError}</div>}
+          </div>
+        )}
         {c?.connections.map((x: any) => <div key={x.id} className="item">{x.label} <span className="badge">{x.kind}</span></div>)}
         {c && <div className="dim" style={{ marginTop: 10 }}>Inbound door for connections: {c.inbound ? "open" : "not set up yet"}.</div>}
       </Win>
