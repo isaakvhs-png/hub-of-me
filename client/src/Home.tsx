@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
 import { Mic, Spinner, useLiveData, useShell, when } from "./shared";
 import { Body, Legend, type Ref } from "./Body";
@@ -95,12 +95,20 @@ interface WebView { lifeId: string; summaries: SummaryNode[]; sources: SourceNod
 
 const FIXED = ["sources", "projects", "outdated", "unreadable files"];
 
-export function Tree() {
+export function Tree({ focusId }: { focusId: string | null }) {
   const { live, openSummary, openSource } = useShell();
   const [web] = useLiveData<WebView>(() => api("/web"));
   const [open, setOpen] = useState<Set<string>>(() => new Set());
   const [filters, setFilters] = useState<Set<string>>(() => new Set());
   const byId = useMemo(() => new Map((web?.summaries ?? []).map((s) => [s.id, s])), [web]);
+  // How many places a summary sits in: once under every summary it feeds into.
+  const parents = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const s of web?.summaries ?? []) for (const i of s.inputs) if (i.type === "summary") (m.get(i.id) ?? m.set(i.id, []).get(i.id)!).push(s.id);
+    return m;
+  }, [web]);
+  const treeRef = useRef<HTMLDivElement>(null);
+  const [lines, setLines] = useState<{ ys: number[]; xs: number[]; right: number } | null>(null);
   const srcById = useMemo(() => new Map((web?.sources ?? []).map((s) => [s.id, s])), [web]);
   const tags = useMemo(() => {
     const count = new Map<string, number>();
@@ -124,6 +132,36 @@ export function Tree() {
     return want;
   }, [web, filters, live?.lit]);
 
+  // The open summary's places in the tree, joined by one line. A place inside a folded folder is shown by the highest open folder above it.
+  useLayoutEffect(() => {
+    const box = treeRef.current;
+    if (!box || !web || !focusId || !byId.has(focusId)) { setLines(null); return; }
+    const paths: string[][] = [];
+    const walk = (id: string, trail: string[]) => {
+      if (trail.length > 40) return;
+      if (id === web.lifeId) { paths.push([id, ...trail]); return; }
+      for (const p of parents.get(id) ?? []) if (!trail.includes(p)) walk(p, [id, ...trail]);
+    };
+    walk(focusId, []);
+    const anchors = new Set<HTMLElement>();
+    for (const path of paths) {
+      for (let n = path.length; n >= 1; n -= 1) {
+        const el = box.querySelector<HTMLElement>(`[data-path="${path.slice(0, n).join(">")}"] > .line`);
+        if (el) { anchors.add(el); break; }
+      }
+    }
+    if (anchors.size < 2) { setLines(null); return; }
+    const top = box.getBoundingClientRect();
+    const ys: number[] = []; const xs: number[] = [];
+    for (const a of anchors) {
+      const r = a.getBoundingClientRect();
+      const name = a.querySelector(".name")?.getBoundingClientRect() ?? r;
+      ys.push(r.top - top.top + box.scrollTop + r.height / 2);
+      xs.push(Math.min(name.right, r.right) - top.left + box.scrollLeft + 8);
+    }
+    setLines({ ys, xs, right: box.scrollWidth - 18 });
+  }, [web, focusId, open, filters, live?.lit, byId, parents]);
+
   if (!web) return <div className="tree dim">Loading…</div>;
   const toggle = (id: string) => { const n = new Set(open); if (n.has(id)) n.delete(id); else n.add(id); setOpen(n); };
 
@@ -135,11 +173,12 @@ export function Tree() {
     const isOpen = open.has(id) || autoOpen.has(id);
     const dim = anyFilter && !matches(s);
     return (
-      <div key={`${path.join(">")}>${id}`} className={`node ${dim ? "dimmed" : ""} ${live?.lit[id] ? "lit" : ""} ${s.stale ? "stale" : ""} ${s.kind === "project" ? "project" : ""}`}>
+      <div key={`${path.join(">")}>${id}`} data-path={[...path, id].join(">")} className={`node ${dim ? "dimmed" : ""} ${live?.lit[id] ? "lit" : ""} ${s.stale ? "stale" : ""} ${s.kind === "project" ? "project" : ""}`}>
         <div className="line">
           <span className="tw" onClick={() => toggle(id)}>{kids.length + srcKids.length ? (isOpen ? "▾" : "▸") : "·"}</span>
           <span className="name" onClick={() => openSummary(id)}>{s.is_life ? "My life" : s.title}</span>
           <span className="meta">{s.kind === "project" ? "project" : ""}{s.is_instructions ? "your instructions" : ""}{kids.length ? ` ${kids.length}` : ""}</span>
+          {(parents.get(id)?.length ?? 0) > 1 && <span className="times" title="This summary sits in more than one place">×{parents.get(id)!.length}</span>}
         </div>
         {isOpen && (kids.length > 0 || srcKids.length > 0) && (
           <div className="kids">
@@ -169,7 +208,13 @@ export function Tree() {
         <span className="grow" />
         <button className="chip" onClick={() => setOpen(new Set())}>fold all</button>
       </div>
-      <div className="tree">
+      <div className="tree" ref={treeRef} style={{ position: "relative" }}>
+        {lines && (
+          <svg className="links" style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none" }} width={lines.right + 18} height={Math.max(...lines.ys) + 20}>
+            <line x1={lines.right} y1={Math.min(...lines.ys)} x2={lines.right} y2={Math.max(...lines.ys)} />
+            {lines.ys.map((y, i) => <line key={i} x1={lines.xs[i]} y1={y} x2={lines.right} y2={y} />)}
+          </svg>
+        )}
         {renderNode(web.lifeId, [])}
         {unplaced > 0 && <div className="dim" style={{ marginTop: 10 }}>{unplaced} new thing{unplaced === 1 ? "" : "s"} still being placed…</div>}
       </div>
@@ -314,7 +359,7 @@ export function Home({ floats, closeFloat, frontFloat }: { floats: Float[]; clos
     <div className="home">
       <Chat folded={folded} onFold={() => setFolded(!folded)} />
       <div className="treepane">
-        <Tree />
+        <Tree focusId={[...floats].reverse().find((f) => f.type === "summary")?.id ?? null} />
         <Floats floats={floats} close={closeFloat} front={frontFloat} />
         <Legend />
       </div>

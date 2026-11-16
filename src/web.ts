@@ -166,6 +166,12 @@ Every message and file is a source. Summaries are made from sources and from oth
 
 Redundancy is on purpose. Isaak: "if I upload something about my internship, I don't just want it to create a summary of my internship. I want that to map this into different places." His internship may feed into his university, his university into his career, his career into his life; the internship also counts as exploring career possibilities, which feeds his career again; and there may be a summary of him in 2026, or of a project he is doing, where it is background context. Create as many summaries as you like, as long as each catches a new angle (a topic, a period of time, a project, a theme). A small piece that fits nowhere yet may stay unplaced until enough similar pieces make a summary worth having.
 
+HOW THE WEB IS LAYERED (from Isaak's own examples). The further out, the more detailed and neutral; the closer to "My life", the more general and the more coloured by the context it sits in.
+- Example, his internship: outermost "Internship: the facts" (what happened, neutral). When it counts towards different contexts, each context gets its own angled version made from the facts: "the internship as part of his studies" under University, "the internship as career exploration" under Career, "the internship as a piece of his year" under Me in 2026. The same facts summary then sits under each angled version. Only if the internship really matters as a thread of its own, a summary of what it means to him as a whole sits further in, made from the angled versions. Whether that layer exists is your judgement.
+- Example, his language: first a summary of how he speaks; later, when he asks for a personal profile of him, the profile takes "how he speaks" under it.
+- Example, the top layer: when everything so far is about him as a person and about the system, only two summaries belong directly under "My life": him, and the system. When he starts telling about his career and his life, a third appears.
+To make an angled version of something that exists: create the new summary (in "new") under its context and let it take the existing one.
+
 You see the whole web at once: every summary with its title, one line of what it holds, and what it feeds into. For the source you are shown, say:
 - "fits": ids of the summaries this source should feed directly (often several). If the source covers the same angle as an existing summary, it goes into that summary, not into a new one;
 - "new": new summaries only for an angle no existing summary covers yet, each with "title" (the lasting topic or angle, not an event), "under" (ids of summaries it should feed into) and "takes" (ids of existing summaries that should now feed into it; e.g. a new personal profile takes the existing summary of how he speaks);
@@ -456,6 +462,13 @@ async function merge(ids: string[], title?: string): Promise<string> {
 }
 
 const TREE_SYSTEM = `Isaak switched on the tree button: his message is about how his memory web is organised. Change the tree the way he means. You see the whole web; read in full what you need.
+
+HOW THE WEB IS LAYERED (from Isaak's own examples). The further out, the more detailed and neutral; the closer to "My life", the more general and the more coloured by the context it sits in.
+- Example, his internship: outermost "Internship: the facts" (what happened, neutral). When it counts towards different contexts, each context gets its own angled version made from the facts: "the internship as part of his studies" under University, "the internship as career exploration" under Career, "the internship as a piece of his year" under Me in 2026. The same facts summary then sits under each angled version. Only if the internship really matters as a thread of its own, a summary of what it means to him as a whole sits further in, made from the angled versions. Whether that layer exists is your judgement.
+- Example, his language: first a summary of how he speaks; later, when he asks for a personal profile of him, the profile takes "how he speaks" under it.
+- Example, the top layer: when everything so far is about him as a person and about the system, only two summaries belong directly under "My life": him, and the system. When he starts telling about his career and his life, a third appears.
+To make an angled version of something that exists: create the new summary (with create) under its context and let it take the existing one.
+
 Changes you can make (a list in "changes"):
 - {"do":"create","title":"","under":["summary ids"],"inputs":["s:ID or m:ID"]}
 - {"do":"move","input":"s:ID or m:ID","from":"summary id","to":"summary id"}
@@ -465,6 +478,44 @@ Changes you can make (a list in "changes"):
 - {"do":"merge","ids":["summary ids"],"title":""}: summaries that partly cover the same become one; what overlaps appears once, what each brings stays
 - {"do":"absorb","id":"summary id"}: a summary goes, its inputs go to what it fed
 Answer with one JSON object: {"changes": [], "say": "one paragraph for Isaak: what you changed and why"}`;
+
+const LAYERS = `HOW THE WEB IS LAYERED (from Isaak's own examples). The further out, the more detailed and neutral; the closer to "My life", the more general and the more coloured by the context it sits in.
+- Example, his internship: outermost "Internship: the facts" (what happened, neutral). When it counts towards different contexts, each context gets its own angled version made from the facts: "the internship as part of his studies" under University, "the internship as career exploration" under Career, "the internship as a piece of his year" under Me in 2026. The same facts summary then sits under each angled version. Only if the internship really matters as a thread of its own, a summary of what it means to him as a whole sits further in, made from the angled versions. Whether that layer exists is your judgement.
+- Example, his language: first a summary of how he speaks; later, when he asks for a personal profile of him, the profile takes "how he speaks" under it.
+- Example, the top layer: when everything so far is about him as a person and about the system, only two summaries belong directly under "My life": him, and the system. When he starts telling about his career and his life, a third appears.
+To make an angled version of something that exists: create the new summary (in "new") under its context and let it take the existing one.
+`;
+
+const TIDY_SYSTEM = `You keep Isaak's memory web. Something new was just placed. Look at the whole tree and judge: does it still show the big picture at the right level, given what just came in? Most new input fits inside what is already there and changes nothing; then make no changes. Only when something meaningfully new arrived, or the tree no longer shows the big picture at the right level, regroup it.
+${LAYERS}
+Changes you can make (a list in "changes"): {"do":"create","title":"","under":["summary ids"],"inputs":["m:ID"]}, {"do":"move","input":"m:ID","from":"summary id","to":"summary id"}, {"do":"link","input":"m:ID","into":"summary id"}, {"do":"unlink","input":"m:ID","from":"summary id"}, {"do":"rename","id":"","title":""}, {"do":"merge","ids":[],"title":""}.
+Answer with one JSON object: {"changes": [], "say": "if you changed something: one sentence for Isaak on what you regrouped and why; else empty"}`;
+
+/** Tidying on the fly (Isaak, 16 Nov): after something new is placed, it judges whether the tree should be regrouped. */
+export async function tidy(justPlaced: string): Promise<{ say: string; touched: string[] }> {
+  if (roleDown("web")) return { say: "", touched: [] };
+  const outline = await treeOutline();
+  const out = await callJson<{ changes?: Change[]; say?: string }>("web", {
+    task: "tidy",
+    system: TIDY_SYSTEM,
+    prompt: `JUST PLACED:\n${justPlaced.slice(0, 3000)}\n\nTHE WHOLE WEB:\n${outline}`,
+    maxTokens: 2500,
+  });
+  if (!out.changes?.length) return { say: "", touched: [] };
+  const touched = await applyChanges(out.changes);
+  return { say: String(out.say ?? "").trim(), touched };
+}
+
+async function treeOutline(): Promise<string> {
+  const all = await db().query<{ id: string; title: string; body: string; is_life: boolean }>(`SELECT id, title, body, is_life FROM summaries WHERE absorbed_at IS NULL ORDER BY created_at`);
+  const up = await db().query<{ summary_id: string; input_id: string; input_type: string }>(`SELECT summary_id, input_id, input_type FROM feeds`);
+  return all.rows.map((r) => {
+    const feedsInto = up.rows.filter((f) => f.input_type === "summary" && f.input_id === r.id).map((f) => f.summary_id);
+    const subs = up.rows.filter((f) => f.summary_id === r.id && f.input_type === "summary").length;
+    const srcs = up.rows.filter((f) => f.summary_id === r.id && f.input_type === "source").length;
+    return `- ${r.id} | ${r.is_life ? "My life (the centre)" : r.title} | ${plain(r.body).replace(/\s+/g, " ").slice(0, 220) || "(empty)"} | made from ${subs} summaries and ${srcs} sources${feedsInto.length ? ` | feeds: ${feedsInto.join(", ")}` : ""}`;
+  }).join("\n");
+}
 
 /** The tree button: his message changes how the web is organised. */
 export async function reviseTree(words: string): Promise<{ say: string; touched: string[] }> {

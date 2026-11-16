@@ -186,3 +186,6 @@ th { color: var(--dim); font-weight: normal; }
 
 /* login */
 .login { margin: 12vh auto; width: 340px; }
+
+.node .times { color: var(--cyan); font-size: 11px; margin-left: 4px; }
+.links line { stroke: var(--lit); stroke-width: 1.4; opacity: 0.8; }

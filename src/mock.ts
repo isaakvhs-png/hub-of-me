@@ -12,6 +12,7 @@ const words = (t: string) => t.toLowerCase().match(/[a-z]{4,}/g) ?? [];
 export function scriptedModel(opts: CallOpts & { model: string }): string {
   const p = opts.prompt;
   switch (opts.task) {
+    case "tidy": return JSON.stringify({ changes: [], say: "" });
     case "tree-candidates": return JSON.stringify({ read: ids(p).slice(0, 4) });
     case "tree": {
       const all = ids(p.split("THE WHOLE WEB:")[1]?.split("READ IN FULL:")[0] ?? "").filter((x) => !new RegExp(`${x} \\| My life`).test(p));

@@ -1,6 +1,6 @@
 import { call, callJson, downRoles, ModelDownError, roleDown, type Role } from "./models.js";
 import { bump, db, lightProject, onWake, setDoing } from "./state.js";
-import { annotate, freshen, lifeAndInstructions, place, plain, staleSummaries, unplaced } from "./web.js";
+import { annotate, freshen, lifeAndInstructions, place, plain, staleSummaries, tidy, unplaced } from "./web.js";
 import { acceptSuggestion, canon, closeProject, getProject, runAndWait, talk } from "./projects.js";
 import { createProposal } from "./proposals.js";
 import { say } from "./chat.js";
@@ -62,7 +62,13 @@ export async function oneStep(): Promise<boolean> {
     const next = await unplaced(1);
     if (next[0]) {
       setDoing("Placing something new in the web");
-      await place(next[0]).catch(async (error) => {
+      const placed = await place(next[0]).then(async (r) => {
+        // Tidying on the fly: does the tree still show the big picture, given what just came in?
+        const src = (await db().query<{ title: string; text: string }>(`SELECT title, text FROM sources WHERE id = $1`, [next[0]])).rows[0];
+        const t = await tidy(`${src?.title ?? ""}\n${src?.text ?? ""}`).catch(() => ({ say: "", touched: [] as string[] }));
+        if (t.say) await say(t.say);
+        return r;
+      }).catch(async (error) => {
         // Gemini being down is not this source's fault: it waits for Gemini to come back.
         if (error instanceof ModelDownError) return;
         // A source that can't be placed for another reason should not block the rest.
