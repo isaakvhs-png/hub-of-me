@@ -336,3 +336,9 @@ Claude's questions that the next answer refers to:
 > All right, messages should be sorted by now. What did it make of it?
 
 > Yeah, number one is good. It's a one-time fix, so you can just move the files over yourself. I don't feel like resending everything to make it do that. Summaries repeating the same opening. Yeah, that's redundancy. I don't really get point two, what you mean exactly or what happened. I haven't looked myself. And the calendar invites. How do I make those readable? Other than that, there was probably more in this than just my internship. It also tells it stuff about where my life is at. So did it also file that?
+
+> I'll wait for now, see whether it builds that as more comes in. If it doesn't, can I then just simply tell it like, yeah, it should be like this. You should have sorted it like that. And then it changes that and it writes that into its instructions. Like it's not bad if I leave it now, right? It doesn't create like a hassle for me later.
+
+> One thing I don't entirely understand, ask it where the source came from that somebody's asking for my emergency contacts, and it said, I don't know. Like, what the fuck do you mean, I don't know? I just fed the sources to you, mate. And you made it up from those things. What the fuck?
+
+> We leave it for now, but this is diagnostic data, so do store it somewhere. Actually, can you do something for me? Can you store automatically all of this diagnostic data? Like after every, you know, reply to me, if I did something new with it, you can like quickly look at the model and see what it did and like store something when it's worth it. Yeah.

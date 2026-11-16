@@ -15,3 +15,9 @@ Every change to what it can do, or how it works, updates its description of itse
 Before any change: list what else it touches (its self-description, the action lists in its prompts, the placing/tidying/tree prompts, the mock and tests, the client, IDEA.md) and tell Isaak which of those need updating with it.
 
 The overview Isaak reads in the app (BUILT_IN in src/about.ts, "Built in" under "How I work") changes in the same change as any prompt it describes.
+
+## Diagnostics
+
+> this is diagnostic data, so do store it somewhere. Actually, can you do something for me? Can you store automatically all of this diagnostic data? Like after every, you know, reply to me, if I did something new with it, you can like quickly look at the model and see what it did and like store something when it's worth it.
+
+After each reply in which Isaak used the system in a new way, look at what the models actually did (live site: /api/chat with its rounds, /api/web, /api/live) and add what's worth keeping to DIAGNOSTICS.md: what he did, what it did, why, what could change and whether it's fixed or parked.
