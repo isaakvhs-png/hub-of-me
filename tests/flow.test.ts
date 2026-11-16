@@ -234,6 +234,9 @@ describe("How I work", () => {
     const msg = (await db().query<{ id: string }>(`SELECT id FROM sources WHERE text = 'from now on always answer in one line'`)).rows[0];
     const { feed } = await import("../src/web.js");
     expect(how.inputs.some((i) => i.id === msg.id)).toBe(true);
+    // Written right away, not left for later.
+    expect(how.stale).toBe(false);
+    expect((await summaryView(how.id, false)).body).not.toBe("");
     await feed(how.inputs.find((i) => i.type === "summary")!.id, "summary", w.lifeId);
     const life = (await webView()).summaries.find((s) => s.is_life)!;
     expect((await webView()).summaries.some((s) => s.inputs.some((i) => i.id === life.id))).toBe(false);

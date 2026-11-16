@@ -1,6 +1,6 @@
 import { call, callJson, downRoles, ModelDownError, roleDown, type Role } from "./models.js";
 import { bump, db, lightProject, onWake, setDoing } from "./state.js";
-import { absorb, annotate, ensureHow, freshen, lifeAndInstructions, markStale, place, plain, staleSummaries, tagList, tagSource, tidy, unplaced } from "./web.js";
+import { absorb, annotate, below as howTree, ensureHow, freshen, lifeAndInstructions, markStale, place, plain, staleSummaries, tagList, tagSource, tidy, unplaced } from "./web.js";
 import { acceptSuggestion, canon, closeProject, getProject, runAndWait, talk } from "./projects.js";
 import { createProposal } from "./proposals.js";
 import { say } from "./chat.js";
@@ -61,6 +61,10 @@ async function placeAndTidy(sourceId: string) {
   const src = (await db().query<{ title: string; text: string; tags: string }>(`SELECT title, text, tags FROM sources WHERE id = $1`, [sourceId])).rows[0];
   const t = await tidy(`${src?.title ?? ""}\n${src?.text ?? ""}${tagList(src?.tags).length ? `\n[its tags: ${tagList(src?.tags).join(", ")}]` : ""}`).catch(() => ({ say: "", touched: [] as string[] }));
   if (t.say) await say(t.say);
+  // "How I work" is read by every model, so it is written right away when something was filed into it.
+  const howId = await ensureHow();
+  const howStale = (await db().query(`SELECT 1 FROM summaries WHERE absorbed_at IS NULL AND stale = true AND (is_how = true OR id = ANY($1))`, [[...(await howTree(howId))]])).rows.length;
+  if (howStale) { setDoing("Writing How I work"); await freshen([howId]).catch(() => undefined); }
   return r;
 }
 

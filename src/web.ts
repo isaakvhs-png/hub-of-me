@@ -204,6 +204,8 @@ export const TAGS_GUIDE = `TAGS: one pool for every entry (messages, files, emai
 - language: "in Dutch"; what it asks of him: "needs a reply", "has a deadline"; which project: "the reader project", "hub-rings"`;
 
 const PLACE_SYSTEM = `You keep Isaak's memory: a web of summaries built from the outside in, with "My life" at the centre.
+
+FIRST, PAY SPECIAL ATTENTION TO INSTRUCTIONS. When a source (or part of it) is Isaak telling how he wants the system to behave or organise itself, that part belongs in "How I work", the other root beside "My life". Put it into the summary there for the part of the system it is about (the chat, placing and tidying, writing summaries, context packs, the workspace, its own time) in "fits", into a new summary under one of those in "new", or into "How I work" itself when it goes for every part; and set "instruction": true. The rest of the source is placed as usual.
 Every message and file is a source. Summaries are made from sources and from other summaries. One input can feed many summaries, and one summary can be made from many inputs.
 
 Redundancy is on purpose. Isaak: "if I upload something about my internship, I don't just want it to create a summary of my internship. I want that to map this into different places." His internship may feed into his university, his university into his career, his career into his life; the internship also counts as exploring career possibilities, which feeds his career again; and there may be a summary of him in 2026, or of a project he is doing, where it is background context. Create as many summaries as you like, as long as each catches a new angle (a topic, a period of time, a project, a theme). A small piece that fits nowhere yet may stay unplaced until enough similar pieces make a summary worth having.
@@ -218,7 +220,6 @@ There are two roots, and neither feeds anything: "My life" (his life) and "How I
 You see the whole web at once: every summary with its title, one line of what it holds, and what it feeds into. For the source you are shown, say:
 - "fits": ids of the summaries this source should feed directly (often several). If the source covers the same angle as an existing summary, it goes into that summary, not into a new one;
 - "new": new summaries only for an angle no existing summary covers yet, each with "title" (the lasting topic or angle, not an event), "under" (ids of summaries it should feed into) and "takes" (ids of existing summaries that should now feed into it; e.g. a new personal profile takes the existing summary of how he speaks);
-- "instruction": true if the source (or part of it) is Isaak telling how he wants the system to behave or organise itself. That part belongs in "How I work", the other root beside "My life": put it into the summary there for the part of the system it is about (in "fits"), into a new summary under one of those (in "new"), or into "How I work" itself when it goes for every part. The rest of the source is placed as usual;
 - "tags": the tags for this source (see TAGS below).
 Where a summary sits in the tree is not fixed: when a new angle shows that existing summaries belong under it, use "takes".
 ${TAGS_GUIDE}
