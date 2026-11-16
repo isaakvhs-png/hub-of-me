@@ -15,6 +15,7 @@ export function Chat({ folded, onFold }: { folded: boolean; onFold: () => void }
   const [over, setOver] = useState(false);
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
+  const [tree, setTree] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   useEffect(() => { logRef.current?.scrollTo(0, logRef.current.scrollHeight); }, [rows?.length, live?.chat.busy]);
@@ -25,9 +26,10 @@ export function Chat({ folded, onFold }: { folded: boolean; onFold: () => void }
     try {
       const form = new FormData();
       form.set("text", text);
+      if (tree) form.set("tree", "1");
       for (const f of files) form.append("files", f);
       await api("/chat", { form });
-      setText(""); setFiles([]);
+      setText(""); setFiles([]); setTree(false);
     } catch (e: any) { setError(e.message); } finally { setSending(false); }
   };
 
@@ -45,7 +47,7 @@ export function Chat({ folded, onFold }: { folded: boolean; onFold: () => void }
             const meta = safe(r.meta);
             return (
               <div key={r.id} className={`msg ${r.role} ${meta.unprompted ? "unprompted" : ""}`}>
-                <div className="who">{r.role === "isaak" ? "you" : meta.unprompted ? "it, on its own" : "it"} · {when(r.created_at)}</div>
+                <div className="who">{r.role === "isaak" ? (meta.tree ? "you · about the tree" : "you") : meta.unprompted ? "it, on its own" : meta.tree ? "it · changed the tree" : "it"} · {when(r.created_at)}</div>
                 <div className="text">{r.text}</div>
                 {meta.attachments?.map((a: any) => <div key={a.sourceId} className="att" style={{ cursor: "pointer" }} onClick={() => openSource(a.sourceId)}>📎 {a.name}{a.readable ? "" : " (can't read this yet)"}</div>)}
                 {meta.projectId && <div className="att" style={{ cursor: "pointer" }} onClick={() => openProject(meta.projectId)}>▣ open the project</div>}
@@ -67,11 +69,12 @@ export function Chat({ folded, onFold }: { folded: boolean; onFold: () => void }
         </div>
         <div className="composer">
           {files.length > 0 && <div className="files">{files.map((f, i) => <span key={i}>📎 {f.name} <a href="#" onClick={(e) => { e.preventDefault(); setFiles(files.filter((_, j) => j !== i)); }}>×</a> </span>)}</div>}
-          <textarea value={text} placeholder="Type, dictate, or drop files…" onChange={(e) => setText(e.target.value)}
+          <textarea value={text} placeholder={tree ? "Say how the tree should change…" : "Type, dictate, or drop files…"} onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void submit(); } }} />
           <div className="row">
             <Mic onText={(t) => setText((x) => (x ? `${x} ${t}` : t))} />
             <button onClick={() => fileRef.current?.click()}>attach</button>
+            <button className={tree ? "primary" : ""} title="Your next message changes how the tree is organised" onClick={() => setTree(!tree)}>{tree ? "tree: on" : "tree"}</button>
             <input ref={fileRef} type="file" multiple hidden onChange={(e) => { setFiles([...files, ...Array.from(e.target.files ?? [])]); e.target.value = ""; }} />
             <span className="grow dim">{error && <span style={{ color: "var(--red)" }}>{error}</span>}</span>
             <button className="primary" disabled={sending} onClick={submit}>send ⏎</button>

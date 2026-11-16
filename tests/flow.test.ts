@@ -215,3 +215,23 @@ describe("placing with the whole web in view", () => {
     expect(profile.inputs.some((i) => i.type === "summary" && i.id === ling.id)).toBe(true);
   });
 });
+
+describe("the tree button", () => {
+  it("one message reorganises the tree: a merge takes both summaries' inputs and is rewritten", async () => {
+    await send("internship at Arcadis"); await chatIdle(); await drain();
+    await send("bats and turbines"); await chatIdle(); await drain();
+    const before = (await webView()).summaries.filter((s) => !s.is_life);
+    expect(before.length).toBeGreaterThanOrEqual(2);
+    await send("merge those two, they overlap", [], true); await chatIdle();
+    const after = await webView();
+    const merged = after.summaries.find((s) => s.title === "Merged");
+    expect(merged).toBeTruthy();
+    expect(merged!.stale).toBe(false);
+    const h = await history();
+    const last = h[h.length - 1];
+    expect(last.role).toBe("it");
+    expect(JSON.parse(last.meta).tree).toBe(true);
+    const msg = await db().query<{ placed: boolean }>(`SELECT placed FROM sources WHERE text = 'merge those two, they overlap'`);
+    expect(msg.rows).toHaveLength(1);
+  });
+});

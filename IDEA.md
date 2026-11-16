@@ -246,3 +246,7 @@ Claude's questions that the next answer refers to:
 > I did not tell you to push. We were still brainstorming, mate. You don't need to revert right now, but let's. Okay, because you already said it works like that. You said it reads the whole summary and then naturally fits whatever input I got into that. Yes, the reading whole summaries line can go in, like the candidates. And then regarding your 45 summaries, I don't suppose there is a way to remove that from the web. So wipe the web clean and then just supply it all those messages again, but now make it sort them properly, like in the same context as well?
 
 > Okay, sounds good. Yeah, you can push that update and also do the wipe and reset of everything. I'll be able to see it, right? In the web, I'll be able to see it sorts.
+
+> maybe add a button where if its on (turns off after that message) that allows me to revise the tree based on talk. that message also gets logged ofc
+
+> Number one, yes, obviously. Number two, well, if it's merging, yes, it should rewrite the summaries as well. If two summaries get merged, which cover sort of the same, which partly overlap, their overlapping part obviously becomes one summary instead of repeating twice. The unique parts that each summary bring stay their unique parts. Other than that, you can push it and upload it and make it.

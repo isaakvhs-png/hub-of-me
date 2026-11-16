@@ -95,20 +95,24 @@ export function createApp() {
   app.post("/api/chat", async (c) => {
     const type = c.req.header("content-type") ?? "";
     let text = "";
+    let tree = false;
     const files: { name: string; bytes: Buffer }[] = [];
     if (type.includes("multipart/form-data")) {
       const form = await c.req.formData();
       text = String(form.get("text") ?? "");
+      tree = String(form.get("tree") ?? "") === "1";
       for (const entry of form.getAll("files")) {
         if (typeof entry === "string") continue;
         const f = entry as File;
         files.push({ name: f.name || "file", bytes: Buffer.from(await f.arrayBuffer()) });
       }
     } else {
-      text = z.object({ text: z.string() }).parse(await c.req.json()).text;
+      const body = z.object({ text: z.string(), tree: z.boolean().optional() }).parse(await c.req.json());
+      text = body.text; tree = Boolean(body.tree);
     }
     if (!text.trim() && !files.length) throw new ValidationError("Write something or attach a file.");
-    return c.json(await send(text, files));
+    if (tree && !text.trim()) throw new ValidationError("Say how the tree should change.");
+    return c.json(await send(text, files, tree));
   });
   app.post("/api/chat/stop", async (c) => { stop(); return c.json({ ok: true }); });
 

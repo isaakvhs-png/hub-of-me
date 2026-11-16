@@ -388,7 +388,7 @@ export async function revise(summaryId: string, words: string): Promise<{ action
   return { action, say: String(out.say ?? "") };
 }
 
-export interface Change { do: string; title?: string; under?: string[]; inputs?: string[]; input?: string; from?: string; to?: string; into?: string; id?: string }
+export interface Change { do: string; title?: string; under?: string[]; inputs?: string[]; input?: string; from?: string; to?: string; into?: string; id?: string; ids?: string[] }
 
 function ref(r: string): { type: "summary" | "source"; id: string } | null {
   const m = /^(s|m):(.+)$/.exec(r.trim());
@@ -399,6 +399,7 @@ function ref(r: string): { type: "summary" | "source"; id: string } | null {
 /** Changes to the web's structure, from the chat or the revise button. Unknown ids are skipped. */
 export async function applyChanges(changes: Change[]): Promise<string[]> {
   const touched: string[] = [];
+  const mergedIds: string[] = [];
   const exists = async (sid: string) => Boolean((await db().query(`SELECT 1 FROM summaries WHERE id = $1 AND absorbed_at IS NULL`, [sid])).rows[0]);
   for (const c of changes.slice(0, 40)) {
     try {
@@ -422,12 +423,83 @@ export async function applyChanges(changes: Change[]): Promise<string[]> {
         await db().query(`UPDATE summaries SET title = $2 WHERE id = $1 AND is_life = false`, [c.id, c.title.trim().slice(0, 200)]); touched.push(c.id);
       } else if (c.do === "absorb" && c.id) {
         await absorb(c.id);
+      } else if (c.do === "merge" && Array.isArray(c.ids)) {
+        const ids: string[] = [];
+        for (const m of c.ids) if (await exists(m) && !ids.includes(m)) ids.push(m);
+        if (ids.length >= 2) { const merged = await merge(ids, c.title); touched.push(merged); mergedIds.push(merged); }
       }
     } catch { /* one bad change does not stop the rest */ }
   }
   await markStale(touched);
   light(touched);
+  // A merged summary is rewritten right away: what overlapped once, what each brought kept (Isaak, 16 Nov).
+  for (const m of mergedIds) { try { await rewrite(m, "These summaries were merged into this one. What they had in common appears once; what each one brought of its own stays."); } catch { /* rewritten when touched */ } }
   return touched;
+}
+
+/** Several summaries become one: it takes all their inputs and feeds everything they fed. */
+async function merge(ids: string[], title?: string): Promise<string> {
+  const rows = (await db().query<{ id: string; title: string; is_life: boolean }>(`SELECT id, title, is_life FROM summaries WHERE id = ANY($1)`, [ids])).rows.filter((r) => !r.is_life);
+  if (rows.length < 2) throw new ValidationError("Merging needs two summaries (and never My life).");
+  const mergedId = await createSummary((title?.trim() || rows.map((r) => r.title).join(" / ")).slice(0, 200));
+  const all = new Set(rows.map((r) => r.id));
+  for (const r of rows) {
+    for (const input of await inputsOf(r.id)) if (!(input.type === "summary" && all.has(input.id))) await feed(mergedId, input.type as "summary" | "source", input.id);
+    for (const p of await parentsOf(r.id)) if (!all.has(p)) await feed(p, "summary", mergedId);
+  }
+  if (!(await parentsOf(mergedId)).length) await feed(await ensureLife(), "summary", mergedId);
+  for (const r of rows) {
+    await db().query(`DELETE FROM feeds WHERE summary_id = $1 OR (input_type = 'summary' AND input_id = $1)`, [r.id]);
+    await db().query(`UPDATE summaries SET absorbed_at = now() WHERE id = $1`, [r.id]);
+  }
+  return mergedId;
+}
+
+const TREE_SYSTEM = `Isaak switched on the tree button: his message is about how his memory web is organised. Change the tree the way he means. You see the whole web; read in full what you need.
+Changes you can make (a list in "changes"):
+- {"do":"create","title":"","under":["summary ids"],"inputs":["s:ID or m:ID"]}
+- {"do":"move","input":"s:ID or m:ID","from":"summary id","to":"summary id"}
+- {"do":"link","input":"s:ID or m:ID","into":"summary id"}
+- {"do":"unlink","input":"s:ID or m:ID","from":"summary id"}
+- {"do":"rename","id":"summary id","title":""}
+- {"do":"merge","ids":["summary ids"],"title":""}: summaries that partly cover the same become one; what overlaps appears once, what each brings stays
+- {"do":"absorb","id":"summary id"}: a summary goes, its inputs go to what it fed
+Answer with one JSON object: {"changes": [], "say": "one paragraph for Isaak: what you changed and why"}`;
+
+/** The tree button: his message changes how the web is organised. */
+export async function reviseTree(words: string): Promise<{ say: string; touched: string[] }> {
+  const all = await db().query<{ id: string; title: string; body: string; is_life: boolean }>(`SELECT id, title, body, is_life FROM summaries WHERE absorbed_at IS NULL ORDER BY created_at`);
+  const up = await db().query<{ summary_id: string; input_id: string; input_type: string }>(`SELECT summary_id, input_id, input_type FROM feeds`);
+  const outline = all.rows.map((r) => {
+    const feedsInto = up.rows.filter((f) => f.input_type === "summary" && f.input_id === r.id).map((f) => f.summary_id);
+    const subs = up.rows.filter((f) => f.summary_id === r.id && f.input_type === "summary").length;
+    const srcs = up.rows.filter((f) => f.summary_id === r.id && f.input_type === "source").length;
+    return `- ${r.id} | ${r.is_life ? "My life (the centre)" : r.title} | ${plain(r.body).replace(/\s+/g, " ").slice(0, 220) || "(empty)"} | made from ${subs} summaries and ${srcs} sources${feedsInto.length ? ` | feeds: ${feedsInto.join(", ")}` : ""}`;
+  }).join("\n");
+  light(all.rows.map((r) => r.id));
+  const pick = await callJson<{ read?: string[] }>("web", {
+    task: "tree-candidates",
+    system: `Isaak wants his memory web reorganised. From the whole web, pick the summaries you need to read in full to do what he asks. Answer with one JSON object: {"read": ["summary ids"]}`,
+    prompt: `ISAAK: ${words}\n\nTHE WHOLE WEB:\n${outline}`,
+    maxTokens: 800,
+  });
+  const known = new Set(all.rows.map((r) => r.id));
+  const read = (pick.read ?? []).filter((x) => known.has(x)).slice(0, 15);
+  light(read);
+  const full: string[] = [];
+  for (const rid of read) {
+    const row = all.rows.find((r) => r.id === rid)!;
+    const inputs = up.rows.filter((f) => f.summary_id === rid).map((f) => `${f.input_type === "summary" ? "m" : "s"}:${f.input_id}`);
+    full.push(`${rid} | ${row.is_life ? "My life" : row.title} (inputs: ${inputs.join(", ") || "none"}):\n${(await annotate(row.body)) || "(empty)"}`);
+  }
+  const out = await callJson<{ changes?: Change[]; say?: string }>("web", {
+    task: "tree",
+    system: TREE_SYSTEM,
+    prompt: `ISAAK: ${words}\n\nTHE WHOLE WEB:\n${outline}${full.length ? `\n\nREAD IN FULL:\n${full.join("\n\n")}` : ""}`,
+    maxTokens: 4000,
+  });
+  const touched = await applyChanges(out.changes ?? []);
+  return { say: String(out.say ?? "").trim() || (touched.length ? "Done." : "I didn't change anything."), touched };
 }
 
 /** The whole web for the screen: every summary with what it is made from. The page draws the tree from "my life". */

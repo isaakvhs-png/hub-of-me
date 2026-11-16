@@ -1,7 +1,7 @@
 import { id } from "./ids.js";
 import { call, callJson, ModelDownError } from "./models.js";
 import { bump, db, light, live } from "./state.js";
-import { addSource, annotate, applyChanges, lifeAndInstructions, nextLevel, plain, readSummaries, type Change } from "./web.js";
+import { addSource, annotate, applyChanges, lifeAndInstructions, reviseTree, nextLevel, plain, readSummaries, type Change } from "./web.js";
 import { addEvent } from "./calendar.js";
 import { popup } from "./popups.js";
 import { HOW_I_WORK, facts } from "./about.js";
@@ -60,7 +60,7 @@ export async function say(text: string, meta: Record<string, unknown> = {}): Pro
 let queue: Promise<void> = Promise.resolve();
 
 /** His message (and files). Stored at once; the answer follows in the background. */
-export async function send(text: string, files: { name: string; bytes: Buffer }[] = []): Promise<{ chatId: string }> {
+export async function send(text: string, files: { name: string; bytes: Buffer }[] = [], tree = false): Promise<{ chatId: string }> {
   const attachments: { sourceId: string; name: string; readable: boolean; mime: string }[] = [];
   for (const f of files) {
     const read = await readUpload(f.name, f.bytes).catch(() => ({ text: "", readable: false, mime: "application/octet-stream" }));
@@ -68,8 +68,8 @@ export async function send(text: string, files: { name: string; bytes: Buffer }[
     attachments.push({ sourceId, name: f.name, readable: read.readable, mime: read.mime });
   }
   const sourceId = text.trim() ? await addSource({ kind: "message", origin: "isaak", title: "", text }) : null;
-  const chatId = await saveChat("isaak", text, { attachments }, sourceId);
-  queue = queue.then(() => answer(chatId)).catch(() => undefined);
+  const chatId = await saveChat("isaak", text, { attachments, ...(tree ? { tree: true } : {}) }, sourceId);
+  queue = queue.then(() => (tree ? treeAnswer(chatId, text) : answer(chatId))).catch(() => undefined);
   return { chatId };
 }
 
@@ -164,6 +164,22 @@ async function answer(chatId: string): Promise<void> {
     if (!(error instanceof ModelDownError)) {
       await saveChat("it", `(Something went wrong while answering: ${(error as Error).message})`, { error: true });
     }
+  } finally {
+    live.chat = { busy: false, round: 0, why: "", stopAsked: false };
+    bump();
+  }
+}
+
+/** The tree button: this message changes how the web is organised; the reply says what changed. */
+async function treeAnswer(chatId: string, text: string): Promise<void> {
+  live.chat = { busy: true, round: 1, why: "Reorganising the tree", stopAsked: false };
+  bump();
+  try {
+    const out = await reviseTree(text);
+    const replySource = await addSource({ kind: "reply", origin: "self", title: "Its reply about the tree", text: out.say });
+    await saveChat("it", out.say, { tree: true, touched: out.touched, replyTo: chatId }, replySource);
+  } catch (error) {
+    if (!(error instanceof ModelDownError)) await saveChat("it", `(Something went wrong while changing the tree: ${(error as Error).message})`, { error: true });
   } finally {
     live.chat = { busy: false, round: 0, why: "", stopAsked: false };
     bump();
