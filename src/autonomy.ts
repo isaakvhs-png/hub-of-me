@@ -162,6 +162,38 @@ async function moveInstructionsOnce(): Promise<boolean> {
     await metaSet("how-migrate-2:2026-11-16", new Date().toISOString());
     return true;
   }
+  // Once (Isaak, 16 Nov: "you can just move the files over yourself"): what isn't his own words leaves "How I work"
+  // (its own proposals and the summary made from one); calendar invites that came in unreadable are read again.
+  if (!(await metaHas("how-unfile-own:2026-11-16"))) {
+    await metaSet("how-unfile-own:2026-11-16", new Date().toISOString());
+    const howId = await ensureHow();
+    const howSet = new Set([howId, ...(await howTree(howId))]);
+    const lifeId = (await db().query<{ id: string }>(`SELECT id FROM summaries WHERE is_life = true LIMIT 1`)).rows[0]?.id;
+    const changed: string[] = [];
+    for (const sid of howSet) {
+      const ins = (await db().query<{ input_type: string; input_id: string; origin: string | null }>(
+        `SELECT f.input_type, f.input_id, s.origin FROM feeds f LEFT JOIN sources s ON f.input_type = 'source' AND s.id = f.input_id WHERE f.summary_id = $1`, [sid])).rows;
+      for (const i of ins) {
+        // A summary that also sits outside "How I work" (like one made from its own proposal under Career) is not his instruction.
+        const notHis = i.input_type === "source" ? i.origin !== "isaak"
+          : !howSet.has(i.input_id) || (await db().query<{ summary_id: string }>(`SELECT summary_id FROM feeds WHERE input_type = 'summary' AND input_id = $1`, [i.input_id])).rows.some((r) => !howSet.has(r.summary_id));
+        if (!notHis) continue;
+        await db().query(`DELETE FROM feeds WHERE summary_id = $1 AND input_type = $2 AND input_id = $3`, [sid, i.input_type, i.input_id]);
+        changed.push(sid);
+        const elsewhere = (await db().query(`SELECT 1 FROM feeds WHERE input_type = $1 AND input_id = $2`, [i.input_type, i.input_id])).rows.length;
+        if (!elsewhere && lifeId) await db().query(`INSERT INTO feeds (summary_id, input_type, input_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, [lifeId, i.input_type, i.input_id]);
+      }
+    }
+    if (changed.length) { await markStale([...new Set(changed)]); await freshen([howId]).catch(() => undefined); }
+    const invites = (await db().query<{ id: string; bytes: Buffer | null }>(`SELECT id, bytes FROM sources WHERE readable = false AND (mime = 'text/calendar' OR file_name LIKE '%.calendar' OR file_name LIKE '%.ics')`)).rows;
+    for (const inv of invites) {
+      const text = inv.bytes ? Buffer.from(inv.bytes).toString("utf8").trim() : "";
+      if (!text) continue;
+      await db().query(`UPDATE sources SET text = $2, readable = true, placed = false, tags = '[]' WHERE id = $1`, [inv.id, text]);
+      await db().query(`DELETE FROM feeds WHERE input_type = 'source' AND input_id = $1`, [inv.id]);
+    }
+    return true;
+  }
   return false;
 }
 

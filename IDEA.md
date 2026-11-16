@@ -328,3 +328,11 @@ Claude's questions that the next answer refers to:
 > Well, point three, there were more points, right? So before you push more messages to it, what were the other ones? I think I can, if it's like, I think I can tackle them all at once now. The most confusing stuff's out of the way.
 
 > Mm, Oh, well, I was expecting a lot more stuff. I thought after your initial confusing message, there were like 5 points we needed to get to, or six or so. But okay, if you say it's fine. Um, Yeah, you can push the messages again. After that, I'll send the emails. Of course, before you push the messages again, you need to wipe what it just did, right? Yeah, built-in instructions go in there. It should be readable in the app. Um, I guess it can go into the same folder as how I work. Somewhere you figure it out how exactly. Just an overview of these, right? For my sake. Yeah, I thought you already removed the 600. Are you sure the 600-character cutoff is still in there? I thought we removed it long ago. Are you not just hallucinating this or reading the wrong messages?
+
+> So it's good now, right? That reaction to how it filed those things is good.
+
+> Yeah, I'm not going to use the tree button. I want to see if it catches this on its own. Do you think it will? And other than that, I'll send the messages. So we're ready for them, right?
+
+> All right, messages should be sorted by now. What did it make of it?
+
+> Yeah, number one is good. It's a one-time fix, so you can just move the files over yourself. I don't feel like resending everything to make it do that. Summaries repeating the same opening. Yeah, that's redundancy. I don't really get point two, what you mean exactly or what happened. I haven't looked myself. And the calendar invites. How do I make those readable? Other than that, there was probably more in this than just my internship. It also tells it stuff about where my life is at. So did it also file that?

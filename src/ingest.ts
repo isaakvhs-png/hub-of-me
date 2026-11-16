@@ -1,7 +1,7 @@
 import { call } from "./models.js";
 
 /** Plain-text formats read as they are. */
-const TEXT_LIKE = /\.(txt|md|markdown|csv|tsv|json|jsonl|log|html?|xml|ya?ml|ini|toml|srt|vtt|ts|js|py|css|sql|rtf)$/;
+const TEXT_LIKE = /\.(txt|ics|calendar|vcs|md|markdown|csv|tsv|json|jsonl|log|html?|xml|ya?ml|ini|toml|srt|vtt|ts|js|py|css|sql|rtf)$/;
 const IMAGE = /\.(png|jpe?g|webp|gif)$/;
 
 const MIME: Record<string, string> = {
