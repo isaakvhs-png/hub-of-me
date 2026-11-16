@@ -266,3 +266,5 @@ Claude's questions that the next answer refers to:
 > I asked it whether it knew its new abilities, and it said no. What's that about? Or wasn't the fix live by the time I asked?
 
 > Yeah. Um, You tend to work on one thing and lose sight of the main picture. Why wouldn't you update that description? Like, this is exactly how the system breaks. Seriously, why would you not update that? Do you need me to? I know I said that I wanted you to only build what I explicitly agree on, which still holds, but like shit like this, man, like come the fuck on. You could at least like suggest it that it needs an update, at which point I would always say yes. Can you imagine any scenario in which I would say no, don't update its description of itself regarding to this? And this is just an example. This goes for more things. It's not good work.
+
+> Right. So from now on, try to keep that perspective, okay? Don't just update things in isolation. If you update one thing, other things are affected. So try to like think about that and inform me, okay?
