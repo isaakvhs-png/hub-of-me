@@ -93,7 +93,7 @@ export function ProposalModal({ id, onClose }: { id: string; onClose: () => void
 // ---------------- one workspace ----------------
 
 type PieceType = "pack" | "model" | "module" | "me" | "result";
-interface Piece { id: string; type: PieceType; ref: string; label: string; x: number; y: number; instructions?: string }
+interface Piece { id: string; type: PieceType; ref: string; label: string; x: number; y: number; instructions?: string; version?: "current" | "snapshot" }
 interface Arrow { id: string; from: string; to: string; step?: number }
 interface Board { pieces: Piece[]; arrows: Arrow[]; runInstructions: string }
 interface Msg { id: string; role: string; text: string; proposed_board: string | null; created_at: string }
@@ -237,6 +237,14 @@ export function WorkspaceView({ id, onClosed }: { id: string; onClosed: () => vo
           {sel ? (
             <div className="col">
               <div className="row"><span style={{ color: "var(--white)" }}>{sel.type}: {sel.label}</span><span className="dim">{sel.ref}</span><span className="grow" />{sel.type !== "me" && <button className="danger" onClick={removeSelected}>remove</button>}</div>
+              {sel.type === "pack" && (
+                <div className="row">
+                  <span className="dim">the model reads</span>
+                  <button className={`chip ${sel.version !== "snapshot" ? "on" : ""}`} disabled={!editable} onClick={() => commit({ ...board, pieces: board.pieces.map((p) => (p.id === sel.id ? { ...p, version: undefined } : p)) })}>current version</button>
+                  <button className={`chip ${sel.version === "snapshot" ? "on" : ""}`} disabled={!editable} onClick={() => commit({ ...board, pieces: board.pieces.map((p) => (p.id === sel.id ? { ...p, version: "snapshot" } : p)) })}>as gathered</button>
+                  <button onClick={() => setPackOpen(sel.ref)}>open</button>
+                </div>
+              )}
               {sel.type === "model" && <textarea placeholder="instructions for this model only (otherwise the run's instructions are used)" defaultValue={sel.instructions ?? ""} key={sel.id} onBlur={(e) => commit({ ...board, pieces: board.pieces.map((p) => (p.id === sel.id ? { ...p, instructions: e.target.value } : p)) })} />}
             </div>
           ) : (
@@ -302,7 +310,7 @@ function BoardSvg({ board, width, height, selected, busy, connectFrom, ghost, sv
         <g key={p.id} className={`pc ${p.type} ${selected === p.id || connectFrom === p.id ? "sel" : ""} ${busy?.has(p.id) ? "busy" : ""}`} transform={`translate(${p.x},${p.y})`}
           onMouseDown={(e) => onPieceDown?.(e, p)} onClick={(e) => onPieceClick?.(e, p)} style={{ cursor: ghost ? undefined : "pointer" }}>
           <rect width={W} height={H} rx={2} />
-          <text x={8} y={16} className="kind">{kindLabel[p.type]}{busy?.has(p.id) ? " · busy" : ""}</text>
+          <text x={8} y={16} className="kind">{kindLabel[p.type]}{p.type === "pack" && p.version === "snapshot" ? " · as gathered" : ""}{busy?.has(p.id) ? " · busy" : ""}</text>
           <text x={8} y={36}>{(p.label || p.ref).slice(0, 19)}</text>
         </g>
       ))}
@@ -378,18 +386,37 @@ function RunModal({ run, onClose }: { run?: Run; onClose: () => void }) {
   );
 }
 
-function PackModal({ id, onClose }: { id: string; onClose: () => void }) {
+export function PackModal({ id, onClose }: { id: string; onClose: () => void }) {
+  const { openSummary, openSource } = useShell();
   const [pack] = useLiveData<any>(() => api(`/packs/${id}`), [id]);
   const [content, setContent] = useState<string | null>(null);
+  const [view, setView] = useState<"current" | "snapshot">("current");
   useEffect(() => { if (pack && content === null) setContent(pack.content); }, [pack]);
+  const list = (items: { id: string; title: string; note?: string; gone?: boolean; sources: { id: string; title: string }[] }[]) => items.map((it) => (
+    <div key={it.id} style={{ marginBottom: 8 }}>
+      <a href="#" onClick={(e) => { e.preventDefault(); if (!it.gone) openSummary(it.id); }}>{it.title}</a>{it.note && <span className="dim"> · {it.note}</span>}
+      <div className="hist dim">{it.sources.length ? it.sources.map((s) => <div key={s.id}><a href="#" onClick={(e) => { e.preventDefault(); openSource(s.id); }}>• {s.title}</a></div>) : "no raw sources"}</div>
+    </div>
+  ));
   return (
     <div className="overlay" onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()}>
         <Win className="modal" style={{ width: 760 }} title={`context pack · ${pack?.title ?? "…"}`} right={<button onClick={onClose}>×</button>}>
           <div className="col">
-            <div className="dim">{pack?.prompt}</div>
-            <textarea rows={18} value={content ?? ""} onChange={(e) => setContent(e.target.value)} />
-            <div className="row"><span className="grow" /><button className="primary" onClick={async () => { await api(`/packs/${id}`, { method: "PATCH", body: { content } }); onClose(); }}>save</button></div>
+            <div className="dim">gathered {pack ? when(pack.created_at) : "…"} · {pack?.prompt}</div>
+            {pack?.description && <div className="prose">{pack.description}</div>}
+            <div className="row">
+              <button className={`chip ${view === "current" ? "on" : ""}`} onClick={() => setView("current")}>current version</button>
+              <button className={`chip ${view === "snapshot" ? "on" : ""}`} onClick={() => setView("snapshot")}>as gathered</button>
+            </div>
+            {view === "current" && <div style={{ maxHeight: 420, overflow: "auto" }}>{pack ? (pack.current?.length ? list(pack.current) : <div className="dim">This pack was made before packs kept their summaries; only the version as gathered exists.</div>) : "…"}</div>}
+            {view === "snapshot" && (
+              <>
+                {pack?.items?.length > 0 && <div style={{ maxHeight: 200, overflow: "auto" }}>{list(pack.items)}</div>}
+                <textarea rows={14} value={content ?? ""} onChange={(e) => setContent(e.target.value)} />
+                <div className="row"><span className="grow" /><button className="primary" onClick={async () => { await api(`/packs/${id}`, { method: "PATCH", body: { content } }); onClose(); }}>save</button></div>
+              </>
+            )}
           </div>
         </Win>
       </div>

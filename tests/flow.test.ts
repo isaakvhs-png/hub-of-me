@@ -2,7 +2,8 @@ import { describe, expect, it, beforeEach } from "vitest";
 import { fresh, drain } from "./helpers.js";
 import { db } from "../src/state.js";
 import { chatIdle, history, send } from "../src/chat.js";
-import { absorb, editByIsaak, ensureLife, freshen, revise, summaryView, webView } from "../src/web.js";
+import { absorb, applyChanges, editByIsaak, ensureLife, freshen, revise, summaryView, webView } from "../src/web.js";
+import { buildPack, packText, packView } from "../src/packs.js";
 import { listEvents } from "../src/calendar.js";
 import { acceptSuggestion, canon, closeProject, createProject, projectView, runAndWait, setBoard, talk } from "../src/projects.js";
 import { acceptProposal, declineProposal, listProposals } from "../src/proposals.js";
@@ -83,6 +84,65 @@ describe("the chat", () => {
     const h = await history();
     // The mock answers in round 2 anyway; the check ran for round 1.
     expect(JSON.parse(h[h.length - 1].meta).rounds[0].straying).toBe(true);
+  });
+});
+
+describe("context packs", () => {
+  beforeEach(async () => { await fresh(); });
+
+  async function someWeb() {
+    await send("I started my internship at the ministry, my supervisor is Anna"); await chatIdle();
+    await send("the internship report is due in January"); await chatIdle();
+    await send("I like cycling along the canals on weekends"); await chatIdle();
+    await drain();
+  }
+
+  it("gathers summaries with every raw source under them, a description and its date; the current version follows a merge", async () => {
+    await someWeb();
+    const packId = await buildPack("", "my internship");
+    const v = await packView(packId);
+    expect(v.description).toBeTruthy();
+    expect(v.items.length).toBeGreaterThan(0);
+    expect(v.items.some((it) => it.sources.length > 0)).toBe(true);
+    const snapshot = await packText(packId, "snapshot");
+    expect(snapshot).toContain("as it was gathered");
+    expect(snapshot).toMatch(/- s:\S+/);
+    // Merge what it gathered with another summary: the current version follows the trail.
+    const web = await webView();
+    const mine = v.items.find((it) => !web.summaries.find((s) => s.id === it.id)?.is_life);
+    const other = web.summaries.find((s) => !s.is_life && !v.items.some((it) => it.id === s.id));
+    expect(mine && other).toBeTruthy();
+    if (mine && other) {
+      await applyChanges([{ do: "merge", ids: [mine.id, other.id], title: "Merged" } as never]);
+      const now = await packText(packId, "current");
+      expect(now).toContain("went into this one");
+      const s = await summaryView((await packView(packId)).current.find((c) => c.title === "Merged")!.id, false);
+      expect(JSON.parse(s.merged_from || "[]").length).toBe(2);
+    }
+  });
+
+  it("the chat makes a pack when he asks for one", async () => {
+    await someWeb();
+    await send("make me a context pack of everything about my internship"); await chatIdle();
+    const packs = await db().query(`SELECT id FROM packs`);
+    expect(packs.rows.length).toBe(1);
+  });
+
+  it("a model on the board can open a raw source its pack lists", async () => {
+    await someWeb();
+    const packId = await buildPack("", "my internship");
+    const pid = await createProject({ title: "Read", owner: "isaak" });
+    await setBoard(pid, {
+      pieces: [{ id: "me", type: "me", ref: "me", x: 0, y: 0 }, { id: "p", type: "pack", ref: packId, x: 0, y: 100 }, { id: "m", type: "model", ref: "claude-haiku-5-5", x: 100, y: 0 }],
+      arrows: [{ from: "p", to: "m" }, { from: "m", to: "me", step: 1 }],
+      runInstructions: "x",
+    });
+    mockState.openRaw = true;
+    const run = await runAndWait(pid);
+    mockState.openRaw = false;
+    expect(run.status).toBe("done");
+    const log = (await projectView(pid)).runs[0].log as { kind: string }[];
+    expect(log.some((l) => l.kind === "opened-sources")).toBe(true);
   });
 });
 

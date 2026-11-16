@@ -3,7 +3,7 @@ import { callJson, callModel, call, modelFolder, roleDown, ROLE_MODEL } from "./
 import { NotFoundError, ValidationError } from "./errors.js";
 import { bump, db, lightProject, wake } from "./state.js";
 import { addSource, feed, freshen, getSummary, markStale, parentsOf, placeSummary, projectSummary, rewrite } from "./web.js";
-import { buildPack, getPack, listPacks } from "./packs.js";
+import { buildPack, getPack, listPacks, openSources, packText } from "./packs.js";
 import { MODULES, cleanBoard, describeBoard, emptyBoard, parseBoard, validateRunnable, type Board, type Piece } from "./board.js";
 import { checkStraying } from "./chat.js";
 
@@ -87,7 +87,7 @@ const AI_SYSTEM = `You are the workspace AI in Isaak's personal system: you and 
 He talks; you answer briefly and suggest a board change; he accepts or asks for more changes. The board is built from Lego pieces that already exist; you can never make up a piece.
 
 THE PIECES:
-- "pack": a context pack (ref = its id). Packs are the only way the board reads his memory web. To make a new one, ask for it in "make_packs" and use ref "new:0", "new:1" … on the board for the packs you asked for.
+- "pack": a context pack (ref = its id). Packs are the only way the board reads his memory web. A pack holds summaries with the raw sources under each (a model can open those when it needs them). A pack piece reads the pack's current version unless it has "version": "snapshot" (the pack as it was gathered); that is Isaak's choice per pack. To make a new one, ask for it in "make_packs" and use ref "new:0", "new:1" … on the board for the packs you asked for.
 - "model": a model (ref = its exact name from the models folder). Its "instructions" are its own; the run's instructions (runInstructions) go to every model. If a model has none of its own, the run's instructions are used.
 - "module": a module (ref = its name), e.g. "web-search".
 - "me": Isaak, the need-input element (id "me"). An arrow from a model to "me" means: give Isaak this; if it is the model's last step that is its final result, otherwise the run pauses there and asks him for input.
@@ -213,6 +213,7 @@ async function flushLog(runId: string) {
 }
 
 const STEP_SYSTEM = `You are one model on a board in Isaak's workspace. Do what your instructions ask with what you were given.
+If your context packs list raw sources and you judge you need one (to check something against what was actually said or written), answer only with lines OPEN s:ID and you will get them; otherwise answer directly.
 Write your answer in two parts:
 THOUGHTS: how you go about it (short)
 OUTPUT: what you hand on`;
@@ -280,7 +281,9 @@ async function execute(runId: string, projectId: string, board: Board, by: "isaa
     const packs = board.arrows.filter((a) => a.to === m.id && board.pieces.find((p) => p.id === a.from)?.type === "pack")
       .map((a) => board.pieces.find((p) => p.id === a.from)!);
     const packTexts: string[] = [];
-    for (const p of packs) { try { packTexts.push((await getPack(p.ref)).content); } catch { packTexts.push(`(pack ${p.ref} is gone)`); } }
+    for (const p of packs) { try { packTexts.push(await packText(p.ref, p.version ?? "current")); } catch { packTexts.push(`(pack ${p.ref} is gone)`); } }
+    // The raw sources its packs list: the ones it may open (Isaak, 16 Nov: the link is there so it can, if it judges it needs to).
+    const openable = new Set(packTexts.flatMap((t) => [...t.matchAll(/^- s:(\S+)/gm)].map((x) => x[1])));
     const instructions = [board.runInstructions, m.instructions].filter((x) => x?.trim()).join("\n\nYOUR OWN INSTRUCTIONS: ") || "(no instructions: do what fits the context)";
     let context = [
       `PROJECT: ${project.title}${project.goal ? ` — ${project.goal}` : ""}`,
@@ -293,7 +296,16 @@ async function execute(runId: string, projectId: string, board: Board, by: "isaa
     const think = async (what: string, webSearch = false, step?: number): Promise<string> => {
       if (stopRequested.has(runId)) throw new Error("stopped");
       const started = Date.now();
-      const res = await callModel(m.ref, { task: "board-step", system: STEP_SYSTEM, prompt: `${context}${current ? `\n\nWHAT YOU HAVE SO FAR:\n${current}` : ""}\n\nNOW: ${what}`, webSearch, maxTokens: 8000 }, null);
+      let res = await callModel(m.ref, { task: "board-step", system: STEP_SYSTEM, prompt: `${context}${current ? `\n\nWHAT YOU HAVE SO FAR:\n${current}` : ""}\n\nNOW: ${what}`, webSearch, maxTokens: 8000 }, null);
+      // It may open raw sources from its packs (a few rounds at most), then answers again with them in front of it.
+      for (let round = 0; round < 3; round++) {
+        const asked = [...res.text.matchAll(/^\s*OPEN s:(\S+)\s*$/gm)].map((x) => x[1]);
+        const opened = asked.length ? await openSources(asked, openable) : "";
+        if (!opened) break;
+        await appendLog(runId, { at: new Date().toISOString(), piece: m.id, model: m.ref, step, kind: "opened-sources", input: what, output: asked.map((x) => `s:${x}`).join(", "), ms: 0 });
+        context = `${context}\n\nRAW SOURCES YOU OPENED:\n${opened}`;
+        res = await callModel(m.ref, { task: "board-step", system: STEP_SYSTEM, prompt: `${context}${current ? `\n\nWHAT YOU HAVE SO FAR:\n${current}` : ""}\n\nNOW: ${what}`, webSearch, maxTokens: 8000 }, null);
+      }
       const { thoughts, output } = splitAnswer(res.text);
       await appendLog(runId, { at: new Date().toISOString(), piece: m.id, model: m.ref, step, kind: webSearch ? "web-search" : "call", input: what, thoughts, output, ms: Date.now() - started });
       if (by === "it") {

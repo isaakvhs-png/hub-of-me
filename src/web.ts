@@ -44,7 +44,7 @@ export async function ensureLife(): Promise<string> {
 
 export interface SummaryRow {
   id: string; title: string; body: string; kind: string; is_life: boolean; is_instructions: boolean; project_id: string | null;
-  tags: string; stale: boolean; absorbed_at: string | null; created_at: string; updated_at: string;
+  tags: string; stale: boolean; absorbed_at: string | null; created_at: string; updated_at: string; went_into?: string; merged_from?: string;
 }
 
 export async function getSummary(summaryId: string): Promise<SummaryRow> {
@@ -364,7 +364,7 @@ export async function absorb(summaryId: string): Promise<void> {
     for (const p of parents.length ? parents : [lifeId]) await feed(p, input.type as "summary" | "source", input.id);
   }
   await db().query(`DELETE FROM feeds WHERE summary_id = $1 OR (input_type = 'summary' AND input_id = $1)`, [summaryId]);
-  await db().query(`UPDATE summaries SET absorbed_at = now() WHERE id = $1`, [summaryId]);
+  await db().query(`UPDATE summaries SET absorbed_at = now(), went_into = $2 WHERE id = $1`, [summaryId, (parents.length ? parents : [lifeId]).join(",")]);
   await markStale(parents.length ? parents : [lifeId]);
 }
 
@@ -456,8 +456,9 @@ async function merge(ids: string[], title?: string): Promise<string> {
   if (!(await parentsOf(mergedId)).length) await feed(await ensureLife(), "summary", mergedId);
   for (const r of rows) {
     await db().query(`DELETE FROM feeds WHERE summary_id = $1 OR (input_type = 'summary' AND input_id = $1)`, [r.id]);
-    await db().query(`UPDATE summaries SET absorbed_at = now() WHERE id = $1`, [r.id]);
+    await db().query(`UPDATE summaries SET absorbed_at = now(), went_into = $2 WHERE id = $1`, [r.id, mergedId]);
   }
+  await db().query(`UPDATE summaries SET merged_from = $2 WHERE id = $1`, [mergedId, JSON.stringify(rows.map((r) => ({ id: r.id, title: r.title })))]);
   return mergedId;
 }
 
@@ -676,3 +677,38 @@ export async function projectSummary(projectId: string, title: string): Promise<
 }
 
 export { createSummary, parentsOf, inputsOf, below, above };
+
+/** Where a summary is now: itself, or (merged or absorbed) wherever it went, followed to the end. */
+export async function followTrail(summaryId: string): Promise<string[]> {
+  const out = new Set<string>();
+  const seen = new Set<string>();
+  const walk = async (sid: string, depth: number): Promise<void> => {
+    if (seen.has(sid) || depth > 20) return;
+    seen.add(sid);
+    const r = (await db().query<{ absorbed_at: string | null; went_into: string }>(`SELECT absorbed_at, went_into FROM summaries WHERE id = $1`, [sid])).rows[0];
+    if (!r) return;
+    if (!r.absorbed_at) { out.add(sid); return; }
+    for (const next of r.went_into.split(",").filter(Boolean)) await walk(next, depth + 1);
+  };
+  await walk(summaryId, 0);
+  return [...out];
+}
+
+/** Every raw source under a summary: what feeds it directly and what feeds the summaries under it. */
+export async function sourcesUnder(summaryId: string): Promise<{ id: string; title: string; kind: string; created_at: string }[]> {
+  const found = new Set<string>();
+  const seen = new Set<string>();
+  const walk = async (sid: string): Promise<void> => {
+    if (seen.has(sid)) return;
+    seen.add(sid);
+    for (const i of await inputsOf(sid)) {
+      if (i.type === "source") found.add(i.id);
+      else await walk(i.id);
+    }
+  };
+  await walk(summaryId);
+  if (!found.size) return [];
+  const r = await db().query<{ id: string; title: string; file_name: string | null; kind: string; text: string; created_at: string }>(
+    `SELECT id, title, file_name, kind, left(text, 80) AS text, created_at FROM sources WHERE id = ANY($1) ORDER BY created_at`, [[...found]]);
+  return r.rows.map((row) => ({ id: row.id, title: row.title || row.file_name || row.text.replace(/\s+/g, " ") || row.kind, kind: row.kind, created_at: row.created_at }));
+}

@@ -4,7 +4,7 @@ import type { CallOpts } from "./models.js";
  * A scripted model: AI_PROVIDER=mock (local trying out) and the tests. It answers each task with something shaped like
  * a real answer, so every road through the system can be driven without a real model.
  */
-export const mockState = { judge: "junction" as "continue" | "junction" | "need_input", straying: false, proposeOnce: true };
+export const mockState = { judge: "junction" as "continue" | "junction" | "need_input", straying: false, proposeOnce: true, openRaw: false };
 
 const ids = (text: string) => [...new Set([...text.matchAll(/^- ([0-9a-f-]{36}) \|/gm)].map((m) => m[1]))];
 const words = (t: string) => t.toLowerCase().match(/[a-z]{4,}/g) ?? [];
@@ -52,7 +52,8 @@ export function scriptedModel(opts: CallOpts & { model: string }): string {
       const offered = ids(p.split("ONE LEVEL FURTHER YOU COULD OPEN:")[1] ?? "");
       const msg = /HIS MESSAGE: (.*)/.exec(p)?.[1] ?? "";
       if (/answer NOW/.test(p) || round >= 2 || !offered.length || !msg.includes("?")) {
-        const actions = /calendar/i.test(msg) ? [{ do: "calendar", title: "Dentist", starts_at: "2026-11-20T10:00:00+01:00", note: "" }] : [];
+        const actions = /calendar/i.test(msg) ? [{ do: "calendar", title: "Dentist", starts_at: "2026-11-20T10:00:00+01:00", note: "" }]
+          : /context pack/i.test(msg) ? [{ do: "pack", title: "", prompt: msg }] : [];
         return JSON.stringify({ why: "I know enough", enough: true, answer: `You said: ${msg}`, actions });
       }
       return JSON.stringify({ why: "Opening a summary that may hold the answer", enough: false, open: offered.slice(0, 2) });
@@ -78,9 +79,15 @@ export function scriptedModel(opts: CallOpts & { model: string }): string {
         go: /\bgo\b|run it/i.test(p.split("THE CONVERSATION")[1]?.split("\n").pop() ?? ""),
       });
     }
-    case "board-step": return `THOUGHTS: I look at what I have.\nOUTPUT: ${opts.webSearch ? "Found two pages.\n\nSOURCES:\nExample — https://example.com" : "Here is what I found."}`;
+    case "board-step": {
+      // A model asks once to open the first raw source its pack lists, then answers.
+      const first = /^- s:(\S+)/m.exec(p)?.[1];
+      if (mockState.openRaw && first && !p.includes("RAW SOURCES YOU OPENED:")) return `OPEN s:${first}`;
+      return `THOUGHTS: I look at what I have.\nOUTPUT: ${opts.webSearch ? "Found two pages.\n\nSOURCES:\nExample — https://example.com" : "Here is what I found."}`;
+    }
     case "run-summary": return "The model searched and reported back.";
     case "pack": return JSON.stringify({ title: "Pack", pick: ids(p).slice(0, 3) });
+    case "pack-description": return JSON.stringify({ description: "What this pack holds, in short." });
     case "revise": return JSON.stringify({ action: /absorb/i.test(p.split("ISAAK SAYS:")[1] ?? "") ? "absorb" : "rewrite", say: "Done." });
     case "read-picture": return "A picture of a desk with a laptop.";
     case "proposal-overlap": return JSON.stringify({ covered: false, why: "new ground" });

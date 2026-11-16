@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "re
 import { api } from "./api";
 import { Mic, Spinner, useLiveData, useShell, when } from "./shared";
 import { Body, Legend, type Ref } from "./Body";
+import { PackModal } from "./Workspace";
 
 // ---------------- the chat ----------------
 
@@ -216,9 +217,44 @@ export function Tree({ focusId }: { focusId: string | null }) {
           </svg>
         )}
         {renderNode(web.lifeId, [])}
+        <PacksFolder />
         {unplaced > 0 && <div className="dim" style={{ marginTop: 10 }}>{unplaced} new thing{unplaced === 1 ? "" : "s"} still being placed…</div>}
       </div>
     </>
+  );
+}
+
+function mergedFrom(raw?: string): { id: string; title: string }[] {
+  try { const v = JSON.parse(raw || "[]"); return Array.isArray(v) ? v : []; } catch { return []; }
+}
+
+/** The Context packs folder beside My life: every pack it has made, newest first. Packs don't count as places (no ×N). */
+function PacksFolder() {
+  const [packs] = useLiveData<{ id: string; title: string; description: string; created_at: string }[]>(() => api("/packs"));
+  const [open, setOpen] = useState(false);
+  const [packOpen, setPackOpen] = useState<string | null>(null);
+  return (
+    <div className="node" style={{ marginTop: 6 }}>
+      <div className="line">
+        <span className="tw" onClick={() => setOpen(!open)}>{packs?.length ? (open ? "▾" : "▸") : "·"}</span>
+        <span className="name" onClick={() => setOpen(!open)}>Context packs</span>
+        <span className="meta">{packs?.length ? ` ${packs.length}` : ""}</span>
+      </div>
+      {open && (
+        <div className="kids">
+          {(packs ?? []).map((p) => (
+            <div key={p.id} className="node">
+              <div className="line" title={p.description}>
+                <span className="tw">·</span>
+                <span className="name" onClick={() => setPackOpen(p.id)}>{p.title}</span>
+                <span className="meta">{when(p.created_at)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {packOpen && <PackModal id={packOpen} onClose={() => setPackOpen(null)} />}
+    </div>
   );
 }
 
@@ -244,7 +280,7 @@ function useDrag(initial: { x: number; y: number }) {
   return { pos, start };
 }
 
-interface SummaryFull { id: string; title: string; body: string; kind: string; is_life: boolean; project_id: string | null; stale: boolean; tags: string[]; updated_at: string; refs: Record<string, Ref>; versions: { id: string; title: string; body: string; why: string; created_at: string }[]; inputs: { type: string; id: string }[]; feedsInto: { id: string; title: string }[] }
+interface SummaryFull { id: string; title: string; body: string; kind: string; is_life: boolean; project_id: string | null; stale: boolean; tags: string[]; updated_at: string; refs: Record<string, Ref>; versions: { id: string; title: string; body: string; why: string; created_at: string }[]; inputs: { type: string; id: string }[]; feedsInto: { id: string; title: string }[]; merged_from?: string }
 
 function SummaryWin({ f, z, close, front }: { f: Float; z: number; close: () => void; front: () => void }) {
   const { openSummary, openProject, openSource } = useShell();
@@ -319,6 +355,7 @@ function SummaryWin({ f, z, close, front }: { f: Float; z: number; close: () => 
             <div className="hist dim">
               {s.feedsInto.length > 0 && <div>feeds into: {s.feedsInto.map((p) => <a key={p.id} href="#" onClick={(e) => { e.preventDefault(); openSummary(p.id); }} style={{ marginRight: 8 }}>{p.title}</a>)}</div>}
               <div>made from: {s.inputs.filter((i) => i.type === "summary").length} summaries, {s.inputs.filter((i) => i.type === "source").length} sources {s.inputs.filter((i) => i.type === "source").slice(0, 12).map((i) => <a key={i.id} href="#" onClick={(e) => { e.preventDefault(); openSource(i.id); }} style={{ marginRight: 6 }}>•</a>)}</div>
+              {mergedFrom(s.merged_from).length > 0 && <div>merged from: {mergedFrom(s.merged_from).map((m) => m.title).join(", ")}</div>}
               {s.tags.length > 0 && <div>labels: {s.tags.join(", ")}</div>}
               <div>updated {when(s.updated_at)}</div>
             </div>

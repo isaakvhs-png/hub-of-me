@@ -201,3 +201,12 @@ CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+-- Context packs (Isaak, 16 Nov): a short description for him, and what was gathered (summary ids, each with the raw
+-- sources under it), so a pack can be read as it was gathered or as it is now.
+ALTER TABLE packs ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';
+ALTER TABLE packs ADD COLUMN IF NOT EXISTS items TEXT NOT NULL DEFAULT '[]';
+
+-- Merges leave a tag (Isaak, 16 Nov): where a merged or absorbed summary went, and what a merged one came from.
+ALTER TABLE summaries ADD COLUMN IF NOT EXISTS went_into TEXT NOT NULL DEFAULT '';
+ALTER TABLE summaries ADD COLUMN IF NOT EXISTS merged_from TEXT NOT NULL DEFAULT '';

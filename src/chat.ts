@@ -97,7 +97,8 @@ ACTIONS you may take with your answer (only when they serve what he said):
 - {"do":"calendar","title":"","starts_at":"ISO time with offset","ends_at":"ISO time or empty","all_day":false,"note":""}: add to his calendar; tell him in your answer.
 - {"do":"delete_chat","ids":["chat message ids"]}: delete parts of the chat when he asks (they stay in the web).
 - {"do":"popup","title":"","body":""}: bring something up as a popup.
-- {"do":"proposal","title":"","body":"what and why"}: propose a project of your own.`;
+- {"do":"proposal","title":"","body":"what and why"}: propose a project of your own.
+- {"do":"pack","title":"","prompt":"what the pack should gather"}: make a context pack when he asks for one; it appears in his Context packs folder.`;
 
 async function answer(chatId: string): Promise<void> {
   const msg = (await db().query<ChatRow>(`SELECT * FROM chat WHERE id = $1`, [chatId])).rows[0];
@@ -222,6 +223,9 @@ async function doActions(actions: Record<string, unknown>[]): Promise<void> {
         await popup("question", String(a.title ?? "A question"), String(a.body ?? ""));
       } else if (kind === "proposal") {
         await createProposal({ title: String(a.title ?? ""), body: String(a.body ?? "") });
+      } else if (kind === "pack") {
+        const { buildPack } = await import("./packs.js");
+        await buildPack(String(a.title ?? ""), String(a.prompt ?? a.title ?? ""));
       }
     } catch { /* one failed action does not stop the others */ }
   }

@@ -10,7 +10,7 @@ export async function fresh(): Promise<Db> {
   await migrate(db);
   setDb(db);
   setMock(scriptedModel);
-  mockState.judge = "junction"; mockState.straying = false; mockState.proposeOnce = true;
+  mockState.judge = "junction"; mockState.straying = false; mockState.proposeOnce = true; mockState.openRaw = false;
   resetThinkForTests();
   process.env.USER_EMAIL = "isaak@test"; process.env.USER_PASSWORD = "pw";
   await boot({ autonomy: false });

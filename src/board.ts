@@ -11,7 +11,7 @@ import { ValidationError } from "./errors.js";
 
 export type PieceType = "pack" | "model" | "module" | "me" | "result";
 
-export interface Piece { id: string; type: PieceType; ref: string; label: string; x: number; y: number; instructions?: string }
+export interface Piece { id: string; type: PieceType; ref: string; label: string; x: number; y: number; instructions?: string; version?: "current" | "snapshot" }
 export interface Arrow { id: string; from: string; to: string; step?: number }
 export interface Board { pieces: Piece[]; arrows: Arrow[]; runInstructions: string }
 
@@ -52,7 +52,7 @@ export function cleanBoard(input: unknown, known: { packs: Set<string>; models: 
     const pid = String(p.id ?? "").trim() || `${type}-${pieces.length + 1}`;
     if (ids.has(pid)) continue;
     ids.add(pid);
-    pieces.push({ id: pid, type, ref: type === "me" ? "me" : ref, label: String(p.label ?? ref).slice(0, 120), x: num(p.x, 80 + pieces.length * 40), y: num(p.y, 80 + pieces.length * 30), ...(p.instructions ? { instructions: String(p.instructions).slice(0, 8000) } : {}) });
+    pieces.push({ id: pid, type, ref: type === "me" ? "me" : ref, label: String(p.label ?? ref).slice(0, 120), x: num(p.x, 80 + pieces.length * 40), y: num(p.y, 80 + pieces.length * 30), ...(p.instructions ? { instructions: String(p.instructions).slice(0, 8000) } : {}), ...(type === "pack" && p.version === "snapshot" ? { version: "snapshot" as const } : {}) });
   }
   if (!pieces.some((p) => p.type === "me")) pieces.unshift({ id: "me", type: "me", ref: "me", label: "Isaak", x: 80, y: 80 });
   const arrows: Arrow[] = [];
