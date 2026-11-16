@@ -143,7 +143,7 @@ export async function annotate(body: string): Promise<string> {
     } else {
       const row = (await db().query<{ origin: string; kind: string; title: string; file_name: string | null; tags: string }>(`SELECT origin, kind, title, file_name, tags FROM sources WHERE id = $1`, [rid])).rows[0];
       const tagged = row ? tagList(row.tags) : [];
-      const what = !row ? "" : row.kind === "email" ? `an email he forwarded: "${row.title}"` : row.kind === "file" ? `a file ${row.origin === "isaak" ? "Isaak uploaded" : "it got"}: ${row.file_name ?? row.title}` : `${ORIGIN_TAG[row.origin] ?? row.origin}${row.kind === "reply" ? " in the chat" : ""}`;
+      const what = !row ? "" : row.kind === "email" ? `an email from his Gmail inbox: "${row.title}"` : row.kind === "file" ? `a file ${row.origin === "isaak" ? "Isaak uploaded" : "it got"}: ${row.file_name ?? row.title}` : `${ORIGIN_TAG[row.origin] ?? row.origin}${row.kind === "reply" ? " in the chat" : ""}`;
       tags.set(key, t === "img" ? `[picture: ${row?.file_name ?? row?.title ?? "gone"}]` : row ? `[${what}${tagged.length ? `; tags: ${tagged.join(", ")}` : ""}]` : "[from a source that is gone]");
     }
   }
@@ -204,7 +204,7 @@ export async function place(sourceId: string): Promise<{ fed: string[]; created:
   const content = src.readable
     ? `${src.title ? `${src.title}\n` : ""}${src.text}`.slice(0, 8000)
     : `(A file it cannot read yet: ${src.file_name ?? src.title}.)`;
-  const label = src.kind === "email" ? "SOURCE (an email he forwarded to his inbox; the sender, date and text are in it)" : src.kind === "file" ? `SOURCE (a file ${src.origin === "isaak" ? "Isaak uploaded" : "it got"}: ${src.file_name ?? src.title})` : `SOURCE (${src.kind}, from ${src.origin})`;
+  const label = src.kind === "email" ? "SOURCE (an email from his Gmail inbox, the box he forwards things into; its headers and text show who wrote it and whether it was forwarded)" : src.kind === "file" ? `SOURCE (a file ${src.origin === "isaak" ? "Isaak uploaded" : "it got"}: ${src.file_name ?? src.title})` : `SOURCE (${src.kind}, from ${src.origin})`;
   const result = await placeInput({ type: "source", id: sourceId }, label, content);
   await db().query(`UPDATE sources SET placed = true WHERE id = $1`, [sourceId]);
   return result;
@@ -316,7 +316,7 @@ export async function rewrite(summaryId: string, extra = ""): Promise<void> {
       const row = r.rows[0];
       if (!row) continue;
       const pic = row.mime?.startsWith("image/") ? " (A PICTURE; you may show it with [[img:" + input.id + "]])" : "";
-      const who = row.kind === "edit" ? "TYPED BY ISAAK HIMSELF INTO THIS SUMMARY" : row.kind === "email" ? "an email he forwarded" : row.kind === "file" ? `a file ${row.origin === "isaak" ? "Isaak uploaded" : "it got"}` : `${row.kind} from ${row.origin}`;
+      const who = row.kind === "edit" ? "TYPED BY ISAAK HIMSELF INTO THIS SUMMARY" : row.kind === "email" ? "an email from his Gmail inbox" : row.kind === "file" ? `a file ${row.origin === "isaak" ? "Isaak uploaded" : "it got"}` : `${row.kind} from ${row.origin}`;
       const body = row.readable ? row.text.slice(0, 6000) : `(a file it cannot read yet: ${row.file_name})`;
       const text = `[[s:${input.id}]] SOURCE (${who}, ${new Date(row.created_at).toISOString().slice(0, 10)})${pic}${row.title ? ` "${row.title}"` : ""}${tagList(row.tags).length ? ` [tags: ${tagList(row.tags).join(", ")}]` : ""}:\n${body}`;
       parts.push(text); budget -= text.length;
@@ -837,7 +837,7 @@ export async function tagSource(sourceId: string): Promise<void> {
     `SELECT kind, origin, title, text, readable, file_name, created_at FROM sources WHERE id = $1`, [sourceId])).rows[0];
   if (!r) return;
   const into = await titled((await db().query<{ summary_id: string }>(`SELECT summary_id FROM feeds WHERE input_type = 'source' AND input_id = $1`, [sourceId])).rows.map((x) => x.summary_id));
-  const what = r.kind === "email" ? "an email he forwarded" : r.kind === "file" ? `a file ${r.origin === "isaak" ? "Isaak uploaded" : "it got"}: ${r.file_name ?? r.title}` : r.kind === "reply" ? "your own message in the chat" : `${r.kind} from ${r.origin}`;
+  const what = r.kind === "email" ? "an email from his Gmail inbox, the box he forwards things into (its headers and text show who wrote it and whether it was forwarded)" : r.kind === "file" ? `a file ${r.origin === "isaak" ? "Isaak uploaded" : "it got"}: ${r.file_name ?? r.title}` : r.kind === "reply" ? "your own message in the chat" : `${r.kind} from ${r.origin}`;
   const out = await callJson<{ tags?: string[] }>("web", {
     task: "tag-source",
     system: `You keep Isaak's memory web. Give this entry its tags.\n\n${TAGS_GUIDE}\n\nAnswer with one JSON object: {"tags": []}`,
